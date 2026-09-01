@@ -146,6 +146,7 @@ def _export_resource(
         raise ReleaseError(f"{resource['name']} source does not exist at {source_path}")
     shutil.copytree(exported, destination)
 
+
 def _strip_lua_comments(text: str) -> str:
     return re.sub(r"--[^\n]*", "", text)
 
