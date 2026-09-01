@@ -1,0 +1,40 @@
+:root { font-family: Inter, ui-sans-serif, system-ui, sans-serif; color: #edf6f2; background: transparent; font-synthesis: none; font-size: clamp(12px, .82vw, 16px); }
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; min-height: 100vh; background: transparent; overflow: hidden; }
+#app { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(4, 9, 8, .55); transition: opacity .16s ease; }
+#app.hidden { opacity: 0; pointer-events: none; }
+.panel { width: min(55rem, calc(100vw - clamp(16px, 3vw, 48px))); max-height: calc(100vh - clamp(16px, 4vh, 48px)); border: 1px solid rgba(137, 255, 203, .17); border-radius: 1.125rem; background: radial-gradient(circle at 80% -20%, rgba(43, 161, 107, .22), transparent 40%), #0a1210; box-shadow: 0 24px 80px rgba(0,0,0,.55); overflow: auto; }
+header { display: flex; align-items: center; justify-content: space-between; padding: clamp(14px, 2.2vh, 24px) clamp(16px, 2vw, 28px); border-bottom: 1px solid rgba(255,255,255,.07); }
+h1 { margin: 3px 0 0; font-size: clamp(20px, 1.75rem, 28px); letter-spacing: -.03em; }
+.eyebrow { color: #65efaa; font-size: 10px; font-weight: 800; letter-spacing: .2em; }
+button, select, input { font: inherit; }
+button { color: #dceae4; background: #15231e; border: 1px solid rgba(255,255,255,.1); border-radius: 9px; padding: 9px 12px; cursor: pointer; }
+button:hover { border-color: rgba(101, 239, 170, .5); background: #1b3027; }
+button:disabled { cursor: wait; opacity: .55; }
+button.icon { width: 38px; height: 38px; padding: 0; border-radius: 50%; font-size: 24px; }
+.status { display: flex; flex-wrap: wrap; gap: 8px; padding: clamp(9px, 1.2vh, 13px) clamp(16px, 2vw, 28px); background: rgba(0,0,0,.18); }
+.status span { padding: 5px 8px; border: 1px solid rgba(255,255,255,.08); border-radius: 99px; color: #83978f; font: 700 9px/1 ui-monospace, monospace; letter-spacing: .08em; }
+.status .live { color: #07120d; background: #65efaa; border-color: #65efaa; }
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: rgba(255,255,255,.07); }
+article { min-height: 0; padding: clamp(15px, 2vh, 24px) clamp(16px, 2vw, 28px); background: #0c1613; }
+h2 { margin: 0 0 clamp(12px, 1.6vh, 20px); font-size: 14px; letter-spacing: .02em; }
+label { display: grid; gap: 7px; margin: 14px 0; color: #94a79f; font-size: 12px; }
+select { width: 100%; color: #eaf4f0; background: #101f1a; border: 1px solid rgba(255,255,255,.1); border-radius: 9px; padding: 10px; outline: none; }
+select:focus { border-color: #58d897; }
+.actions { display: flex; gap: 8px; margin-top: 16px; }
+.hint, article p { color: #74877f; font-size: 11px; line-height: 1.5; }
+.range { grid-template-columns: 1fr auto; }
+.range input { grid-column: 1 / -1; width: 100%; accent-color: #65efaa; }
+.range.unavailable { opacity: .38; }
+.range.unavailable input { cursor: not-allowed; filter: grayscale(1); }
+output { color: #dce9e4; font-variant-numeric: tabular-nums; }
+.binding { display: flex; align-items: center; gap: 14px; padding: 13px; border-radius: 12px; background: rgba(101,239,170,.06); border: 1px solid rgba(101,239,170,.12); }
+kbd { min-width: 43px; padding: 11px; text-align: center; border: 1px solid rgba(101,239,170,.35); border-bottom-width: 3px; border-radius: 8px; color: #75f5b5; background: #101d18; font: 800 16px ui-monospace, monospace; }
+.binding div { display: grid; gap: 4px; }.binding strong { font-size: 12px; }.binding span { color: #778b82; font-size: 10px; }
+.primary { width: 100%; margin-top: 14px; color: #07120d; background: #65efaa; border-color: #65efaa; font-weight: 750; }
+.primary:hover { background: #80f7bc; }
+dl { display: grid; grid-template-columns: 1fr auto; gap: 14px; margin: 0; font-size: 12px; } dt { color: #7e9189; } dd { margin: 0; color: #d9e7e1; font-family: ui-monospace, monospace; }
+footer { display: flex; justify-content: space-between; min-height: 48px; padding: 15px 28px; color: #71847c; font-size: 11px; border-top: 1px solid rgba(255,255,255,.07); }
+code { color: #8cecbc; }.error { color: #ff8e8e; }
+@media (max-width: 700px), (max-height: 620px) { .grid { grid-template-columns: 1fr; } .panel { max-height: calc(100vh - 16px); } }
+@media (max-height: 760px) and (min-width: 701px) { :root { font-size: 12px; } label { margin: 8px 0; } .actions { margin-top: 9px; } }

@@ -1,0 +1,5 @@
+packages:
+  - nui/host
+  - nui/runtime
+  - npc/labels/web
+  - voice/web

@@ -1,0 +1,2 @@
+/* Composition-level stacking only; feature visuals remain feature-owned. */
+#app { z-index: 20; }

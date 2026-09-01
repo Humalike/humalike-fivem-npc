@@ -1,0 +1,17 @@
+{
+  "name": "@humalike/labels-nui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/main.ts",
+  "scripts": {
+    "check": "tsc --noEmit",
+    "test:unit": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@humalike/nui-runtime": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2"
+  }
+}

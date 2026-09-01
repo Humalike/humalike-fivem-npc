@@ -1,0 +1,21 @@
+{
+  "name": "@humalike/voice-nui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/main.ts",
+  "scripts": {
+    "build": "tsc --noEmit && vite build",
+    "check": "tsc --noEmit",
+    "dev": "vite --host 0.0.0.0",
+    "test:unit": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@humalike/nui-runtime": "workspace:*",
+    "livekit-client": "2.21.0"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2",
+    "vite": "8.1.5"
+  }
+}

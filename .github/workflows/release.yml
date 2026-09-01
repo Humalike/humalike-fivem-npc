@@ -1,0 +1,79 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.15.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: resources/humalike/pnpm-lock.yaml
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lua5.4
+          python -m pip install ruff==0.12.11
+      - name: Validate release tag
+        run: |
+          version="$(python -c 'import json; print(json.load(open("release.lock.json"))["product"]["version"])')"
+          test "${GITHUB_REF_NAME}" = "v${version}"
+      - name: Python checks
+        run: |
+          ruff check scripts tests
+          ruff format --check scripts tests
+          python -m unittest discover -s tests -v
+          python scripts/audit_public_release.py
+      - name: Lua checks
+        run: |
+          (cd resources/humalike/world && sh tests/run.sh)
+          (cd resources/humalike/npc && for test in tests/*.lua; do lua5.4 "$test"; done)
+          (cd resources/humalike/voice && for test in tests/*.lua; do lua5.4 "$test"; done)
+          find resources examples -name '*.lua' -print0 | xargs -0 -n1 luac5.4 -p
+      - name: NUI checks
+        working-directory: resources/humalike
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm check
+          pnpm test:unit
+          pnpm build
+          git diff --exit-code -- nui/host/dist
+      - name: Compose release
+        run: |
+          python scripts/compose_release.py --output artifacts
+          python scripts/compose_release.py --output artifacts-second
+          cmp artifacts/*.zip artifacts-second/*.zip
+          python scripts/audit_public_release.py --archive artifacts/*.zip
+          mkdir release-check
+          unzip -q artifacts/*.zip -d release-check
+          find release-check -name '*.lua' -print0 | xargs -0 -n1 luac5.4 -p
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            artifacts/* \
+            --verify-tag \
+            --title "HumaLike FiveM ${GITHUB_REF_NAME}" \
+            --generate-notes
