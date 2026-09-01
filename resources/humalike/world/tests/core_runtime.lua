@@ -80,11 +80,17 @@ assert(#timers == 3 and timers[3].delay >= 400 and timers[3].delay <= 600)
 timers[3].callback()
 assert(#requests == 3)
 
-local bootId = requests[3].payload.boot_id
-requests[3].callback(200, credentials(bootId))
+requests[3].callback(409, { error = { code = 'assignment_not_ready' } })
+assert(statuses[#statuses].detail == 'bootstrap failed with HTTP 409 code=assignment_not_ready')
+assert(#timers == 4 and timers[4].delay >= 800 and timers[4].delay <= 1200)
+timers[4].callback()
+assert(#requests == 4)
+
+local bootId = requests[4].payload.boot_id
+requests[4].callback(200, credentials(bootId))
 assert(statuses[#statuses].phase == 'ready')
 assert(HumaLike.RuntimeCredentials().bootId == bootId)
-assert(#timers == 4 and timers[4].delay >= 240000 and timers[4].delay <= 360000)
+assert(#timers == 5 and timers[5].delay >= 240000 and timers[5].delay <= 360000)
 
 local credentialsVisibleDuringStop = false
 AddEventHandler('humalike:core:stopping', function()

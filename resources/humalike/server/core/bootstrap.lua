@@ -103,8 +103,10 @@ function HumaLike.RequestBootstrap(reason, attempt, immediate)
                 end
                 HumaLike.SetStatus('degraded', 'edge runtime state unavailable')
             else
+                local errorCode = HumaLike.ErrorCode(payload)
                 HumaLike.SetStatus('degraded',
-                    ('bootstrap failed with HTTP %s'):format(status))
+                    ('bootstrap failed with HTTP %s code=%s'):format(
+                        status, errorCode or 'unknown'))
             end
             HumaLike.RequestBootstrap(reason, attempt + 1, false)
         end)

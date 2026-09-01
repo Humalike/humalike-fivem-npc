@@ -10,6 +10,8 @@ local voiceRevision = 0
 local authorityRequestInFlight = false
 local voiceRequestSequence = 0
 local pendingVoiceRequests = {}
+local assignmentRefreshPlayers = {}
+local requestVoiceSession
 
 local function runtimeServerId()
     local credentials = HumaLike.RuntimeCredentials()
@@ -77,15 +79,26 @@ end
 
 AddEventHandler('humalike:core:ready', function()
     authorityRequestInFlight = false
+    for playerId in pairs(pendingVoiceRequests) do
+        pendingVoiceRequests[playerId] = nil
+        assignmentRefreshPlayers[playerId] = true
+    end
     fullSnapshot()
+    for playerId in pairs(assignmentRefreshPlayers) do
+        assignmentRefreshPlayers[playerId] = nil
+        print(('[humalike] voice_session_retry reason=runtime_refreshed player_id=%d')
+            :format(playerId))
+        requestVoiceSession(playerId)
+    end
 end)
 
-RegisterNetEvent('humalike:world:requestVoiceSession', function()
-    local playerId = tonumber(source)
+requestVoiceSession = function(rawPlayerId)
+    local playerId = tonumber(rawPlayerId)
+    if playerId and assignmentRefreshPlayers[playerId] then return end
     local state = playerId and HumalikeWorldAuthority.players[playerId]
     local serverId = runtimeServerId()
     if not state or not serverId then
-        TriggerClientEvent('humalike:world:voiceSessionFailed', source, 409)
+        TriggerClientEvent('humalike:world:voiceSessionFailed', rawPlayerId, 409)
         return
     end
     voiceRequestSequence = voiceRequestSequence + 1
@@ -109,6 +122,14 @@ RegisterNetEvent('humalike:world:requestVoiceSession', function()
             TriggerClientEvent('humalike:world:voiceSessionFailed', playerId, 409)
             return
         end
+        if status == 409 and HumaLike.ErrorCode(response) == 'assignment_stale' then
+            pendingVoiceRequests[playerId] = nil
+            assignmentRefreshPlayers[playerId] = true
+            print(('[humalike] voice_assignment_stale server_id=%s player_id=%d action=refresh_runtime')
+                :format(serverId, playerId))
+            HumaLike.RequestBootstrap('voice assignment stale', 1, true)
+            return
+        end
         pendingVoiceRequests[playerId] = nil
         if status < 200 or status >= 300 or not response then
             TriggerClientEvent('humalike:world:voiceSessionFailed', playerId, status)
@@ -127,12 +148,17 @@ RegisterNetEvent('humalike:world:requestVoiceSession', function()
             expiresAt = response.expiresAt,
         })
     end)
+end
+
+RegisterNetEvent('humalike:world:requestVoiceSession', function()
+    requestVoiceSession(source)
 end)
 
 AddEventHandler('humalike:world:authorityChanged', function(delta)
     local playerId = tonumber(delta.playerId)
     if delta.kind == 'remove' then
         pendingVoiceRequests[playerId] = nil
+        assignmentRefreshPlayers[playerId] = nil
         queue(playerId, true)
         voiceSessions[playerId] = nil
     else
