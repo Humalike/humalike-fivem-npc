@@ -88,7 +88,7 @@ are intentionally kept outside this public repository.
 ## Security
 
 Do not report vulnerabilities in a public issue. Use
-[GitHub private vulnerability reporting](https://github.com/Humalike/humalike-fivem/security/advisories/new).
+[GitHub private vulnerability reporting](https://github.com/Humalike/humalike-fivem-npc/security/advisories/new).
 
 ## License
 

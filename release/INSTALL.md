@@ -1,7 +1,7 @@
 # Install HumaLike for FiveM
 
-1. Verify the archive using the adjacent `.sha256` file.
-2. Copy `resources/[humalike]/humalike` into your FXServer resources directory.
+1. Verify `humalike.zip` using the adjacent `.sha256` file.
+2. Extract the included `humalike` directory into your FXServer resources directory.
 3. Copy the required values from `humalike.example.cfg` into `server.cfg`.
 4. Keep the license behind `set`, never `setr`.
 5. Run `refresh`, then `ensure humalike`.

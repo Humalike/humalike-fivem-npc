@@ -146,35 +146,6 @@ def _export_resource(
         raise ReleaseError(f"{resource['name']} source does not exist at {source_path}")
     shutil.copytree(exported, destination)
 
-
-def _export_tree(
-    repository: Path,
-    revision: str,
-    relative: str,
-    destination: Path,
-    scratch: Path,
-) -> None:
-    archive = _run(
-        ["git", "archive", "--format=tar", revision, "--", relative],
-        cwd=repository,
-    )
-    snapshot = scratch / f"tree-{destination.name}"
-    snapshot.mkdir()
-    root = snapshot.resolve()
-    with tarfile.open(fileobj=io.BytesIO(archive), mode="r:") as bundle:
-        for member in bundle.getmembers():
-            target = (snapshot / member.name).resolve()
-            if target != root and root not in target.parents:
-                raise ReleaseError(f"archive contains unsafe path: {member.name}")
-            if member.issym() or member.islnk() or member.isdev():
-                raise ReleaseError(f"archive contains unsupported entry: {member.name}")
-        bundle.extractall(snapshot, filter="data")
-    source = snapshot / relative
-    if not source.is_dir():
-        raise ReleaseError(f"release tree does not exist: {relative}")
-    shutil.copytree(source, destination)
-
-
 def _strip_lua_comments(text: str) -> str:
     return re.sub(r"--[^\n]*", "", text)
 
@@ -279,7 +250,7 @@ def _release_manifest(lock: dict[str, Any], revision: str) -> dict[str, Any]:
         "schemaVersion": 2,
         "product": lock["product"],
         "source": {
-            "repository": "https://github.com/Humalike/humalike-fivem.git",
+            "repository": "https://github.com/Humalike/humalike-fivem-npc.git",
             "revision": revision,
         },
         "resources": [
@@ -298,7 +269,7 @@ def _write_deterministic_zip(source: Path, destination: Path) -> None:
         destination, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9
     ) as bundle:
         for path in sorted(item for item in source.rglob("*") if item.is_file()):
-            relative = path.relative_to(source.parent).as_posix()
+            relative = path.relative_to(source).as_posix()
             info = zipfile.ZipInfo(relative, date_time=FIXED_ZIP_TIME)
             info.compress_type = zipfile.ZIP_DEFLATED
             info.external_attr = 0o100644 << 16
@@ -319,20 +290,20 @@ def compose(lock_path: Path, output: Path, *, revision: str = "HEAD") -> Path:
             _read_revision_file(repository, resolved_revision, relative_lock)
         )
         lock = load_lock(committed_lock)
-    version = lock["product"]["version"]
-    product_directory_name = f"humalike-fivem-{version}"
+    resources = lock["resources"]
+    if len(resources) != 1:
+        raise ReleaseError("installable archive requires exactly one resource")
     output.mkdir(parents=True, exist_ok=True)
-    archive_path = output / f"{product_directory_name}.zip"
+    archive_path = output / f"{resources[0]['name']}.zip"
 
     with tempfile.TemporaryDirectory(prefix="humalike-release-") as temporary:
         scratch = Path(temporary)
-        product_root = scratch / product_directory_name
-        resources_root = product_root / "resources" / "[humalike]"
-        resources_root.mkdir(parents=True)
-        names = {resource["name"] for resource in lock["resources"]}
+        package_root = scratch / "package"
+        package_root.mkdir()
+        names = {resource["name"] for resource in resources}
 
-        for resource in lock["resources"]:
-            target = resources_root / resource["name"]
+        for resource in resources:
+            target = package_root / resource["name"]
             _export_resource(
                 repository,
                 resolved_revision,
@@ -341,32 +312,12 @@ def compose(lock_path: Path, output: Path, *, revision: str = "HEAD") -> Path:
                 scratch,
             )
             validate_resource(target, resource, names)
+            for name in ("LICENSE.md", "NOTICE"):
+                (target / name).write_bytes(
+                    _read_revision_file(repository, resolved_revision, name)
+                )
 
-        manifest = _release_manifest(lock, resolved_revision)
-        (product_root / "release-manifest.json").write_text(
-            json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-        )
-        (product_root / "INSTALL.md").write_bytes(
-            _read_revision_file(repository, resolved_revision, "release/INSTALL.md")
-        )
-        (product_root / "humalike.example.cfg").write_bytes(
-            _read_revision_file(
-                repository, resolved_revision, "release/humalike.example.cfg"
-            )
-        )
-        for name in ("COMPATIBILITY.md", "LICENSE.md", "NOTICE"):
-            (product_root / name).write_bytes(
-                _read_revision_file(repository, resolved_revision, name)
-            )
-        _export_tree(
-            repository,
-            resolved_revision,
-            "examples/humalike-adapter",
-            product_root / "examples" / "humalike-adapter",
-            scratch,
-        )
-
-        _write_deterministic_zip(product_root, archive_path)
+        _write_deterministic_zip(package_root, archive_path)
 
     digest = hashlib.sha256(archive_path.read_bytes()).hexdigest()
     checksum_path = archive_path.with_suffix(".zip.sha256")

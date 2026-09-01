@@ -107,21 +107,21 @@ class ComposeReleaseTest(unittest.TestCase):
         )
         with zipfile.ZipFile(first) as archive:
             names = archive.namelist()
-            self.assertTrue(
-                any(name.endswith("release-manifest.json") for name in names)
-            )
+            self.assertEqual(first.name, "humalike.zip")
+            self.assertTrue(all(name.startswith("humalike/") for name in names))
+            self.assertIn("humalike/fxmanifest.lua", names)
+            self.assertIn("humalike/client/main.lua", names)
             self.assertFalse(any("uncommitted-secret" in name for name in names))
-            self.assertTrue(
-                any(name.endswith("humalike.example.cfg") for name in names)
-            )
-            self.assertTrue(any("examples/humalike-adapter" in name for name in names))
-            self.assertTrue(any(name.endswith("LICENSE.md") for name in names))
-            self.assertTrue(any(name.endswith("NOTICE") for name in names))
-            manifest_name = next(
-                name for name in names if name.endswith("release-manifest.json")
-            )
-            manifest = json.loads(archive.read(manifest_name))
-            self.assertEqual(manifest["source"]["revision"], revision)
+            self.assertFalse(any("tests/" in name for name in names))
+            self.assertFalse(any("web/src/" in name for name in names))
+            self.assertIn("humalike/LICENSE.md", names)
+            self.assertIn("humalike/NOTICE", names)
+        manifest = json.loads(first.with_suffix(".manifest.json").read_text())
+        self.assertEqual(manifest["source"]["revision"], revision)
+        self.assertEqual(
+            manifest["source"]["repository"],
+            "https://github.com/Humalike/humalike-fivem-npc.git",
+        )
 
     def test_missing_manifest_asset_fails_the_release(self) -> None:
         lock, revision = self._commit_fixture(broken_world=True)
