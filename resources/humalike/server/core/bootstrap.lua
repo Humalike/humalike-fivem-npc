@@ -124,10 +124,10 @@ function HumaLike.RequestBootstrap(reason, attempt, immediate)
                 HumaLike.SetStatus('degraded', validationError)
             elseif status == 401 or status == 403 then
                 if HumaLike.ErrorCode(payload) ~= 'RUNTIME_LEASE_UNKNOWN' then
-                    HumaLike.SetStatus('unauthorized', 'license rejected by edge')
+                    HumaLike.SetStatus('unauthorized', 'license rejected by control plane')
                     return
                 end
-                HumaLike.SetStatus('degraded', 'edge runtime state unavailable')
+                HumaLike.SetStatus('degraded', 'control-plane runtime state unavailable')
             else
                 local errorCode = HumaLike.ErrorCode(payload)
                 HumaLike.SetStatus('degraded',

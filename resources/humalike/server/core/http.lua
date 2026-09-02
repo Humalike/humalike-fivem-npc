@@ -2,8 +2,8 @@ HumaLike = HumaLike or {}
 
 -- The public release targets production. Environment-specific release jobs
 -- replace this server-only constant; customers never configure service URLs.
-local bootstrapEdgeUrl = GetConvar(
-    'humalike_edge_url', 'https://edge.npc.prod.api.humalike.com')
+local controlPlaneUrl = GetConvar(
+    'humalike_control_plane_url', 'https://api.humalike.com')
 local rejectedVoiceToken = nil
 local voiceRetryAfter = 0
 local voiceRetryCooldownSeconds = 30
@@ -17,7 +17,7 @@ local function encodeObject(payload)
 end
 
 function HumaLike.EdgeRequest(action, token, payload, callback, targetUrl)
-    local edgeBaseUrl = targetUrl or bootstrapEdgeUrl
+    local edgeBaseUrl = targetUrl or controlPlaneUrl
     PerformHttpRequest(
         ('%s/v1/npc/actions/%s'):format(edgeBaseUrl, action),
         function(status, body, headers, errorData)
