@@ -1,6 +1,7 @@
 HumaLike = HumaLike or {}
 
 local runtime = nil
+local leaseKvp = 'humalike:runtime:lease:v1'
 
 local function validCredential(value)
     return type(value) == 'string' and #value >= 32
@@ -8,6 +9,12 @@ end
 
 local function validIdentifier(value)
     return type(value) == 'string' and value ~= '' and #value <= 128
+end
+
+function HumaLike.PreviousRuntimeLeaseId()
+    if type(GetResourceKvpString) ~= 'function' then return nil end
+    local value = GetResourceKvpString(leaseKvp)
+    return validIdentifier(value) and value or nil
 end
 
 local function validCallbackCredential(value)
@@ -52,6 +59,9 @@ function HumaLike.ReplaceRuntimeCredentials(payload, expectedBootId)
         callbackCurrent = payload.callback_current,
         callbackNext = payload.callback_next
     }
+    if type(SetResourceKvp) == 'function' then
+        SetResourceKvp(leaseKvp, payload.lease_id)
+    end
     return true
 end
 
