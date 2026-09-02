@@ -63,8 +63,8 @@ jobs:
           pnpm check
           pnpm test:unit
           pnpm build
-      - name: Verify committed voice NUI
-        run: git diff --exit-code -- resources/humalike/voice/web/dist
+      - name: Verify committed NUI
+        run: git diff --exit-code -- resources/humalike/nui/host/dist
       - name: Validate source Lua syntax
         run: find resources examples -name '*.lua' -print0 | xargs -0 -n1 luac5.4 -p
       - name: Validate release lock

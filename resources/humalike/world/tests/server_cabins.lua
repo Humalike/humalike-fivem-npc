@@ -2,7 +2,7 @@ local handlers, clientEvents, requests = {}, {}, {}
 local now = 5000
 
 WorldConfig = {
-    voice = { enabled = true, apiBaseUrl = 'https://voice.example', serverId = 'server-1' },
+    voice = { enabled = true },
     cabins = { enabled = true, retryIntervalMs = 2000,
         snapshotIntervalMs = 30000, startDelayMs = 1000 },
 }
@@ -17,7 +17,6 @@ AddEventHandler = function(name, callback) handlers[name] = callback end
 TriggerClientEvent = function(name, target, body)
     clientEvents[#clientEvents + 1] = { name = name, target = target, body = body }
 end
-GetConvar = function(name) return name == 'humalike_voice_server_secret' and 'secret' or '' end
 GetGameTimer = function() return now end
 PerformHttpRequest = function(url, callback, method, body, headers)
     requests[#requests + 1] = { url = url, callback = callback, method = method,
