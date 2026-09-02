@@ -7,6 +7,28 @@ local bootstrapInFlight = false
 local bootstrapScheduled = false
 local stopping = false
 
+local function sameEdgeAssignment(left, right)
+    return left and right
+        and left.edgeUrl == right.edgeUrl
+        and left.edgeNodeId == right.edgeNodeId
+        and left.edgeGeneration == right.edgeGeneration
+end
+
+local function announceRuntime(reason)
+    local credentials = HumaLike.RuntimeCredentials()
+    print(('[humalike] edge_runtime_installed node_id=%s generation=%s url=%s reason=%s')
+        :format(
+            credentials.edgeNodeId or 'legacy',
+            credentials.edgeGeneration or 0,
+            credentials.edgeUrl,
+            reason))
+    HumaLike.SetStatus('ready', reason)
+    TriggerEvent('humalike:core:ready', {
+        generation = generation,
+        reason = reason,
+    })
+end
+
 local function uuid4()
     local template = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'
     return template:gsub('[xy]', function(character)
@@ -22,11 +44,7 @@ local function installRuntime(payload, reason)
     generation = generation + 1
     bootstrapInFlight = false
     bootstrapScheduled = false
-    HumaLike.SetStatus('ready', reason)
-    TriggerEvent('humalike:core:ready', {
-        generation = generation,
-        reason = reason,
-    })
+    announceRuntime(reason)
     return true
 end
 
@@ -45,10 +63,18 @@ local function scheduleRenewal(expectedGeneration, attempt)
         }, function(status, payload)
             if stopping or generation ~= expectedGeneration then return end
             if status == 200 then
+                local previous = HumaLike.RuntimeCredentials()
                 local ok, validationError = HumaLike.ReplaceRuntimeCredentials(payload, bootId)
                 if ok then
-                    HumaLike.SetStatus('ready', 'runtime credentials renewed')
-                    scheduleRenewal(expectedGeneration, 1)
+                    local current = HumaLike.RuntimeCredentials()
+                    if not sameEdgeAssignment(previous, current) then
+                        generation = generation + 1
+                        announceRuntime('edge assignment changed during renewal')
+                        scheduleRenewal(generation, 1)
+                    else
+                        HumaLike.SetStatus('ready', 'runtime credentials renewed')
+                        scheduleRenewal(expectedGeneration, 1)
+                    end
                     return
                 end
                 HumaLike.SetStatus('degraded', validationError)
