@@ -85,6 +85,13 @@ The release composer reads committed files only and emits a deterministic ZIP,
 SHA-256 checksum and provenance manifest. Deployment automation and credentials
 are intentionally kept outside this public repository.
 
+## Contributing
+
+We welcome focused pull requests. Read [CONTRIBUTING.md](CONTRIBUTING.md) before
+changing public contracts, integration behavior, or communication with
+HumaLike. Discuss larger features with us on
+[Discord](https://discord.gg/7bZFjm9aHH) before implementation.
+
 ## Security
 
 Do not report vulnerabilities in a public issue. Use
