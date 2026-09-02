@@ -13,6 +13,8 @@ local function directTargetReady(npcId)
 end
 
 local function voiceMuted(npcId, entry)
+    if HumalikeNpcRuntimeControl
+        and HumalikeNpcRuntimeControl.IsVoiceUnavailable(npcId) then return true end
     local ready = directTargetReady(npcId)
     if HumalikeNpcDirectTargets and HumalikeNpcDirectTargets.IsExclusive
         and HumalikeNpcDirectTargets.IsExclusive() == true then

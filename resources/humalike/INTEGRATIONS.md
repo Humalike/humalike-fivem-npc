@@ -143,6 +143,36 @@ The standalone player provider has no job system. Empty job requirements pass;
 any configured job requirement is denied until a player provider implements
 `HasJob`.
 
+## NPC runtime control
+
+Server resources can temporarily take over selected AI domains without
+changing the NPC definition or its entity binding:
+
+```lua
+local lease, err = exports.humalike:AcquireNpcControl(npcId, {
+    domains = { 'movement', 'animation' },
+    ttlMs = 30000,
+    reason = 'hostage_scenario',
+})
+```
+
+The domains are `movement`, `animation`, `speech`, `perception` and `all`.
+`all` must be requested alone. A conflicting lease is rejected atomically.
+TTL must be between 1 second and 5 minutes.
+
+```lua
+local renewed, renewErr = exports.humalike:RenewNpcControl(lease.id, 30000)
+local released, releaseErr = exports.humalike:ReleaseNpcControl(lease.id)
+local state, stateErr = exports.humalike:GetNpcRuntimeState(npcId)
+```
+
+Only the resource that acquired a lease can renew or release it. Leases expire
+at their TTL, when their owner resource stops, when the NPC disappears, or when
+an ambient NPC receives a new runtime incarnation. `GetNpcRuntimeState` returns
+the current entity and network ID, routing bucket, NPC kind, AI status and the
+owner of each controlled domain. Callers should use `networkId` across event or
+network boundaries; `entity` is only a local server handle.
+
 ## Neutral events
 
 Server integrations can translate their own event bus with

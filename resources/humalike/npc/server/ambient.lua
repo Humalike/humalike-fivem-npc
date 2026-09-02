@@ -258,7 +258,7 @@ local function applyLeaseSnapshot(body)
     return freshLeases
 end
 
-AmbientNpcLeases = {} -- current server handle -> { npc_id, lease_token, entity_id }
+AmbientNpcLeases = {} -- network id -> lease
 function HumalikeFindAmbientLease(npcId)
     if type(npcId) ~= 'string' then return nil end
     for _, lease in pairs(activeLeases) do
@@ -270,6 +270,7 @@ function HumalikeFindAmbientLease(npcId)
                 network_id = lease.entity_id,
                 entity_handle = entity,
                 routing_bucket = lease.routing_bucket,
+                lease_token = lease.lease_token,
             }
         end
     end

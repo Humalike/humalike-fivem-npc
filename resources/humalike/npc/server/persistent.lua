@@ -64,6 +64,10 @@ function EnsurePersistentNpc(entry, refreshBinding)
         ReplayNpcPoseWhenReady(entry.npc_id, pose,
             function() return DoesEntityExist(ped) end,
             function()
+                if HumalikeNpcRuntimeControl then
+                    local allowed = HumalikeNpcRuntimeControl.AllowsAction(entry.npc_id, pose)
+                    if not allowed then return true end
+                end
                 local reporter = Entity(ped).state.humalike_position_reporter
                 if type(reporter) ~= 'number' or not GetPlayerName(reporter) then
                     return false

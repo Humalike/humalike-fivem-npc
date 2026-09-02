@@ -79,6 +79,13 @@ function HumalikeApplyVoiceMuteSnapshot(body)
     voiceMuteBody = body
     return true
 end
+local blockedAction
+HumalikeNpcRuntimeControl = {
+    AllowsAction = function(_, action)
+        if action == blockedAction then return false, 'npc_domain_controlled' end
+        return true
+    end,
+}
 
 dofile('server/inbound.lua')
 
@@ -98,6 +105,17 @@ local status = request({
 })
 assert(status == 200)
 assert(#clientEvents == 1 and clientEvents[1].name == 'humalike:npc:playAction')
+
+blockedAction = 'wave'
+local _, controlled = request({
+    invocation_id = 'static-wave-controlled',
+    target = { kind = 'static', npc_id = 'static-1' },
+    action = 'wave',
+    params = {},
+})
+assert(controlled.ok == false and controlled.reason == 'npc_domain_controlled')
+assert(#clientEvents == 1)
+blockedAction = nil
 
 status = request({ npc_id = 'static-1', action = 'wave', params = {} })
 assert(status == 400)
@@ -200,8 +218,10 @@ assert(#clientEvents == ceBefore + 1)
 assert(clientEvents[#clientEvents].name == 'humalike:npc:playAction')
 assert(clientEvents[#clientEvents].action == 'hand_over_money')
 assert(#recordedPoses == posesBefore, 'a handover is not a remembered pose')
+blockedAction = 'hand_over_money'
 assert(request(robbery) == 200)
 assert(handOverCalls == 1, 'a retried robbery does not pay twice')
+blockedAction = nil
 handOverResult = false
 local ceReject = #clientEvents
 local _, rejected = request({
