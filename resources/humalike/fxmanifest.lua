@@ -116,5 +116,6 @@ client_scripts {
     'npc/client/direct_targets.lua',
     'npc/client/labels.lua',
     'voice/client/ptt.lua',
+    'voice/client/audiohub.lua',
     'voice/client/main.lua'
 }

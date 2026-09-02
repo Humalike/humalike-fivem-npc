@@ -1,5 +1,6 @@
 import "./style.css";
 import { AudioEngine, type MicrophonePipeline } from "./audio";
+import { acquireMicrophoneSource, HubUnavailableError, type MicrophoneSourceHandle } from "./audiohub";
 import { ControlClient, type ControlStatus } from "./control";
 import { MediaClient, type MediaStatus } from "./media";
 import { CAPABILITY_AUTHORITATIVE_VEHICLE_CABINS, CAPABILITY_DIRECT_NPC_TARGETS, PROTOCOL_VERSION, type GameRealtimeState, type Route, type ServerMessage, type Vec3 } from "./protocol";
@@ -210,17 +211,28 @@ async function connectMedia(url: string, token: string, expectedServerId: string
 }
 
 async function connectMicrophone(client: MediaClient, engine: AudioEngine): Promise<void> {
+  let source: MicrophoneSourceHandle | null = null;
   let pipeline: MicrophonePipeline | null = null;
   try {
-    pipeline = await engine.microphone(settings.inputDevice, settings.microphoneGain);
+    source = await acquireMicrophoneSource({
+      deviceId: settings.inputDevice,
+      onLost: () => { if (media === client) retrySession("Utracono współdzielony mikrofon (audio hub)"); },
+    });
+    if (media !== client) { source.release(); return; }
+    const kind = source.kind;
+    pipeline = engine.microphone(source, settings.microphoneGain);
+    source = null;
     if (media !== client) { pipeline.close(); return; }
     microphone?.close(); microphone = pipeline;
     await client.publish(pipeline.track);
     await syncMediaTransmitting(txActive);
     await refreshDevices();
     clearError();
-    byId("output-hint").textContent = "Mikrofon WebRTC jest aktywny.";
+    byId("output-hint").textContent = kind === "hub"
+      ? "Mikrofon WebRTC jest aktywny (współdzielone przechwytywanie audio hub)."
+      : "Mikrofon WebRTC jest aktywny.";
   } catch (error) {
+    source?.release();
     pipeline?.close();
     if (media !== client) return;
     fail(microphoneError(error));
@@ -431,6 +443,9 @@ function clearError(): void { byId("error").textContent = ""; }
 function microphoneError(error: unknown): string {
   if (error instanceof DOMException && (error.name === "NotAllowedError" || error.name === "PermissionDeniedError")) {
     return "Brak zgody na mikrofon. Otwórz F8, zaakceptuj Capture your microphone, potem kliknij Połącz ponownie w /voice.";
+  }
+  if (error instanceof HubUnavailableError) {
+    return `Współdzielony mikrofon (audio hub) nie dostarczył dźwięku: ${error.message}. Kliknij Połącz ponownie albo sprawdź zasób audio hub.`;
   }
   return error instanceof Error ? `Mikrofon WebRTC: ${error.message}` : "Nie udało się uruchomić mikrofonu WebRTC";
 }

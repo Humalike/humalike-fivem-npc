@@ -11,6 +11,7 @@ Config.Integrations = {
     dispatch = GetConvar('humalike_dispatch', 'auto'),
     actions = GetConvar('humalike_actions', 'auto'),
     interaction = GetConvar('humalike_interaction', 'auto'),
+    audiohub = GetConvar('humalike_audiohub', 'auto'),
 }
 
 Config.PlayerSessionSyncIntervalMs = 15000

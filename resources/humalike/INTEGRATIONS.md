@@ -13,6 +13,7 @@ set humalike_inventory auto
 set humalike_dispatch auto
 set humalike_actions auto
 set humalike_interaction auto
+set humalike_audiohub auto
 ```
 
 Use a provider name to force one domain, or `none` to disable it. If multiple
@@ -125,6 +126,62 @@ Each option contains `text`, optional `icon`, `canInteract(entity)` and
 Client providers can call `UnregisterInteractionProvider(name)` explicitly.
 `GetInteractionProviderStatus()` reports the client runtime epoch and current
 selection.
+
+## Client audio hub (shared microphone)
+
+Each NUI resource is its own CEF frame, so every resource that wants
+microphone audio normally opens its own `getUserMedia` capture. Servers that
+run a shared-microphone resource — one capture, relayed to consumer frames
+over a loopback `RTCPeerConnection` — can register an audio hub adapter so
+the HumaLike voice NUI attaches to that shared capture instead of opening a
+second one. Without an adapter (the default), voice opens the device itself.
+
+Register from the integration resource's client script:
+
+```lua
+exports.humalike:RegisterAudioHub({
+    name = 'my_audiohub', apiVersion = 1, priority = 100,
+    Available = function() return GetResourceState('my-audiohub') == 'started' end,
+    Attach = function(id, options)
+        -- options = { track = boolean, level = boolean }
+        -- Forward to the hub; return false to refuse (voice falls back to
+        -- its own capture). Any other return value counts as accepted.
+    end,
+    Detach = function(id) end,
+    Signal = function(id, payload)
+        -- payload is an opaque WebRTC offer/answer/ICE blob from the voice
+        -- NUI. Only negotiation crosses this bridge; audio never does.
+    end,
+})
+```
+
+The adapter pushes hub responses back with
+`exports.humalike:AudioHubDeliver(id, action, data)`, where `action` is
+`'signal'` (a WebRTC blob for the voice NUI) or `'state'` (a table like
+`{ capturing = boolean, error = string?, pending = boolean? }`). Delivery is
+accepted only from the resource that owns the session, and only for ids
+HumaLike attached. Report `pending = true` while a capture attempt (for
+example a permission prompt) is in flight, and `capturing = false` with an
+`error` when the hub cannot supply audio, so voice can react before its
+negotiation timeout.
+
+Semantics:
+
+- The hub owns the capture device and constraints; the voice input-device
+  selection applies only to the local fallback.
+- If no adapter is available the attach is answered `available = false` and
+  voice opens its own capture — standalone behavior is unchanged.
+- If an adapter accepted the attach but the relay fails, voice retries
+  against the hub and then reports an error instead of opening a second
+  concurrent capture alongside the hub's.
+- When the adapter's resource stops or unregisters, open sessions receive a
+  `state` of `capturing = false, error = 'hub-stopped'` automatically.
+- Adapters follow the shared lifecycle: register on their own start and again
+  after `humalike:integration:ready`. `UnregisterAudioHub(name)` removes an
+  adapter; `GetAudioHubStatus()` reports the setting, resolution state,
+  selected adapter and open session count.
+- Voice currently attaches with `options.track = true, level = false`; the
+  `level` flag is reserved for future loudness-only consumers.
 
 ## Resource lifecycle
 

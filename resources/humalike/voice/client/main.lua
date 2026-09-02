@@ -106,6 +106,7 @@ RegisterNUICallback('ready', function(data, callback)
     callback({ ok = true })
     if bootChanged then
         HumalikeNpcDirectTargets.SetAvailable(false)
+        HumalikeVoiceAudioHub.Reset()
         syncNuiState()
         requestSession()
     end
