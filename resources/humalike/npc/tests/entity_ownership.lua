@@ -7,6 +7,7 @@ local models = { [101] = 10, [202] = 10, [303] = 10, [404] = 10, [505] = 11 }
 local buckets = { [101] = 0, [202] = 2, [303] = 2, [404] = 2, [505] = 2 }
 local states = {}
 local managed = 101
+local runtimeStatePublishes = 0
 
 NpcRegistry = {
     ['external-1'] = { npc_id = 'external-1', type = 'external', model = 'model-one' },
@@ -16,6 +17,9 @@ NpcRegistry = {
     },
 }
 HumaLike = { RuntimeCredentials = function() return { bootId = 'boot-1' } end }
+HumalikeNpcRuntimeState = {
+    Publish = function() runtimeStatePublishes = runtimeStatePublishes + 1 end,
+}
 function exports(name, callback) exported[name] = callback end
 function GetInvokingResource() return invoking end
 function GetCurrentResourceName() return 'humalike' end
@@ -97,10 +101,14 @@ assert(externalDespawnError == 'npc_not_static')
 local despawn = assert(exported.DespawnNpc('static-1'))
 assert(despawn.runtimeToken == nil and managed == nil)
 assert(HumalikeNpcEntityOwnership.IsDespawned('static-1'))
+assert(HumalikeNpcEntityOwnership.SuppressedStaticNpcIds()[1] == 'static-1')
+assert(runtimeStatePublishes == 1)
 invoking = 'mission-two'
 assert(exported.RespawnNpc('static-1') == false)
 invoking = 'mission-one'
 assert(exported.RespawnNpc('static-1') == true and managed == 101)
+assert(#HumalikeNpcEntityOwnership.SuppressedStaticNpcIds() == 0)
+assert(runtimeStatePublishes == 2)
 
 local rebound = assert(exported.BindNpcEntity('external-1', 52, { routingBucket = 2 }))
 exists[202] = false

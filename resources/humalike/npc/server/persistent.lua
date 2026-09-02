@@ -2,6 +2,8 @@
 PersistentNpcEntities = {}
 local bindingInFlight = {}
 local bindingRemovalPending = {}
+local bindingRemovalCount = {}
+local deferredBinding = {}
 
 local function unsignedHash(value)
     return value < 0 and value + 4294967296 or value
@@ -14,6 +16,10 @@ local function activeEntity(npcId)
 end
 
 function RegisterPersistentNpcBinding(entry, ped)
+    if (bindingRemovalCount[entry.npc_id] or 0) > 0 then
+        deferredBinding[entry.npc_id] = { entry = entry, ped = ped }
+        return
+    end
     local credentials = HumaLike.RuntimeCredentials()
     if not credentials then return end
     local networkId = NetworkGetNetworkIdFromEntity(ped)
@@ -53,6 +59,7 @@ function RemovePersistentNpcRuntimeBinding(npcId, runtimeToken, attempt)
     if not attempt then
         if bindingRemovalPending[key] then return end
         bindingRemovalPending[key] = true
+        bindingRemovalCount[npcId] = (bindingRemovalCount[npcId] or 0) + 1
     end
     attempt = attempt or 1
     local credentials = HumaLike.RuntimeCredentials()
@@ -70,6 +77,15 @@ function RemovePersistentNpcRuntimeBinding(npcId, runtimeToken, attempt)
     }, function(ok)
         if ok then
             bindingRemovalPending[key] = nil
+            bindingRemovalCount[npcId] = math.max(0, (bindingRemovalCount[npcId] or 1) - 1)
+            if bindingRemovalCount[npcId] == 0 then
+                bindingRemovalCount[npcId] = nil
+                local deferred = deferredBinding[npcId]
+                deferredBinding[npcId] = nil
+                if deferred then
+                    RegisterPersistentNpcBinding(deferred.entry, deferred.ped)
+                end
+            end
             return
         end
         local delay = math.min(500 * (2 ^ math.min(attempt - 1, 6)), 30000)

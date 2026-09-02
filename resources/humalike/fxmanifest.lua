@@ -47,6 +47,7 @@ server_scripts {
     'integration/providers/ox_inventory/server.lua',
     'integration/providers/qb_inventory/server.lua',
     'npc/server/http.lua',
+    'npc/server/runtime_state.lua',
     'npc/server/pose_ledger.lua',
     'npc/server/pose_threat.lua',
     'npc/server/entity_ownership.lua',

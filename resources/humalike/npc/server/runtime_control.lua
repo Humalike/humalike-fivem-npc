@@ -13,9 +13,7 @@ local ACTION_DOMAINS = {
 local DEFAULT_TTL_MS, MIN_TTL_MS, MAX_TTL_MS = 30000, 1000, 300000
 
 local leases, domainsByNpc = {}, {}
-local sequence, revision = 0, 0
-local syncInFlight, syncQueued, retryAttempt = false, false, 0
-local retryScheduled, retryGeneration = false, 0
+local sequence, clientRevision = 0, 0
 
 local function nowMs() return GetGameTimer() end
 
@@ -96,7 +94,7 @@ local function publicDomains()
     return result
 end
 
-local function edgeSnapshot()
+function HumalikeNpcRuntimeControl.EdgeControls()
     local npcs = {}
     for npcId, held in pairs(domainsByNpc) do
         local domains = {}
@@ -105,56 +103,13 @@ local function edgeSnapshot()
         npcs[#npcs + 1] = { npc_id = npcId, domains = domains }
     end
     table.sort(npcs, function(left, right) return left.npc_id < right.npc_id end)
-    local credentials = HumaLike.RuntimeCredentials()
-    return { boot_id = credentials and credentials.bootId or '', revision = revision, npcs = npcs }
-end
-
-local function cancelRetry()
-    retryGeneration = retryGeneration + 1
-    retryScheduled = false
-end
-
-local syncControls
-local function scheduleRetry()
-    if retryScheduled then return end
-    retryScheduled = true
-    retryGeneration = retryGeneration + 1
-    local generation = retryGeneration
-    SetTimeout(500 * (2 ^ (retryAttempt - 1)), function()
-        if not retryScheduled or retryGeneration ~= generation then return end
-        retryScheduled = false
-        syncControls()
-    end)
-end
-
-syncControls = function()
-    if syncInFlight or not HumaLike.RuntimeCredentials() then
-        syncQueued = true
-        return
-    end
-    cancelRetry()
-    syncInFlight, syncQueued = true, false
-    local sentRevision = revision
-    HumalikeHttp.PostAction('sync_npc_runtime_controls', edgeSnapshot(), function(ok)
-        syncInFlight = false
-        if ok then
-            retryAttempt = 0
-            cancelRetry()
-        else
-            retryAttempt = math.min(retryAttempt + 1, 6)
-        end
-        if syncQueued or revision ~= sentRevision then
-            syncControls()
-        elseif not ok then
-            scheduleRetry()
-        end
-    end)
+    return npcs
 end
 
 local function publish()
-    revision = revision + 1
-    TriggerClientEvent('humalike:npc:runtimeControlSnapshot', -1, revision, publicDomains())
-    syncControls()
+    clientRevision = clientRevision + 1
+    TriggerClientEvent('humalike:npc:runtimeControlSnapshot', -1, clientRevision, publicDomains())
+    HumalikeNpcRuntimeState.Publish()
 end
 
 local function releaseLease(lease)
@@ -320,10 +275,8 @@ end)
 
 RegisterNetEvent('humalike:npc:requestRuntimeControls')
 AddEventHandler('humalike:npc:requestRuntimeControls', function()
-    TriggerClientEvent('humalike:npc:runtimeControlSnapshot', source, revision, publicDomains())
+    TriggerClientEvent('humalike:npc:runtimeControlSnapshot', source, clientRevision, publicDomains())
 end)
-
-AddEventHandler('humalike:core:ready', syncControls)
 
 AddEventHandler('onResourceStop', function(resourceName)
     if resourceName == GetCurrentResourceName() then return end

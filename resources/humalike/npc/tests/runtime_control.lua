@@ -65,6 +65,7 @@ HumaLike = {
 }
 HumalikeNpcEntityOwnership = {
     ExternalEntity = function(npcId) return npcId == 'external-1' and 303 or nil end,
+    SuppressedStaticNpcIds = function() return { 'static-offline' } end,
     State = function(npcId)
         return npcId == 'external-1' and { entityOwner = 'external', bindingId = 'binding-1' }
             or { entityOwner = 'humalike' }
@@ -77,6 +78,7 @@ HumalikeHttp = {
     end,
 }
 
+dofile('server/runtime_state.lua')
 dofile('server/runtime_control.lua')
 
 local state = assert(exported.GetNpcRuntimeState('static-1'))
@@ -94,8 +96,9 @@ local lease = assert(exported.AcquireNpcControl('static-1', {
     domains = { 'movement', 'animation' }, ttlMs = 30000, reason = 'mission',
 }))
 assert(lease.ownerResource == 'mission-one' and lease.expiresInMs == 30000)
-assert(posts[#posts].name == 'sync_npc_runtime_controls')
-assert(posts[#posts].body.npcs[1].npc_id == 'static-1')
+assert(posts[#posts].name == 'sync_npc_runtime_state')
+assert(posts[#posts].body.controls[1].npc_id == 'static-1')
+assert(posts[#posts].body.suppressed_static_npc_ids[1] == 'static-offline')
 assert(clientEvents[#clientEvents].controls['static-1'].movement == true)
 assert(entityStates[101].humalike_action == nil, 'takeover stops sustained HumaLike actions')
 assert(forgottenPoses[#forgottenPoses] == 'static-1', 'animation takeover forgets replayable poses')

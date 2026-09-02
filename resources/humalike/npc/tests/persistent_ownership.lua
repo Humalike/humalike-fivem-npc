@@ -72,6 +72,23 @@ assert(external.entity_id == nil and external.network_id == nil and external.run
 local entry = { npc_id = 'static-1', type = 'static', model = 'model-one' }
 assert(EnsurePersistentNpc(entry) == 303)
 assert(created == 1 and PersistentNpcEntities['static-1'] == 303)
+delayedCallback(true, 200, { runtime_token = 'static-token' })
+
+local removalCallback
+HumalikeHttp.PostAction = function(name, body, callback)
+    posts[#posts + 1] = { name = name, body = body }
+    if name == 'remove_npc_runtime_binding' then
+        removalCallback = callback
+    else
+        callback(true, 200, { runtime_token = 'replacement-token' })
+    end
+end
+RemovePersistentNpcRuntimeBinding('static-1', 'old-token')
+local postsBeforeDeferredBinding = #posts
+RegisterPersistentNpcBinding(entry, 303)
+assert(#posts == postsBeforeDeferredBinding, 'rebind waits for pending removal')
+removalCallback(true, 200, { removed = true })
+assert(posts[#posts].name == 'upsert_npc_runtime_binding')
 
 local attempts = 0
 HumalikeHttp.PostAction = function(name, body, callback)

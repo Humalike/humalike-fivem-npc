@@ -86,6 +86,13 @@ function HumalikeNpcEntityOwnership.IsDespawned(npcId)
     return despawnByNpc[npcId] ~= nil
 end
 
+function HumalikeNpcEntityOwnership.SuppressedStaticNpcIds()
+    local result = {}
+    for npcId in pairs(despawnByNpc) do result[#result + 1] = npcId end
+    table.sort(result)
+    return result
+end
+
 function HumalikeNpcEntityOwnership.SetRuntimeToken(npcId, entity, token)
     local record = bindingByNpc[npcId]
     if record and record.entity == entity then record.runtimeToken = token end
@@ -145,7 +152,6 @@ function HumalikeNpcEntityOwnership.Resync()
             RegisterPersistentNpcBinding(entry, record.entity)
         end
     end
-    for npcId, record in pairs(despawnByNpc) do invalidate(npcId, record.runtimeToken) end
 end
 
 exports('BindNpcEntity', function(npcId, networkId, options)
@@ -240,6 +246,7 @@ exports('DespawnNpc', function(npcId)
     RemovePersistentNpc(npcId)
     invalidate(npcId, record.runtimeToken)
     clearEntry(entry)
+    HumalikeNpcRuntimeState.Publish()
     local result = copy(record)
     result.runtimeToken = nil
     return result
@@ -252,6 +259,7 @@ exports('RespawnNpc', function(npcId)
     if not record then return false, 'despawn_not_found' end
     if record.ownerResource ~= invoking then return false, 'not_owner' end
     despawnByNpc[npcId] = nil
+    HumalikeNpcRuntimeState.Publish()
     local entry = NpcRegistry and NpcRegistry[npcId]
     local entity = entry and EnsurePersistentNpc(entry) or nil
     if entity then TriggerClientEvent('humalike:npc:npcAdded', -1, entry) end
@@ -269,6 +277,7 @@ AddEventHandler('onResourceStop', function(resourceName)
     for npcId, record in pairs(copy(despawnByNpc)) do
         if record.ownerResource == resourceName then
             despawnByNpc[npcId] = nil
+            HumalikeNpcRuntimeState.Publish()
             local entry = NpcRegistry and NpcRegistry[npcId]
             local entity = entry and EnsurePersistentNpc(entry) or nil
             if entity then TriggerClientEvent('humalike:npc:npcAdded', -1, entry) end
