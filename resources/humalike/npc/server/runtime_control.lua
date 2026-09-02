@@ -15,6 +15,7 @@ local DEFAULT_TTL_MS, MIN_TTL_MS, MAX_TTL_MS = 30000, 1000, 300000
 local leases, domainsByNpc = {}, {}
 local sequence, revision = 0, 0
 local syncInFlight, syncQueued, retryAttempt = false, false, 0
+local retryScheduled, retryGeneration = false, 0
 
 local function nowMs() return GetGameTimer() end
 
@@ -94,23 +95,45 @@ local function edgeSnapshot()
     return { boot_id = credentials and credentials.bootId or '', revision = revision, npcs = npcs }
 end
 
-local function syncControls()
+local function cancelRetry()
+    retryGeneration = retryGeneration + 1
+    retryScheduled = false
+end
+
+local syncControls
+local function scheduleRetry()
+    if retryScheduled then return end
+    retryScheduled = true
+    retryGeneration = retryGeneration + 1
+    local generation = retryGeneration
+    SetTimeout(500 * (2 ^ (retryAttempt - 1)), function()
+        if not retryScheduled or retryGeneration ~= generation then return end
+        retryScheduled = false
+        syncControls()
+    end)
+end
+
+syncControls = function()
     if syncInFlight or not HumaLike.RuntimeCredentials() then
         syncQueued = true
         return
     end
+    cancelRetry()
     syncInFlight, syncQueued = true, false
     local sentRevision = revision
     HumalikeHttp.PostAction('sync_npc_runtime_controls', edgeSnapshot(), function(ok)
         syncInFlight = false
-        if ok then retryAttempt = 0 else
+        if ok then
+            retryAttempt = 0
+            cancelRetry()
+        else
             retryAttempt = math.min(retryAttempt + 1, 6)
-            local expectedRevision = revision
-            SetTimeout(500 * (2 ^ (retryAttempt - 1)), function()
-                if revision == expectedRevision then syncControls() end
-            end)
         end
-        if syncQueued or revision ~= sentRevision then syncControls() end
+        if syncQueued or revision ~= sentRevision then
+            syncControls()
+        elseif not ok then
+            scheduleRetry()
+        end
     end)
 end
 
@@ -166,10 +189,33 @@ local function acquire(npcId, options, owner)
     local held = domainsByNpc[npcId] or {}
     domainsByNpc[npcId] = held
     for _, domain in ipairs(requested) do held[domain] = lease.id end
+    HumalikeNpcRuntimeControl.NeutralizeAction(npcId, requested)
     publish()
     local result = copy(lease)
     result.expiresInMs, result.expiresAtMs, result.incarnation = ttl, nil, nil
     return result
+end
+
+function HumalikeNpcRuntimeControl.NeutralizeAction(npcId, domains)
+    local controlled = {}
+    for _, domain in ipairs(domains) do controlled[domain] = true end
+    if controlled.animation or controlled.all then
+        if ForgetNpcPose then ForgetNpcPose(npcId) end
+    end
+
+    local kind, target = targetForNpc(npcId)
+    if not kind then return end
+    local entity = kind == 'static' and target.entity_id or target.entity_handle
+    if kind == 'ambient' and (not entity or not DoesEntityExist(entity))
+        and HumalikeResolveAmbientEntity then
+        entity = HumalikeResolveAmbientEntity(target.entity_id)
+    end
+    if not entity or not DoesEntityExist(entity) then return end
+    local action = Entity(entity).state.humalike_action
+    local domain = type(action) == 'table' and ACTION_DOMAINS[action.key] or nil
+    if domain and (controlled.all or controlled[domain]) then
+        Entity(entity).state:set('humalike_action', nil, true)
+    end
 end
 
 function HumalikeNpcRuntimeControl.AllowsAction(npcId, action)

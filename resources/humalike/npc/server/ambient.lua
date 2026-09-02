@@ -413,6 +413,10 @@ function HumalikeApplyAmbientLeaseSnapshot(body)
                 return current ~= nil and current.lease_token == lease.lease_token
                     and resolveAmbientEntity(lease.entity_id) ~= nil
             end, function()
+                if HumalikeNpcRuntimeControl then
+                    local allowed = HumalikeNpcRuntimeControl.AllowsAction(lease.npc_id, pose)
+                    if not allowed then return true end
+                end
                 local entity = resolveAmbientEntity(lease.entity_id)
                 local sent = entity and SendAmbientActionToOwner(target, entity, pose, {}) or false
                 if sent and RefreshNpcPoseTarget then

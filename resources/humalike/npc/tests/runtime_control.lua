@@ -3,6 +3,11 @@ local owner = 'mission-one'
 local now = 1000
 local cleanupThread
 local ambientToken = 'ambient-token-1'
+local forgottenPoses = {}
+local entityStates = {
+    [101] = { humalike_action = { key = 'follow_player', params = { player_id = 7 } } },
+    [202] = { humalike_action = { key = 'kneel', params = {} } },
+}
 source = 7
 
 NpcRegistry = {
@@ -28,6 +33,12 @@ end
 function CreateThread(callback) cleanupThread = callback end
 function Wait() coroutine.yield() end
 function SetTimeout(_, callback) callback() end
+function Entity(entity)
+    local state = entityStates[entity]
+    state.set = function(_, key, value) state[key] = value end
+    return { state = state }
+end
+function ForgetNpcPose(npcId) forgottenPoses[#forgottenPoses + 1] = npcId end
 function HumalikeFindAmbientLease(npcId)
     if npcId == 'ambient-1' then
         return {
@@ -58,6 +69,8 @@ assert(lease.ownerResource == 'mission-one' and lease.expiresInMs == 30000)
 assert(posts[#posts].name == 'sync_npc_runtime_controls')
 assert(posts[#posts].body.npcs[1].npc_id == 'static-1')
 assert(clientEvents[#clientEvents].controls['static-1'].movement == true)
+assert(entityStates[101].humalike_action == nil, 'takeover stops sustained HumaLike actions')
+assert(forgottenPoses[#forgottenPoses] == 'static-1', 'animation takeover forgets replayable poses')
 
 local controlled = assert(exported.GetNpcRuntimeState('static-1'))
 assert(controlled.controlledDomains.movement.ownerResource == 'mission-one')
@@ -87,6 +100,7 @@ local ambient = assert(exported.AcquireNpcControl('ambient-1', {
 }))
 assert(ambient.kind == 'ambient')
 assert(HumalikeNpcRuntimeControl.AllowsAction('ambient-1', 'give_item') == false)
+assert(entityStates[202].humalike_action == nil, 'all takeover also stops ambient actions')
 handlers.onResourceStop('mission-one')
 assert(HumalikeNpcRuntimeControl.AllowsAction('ambient-1', 'give_item') == true)
 
@@ -107,5 +121,31 @@ assert(ownerError == 'external_resource_required')
 handlers['humalike:npc:requestRuntimeControls']()
 assert(clientEvents[#clientEvents].target == 7)
 assert(type(cleanupThread) == 'function')
+
+local retryTimers = {}
+owner = 'mission-one'
+SetTimeout = function(_, callback) retryTimers[#retryTimers + 1] = callback end
+HumalikeHttp.PostAction = function(name, body, callback)
+    posts[#posts + 1] = { name = name, body = body }
+    callback(false)
+end
+local postsBeforeRetry = #posts
+assert(exported.AcquireNpcControl('static-1', {
+    domains = { 'speech' }, ttlMs = 1000,
+}))
+assert(#retryTimers == 1)
+assert(exported.AcquireNpcControl('static-1', {
+    domains = { 'perception' }, ttlMs = 1000,
+}))
+assert(#retryTimers == 2 and #posts == postsBeforeRetry + 2)
+HumalikeHttp.PostAction = function(name, body, callback)
+    posts[#posts + 1] = { name = name, body = body }
+    callback(true)
+end
+retryTimers[1]()
+assert(#posts == postsBeforeRetry + 2, 'superseded retry timer is inert')
+retryTimers[2]()
+assert(#posts == postsBeforeRetry + 3 and #retryTimers == 2,
+    'only the latest snapshot retry reaches edge')
 
 print('runtime_control: ok')
