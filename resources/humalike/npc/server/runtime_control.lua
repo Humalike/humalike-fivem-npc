@@ -247,13 +247,20 @@ function HumalikeNpcRuntimeControl.State(npcId)
         controlled.movement ~= nil and controlled.animation ~= nil
         and controlled.speech ~= nil and controlled.perception ~= nil
     )
+    local ownership = kind == 'static' and HumalikeNpcEntityOwnership
+        and HumalikeNpcEntityOwnership.State(npcId) or nil
     return {
         apiVersion = 1, npcId = npcId, kind = kind, active = exists,
         entity = entity,
         networkId = kind == 'static' and target.network_id or target.network_id or target.entity_id,
-        routingBucket = exists and GetEntityRoutingBucket(entity) or target.routing_bucket,
+        routingBucket = exists and GetEntityRoutingBucket(entity)
+            or ownership and ownership.routingBucket or target.routing_bucket,
         modelHash = exists and GetEntityModel(entity) or nil,
         aiEnabled = not fullyControlled, controlledDomains = controlled,
+        entityOwner = ownership and ownership.entityOwner or 'humalike',
+        bindingId = ownership and ownership.bindingId or nil,
+        despawnId = ownership and ownership.despawnId or nil,
+        entityOwnerResource = ownership and ownership.ownerResource or nil,
     }
 end
 

@@ -49,6 +49,7 @@ server_scripts {
     'npc/server/http.lua',
     'npc/server/pose_ledger.lua',
     'npc/server/pose_threat.lua',
+    'npc/server/entity_ownership.lua',
     'npc/server/persistent.lua',
     'npc/server/npc.lua',
     'npc/server/sessions.lua',

@@ -65,6 +65,9 @@ function SyncNpcRoster(onDone, repairBindings)
             if not incoming[npcId] then
                 if ResetNpcWorldState then ResetNpcWorldState(npcId) end
                 ForgetNpcPose(npcId)
+                if HumalikeNpcEntityOwnership then
+                    HumalikeNpcEntityOwnership.ForgetNpc(npcId)
+                end
                 RemovePersistentNpc(npcId)
                 NpcRegistry[npcId] = nil
                 TriggerClientEvent('humalike:npc:npcRemoved', -1, npcId)
@@ -80,6 +83,9 @@ function SyncNpcRoster(onDone, repairBindings)
                 print(('[humalike-npc] roster sync: added %s (%s)'):format(npcId, entry.name))
             elseif not visuallyEqual(existing, entry) then
                 if ResetNpcWorldState then ResetNpcWorldState(npcId) end
+                if HumalikeNpcEntityOwnership then
+                    HumalikeNpcEntityOwnership.DefinitionChanged(npcId)
+                end
                 RemovePersistentNpc(npcId)
                 EnsurePersistentNpc(entry)
                 NpcRegistry[npcId] = entry
