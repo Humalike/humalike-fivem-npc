@@ -9,7 +9,7 @@ HumalikeStatus = {
 
 local function visuallyEqual(a, b)
     return a.x == b.x and a.y == b.y and a.z == b.z
-        and a.heading == b.heading and a.model == b.model
+        and a.heading == b.heading and a.model == b.model and a.type == b.type
 end
 
 local function runtimeEqual(a, b)
@@ -65,6 +65,9 @@ function SyncNpcRoster(onDone, repairBindings)
             if not incoming[npcId] then
                 if ResetNpcWorldState then ResetNpcWorldState(npcId) end
                 ForgetNpcPose(npcId)
+                if HumalikeNpcEntityOwnership then
+                    HumalikeNpcEntityOwnership.ForgetNpc(npcId)
+                end
                 RemovePersistentNpc(npcId)
                 NpcRegistry[npcId] = nil
                 TriggerClientEvent('humalike:npc:npcRemoved', -1, npcId)
@@ -74,26 +77,29 @@ function SyncNpcRoster(onDone, repairBindings)
         for npcId, entry in pairs(incoming) do
             local existing = NpcRegistry[npcId]
             if not existing then
-                EnsurePersistentNpc(entry)
                 NpcRegistry[npcId] = entry
-                TriggerClientEvent('humalike:npc:npcAdded', -1, entry)
+                local entity = EnsurePersistentNpc(entry)
+                if entity then TriggerClientEvent('humalike:npc:npcAdded', -1, entry) end
                 print(('[humalike-npc] roster sync: added %s (%s)'):format(npcId, entry.name))
             elseif not visuallyEqual(existing, entry) then
                 if ResetNpcWorldState then ResetNpcWorldState(npcId) end
+                if HumalikeNpcEntityOwnership then
+                    HumalikeNpcEntityOwnership.DefinitionChanged(npcId, entry.type)
+                end
                 RemovePersistentNpc(npcId)
-                EnsurePersistentNpc(entry)
                 NpcRegistry[npcId] = entry
                 TriggerClientEvent('humalike:npc:npcRemoved', -1, npcId)
-                TriggerClientEvent('humalike:npc:npcAdded', -1, entry)
+                local entity = EnsurePersistentNpc(entry)
+                if entity then TriggerClientEvent('humalike:npc:npcAdded', -1, entry) end
                 print(('[humalike-npc] roster sync: respawning %s (%s), position/model changed')
                     :format(npcId, entry.name))
             else
                 entry.entity_id = existing.entity_id
                 entry.network_id = existing.network_id
                 entry.runtime_token = existing.runtime_token
-                EnsurePersistentNpc(entry, repairBindings == true)
                 NpcRegistry[npcId] = entry
-                if not runtimeEqual(existing, entry) then
+                local entity = EnsurePersistentNpc(entry, repairBindings == true)
+                if entity and not runtimeEqual(existing, entry) then
                     TriggerClientEvent('humalike:npc:npcAdded', -1, entry)
                 end
             end
