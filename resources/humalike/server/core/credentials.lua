@@ -18,6 +18,14 @@ local function validCallbackCredential(value)
         and value.valid_from_unix < value.valid_until_unix
 end
 
+local function validAssignment(nodeId, generation)
+    if nodeId == nil and generation == nil then return true end
+    return validIdentifier(nodeId)
+        and type(generation) == 'number'
+        and generation >= 1
+        and generation % 1 == 0
+end
+
 function HumaLike.ReplaceRuntimeCredentials(payload, expectedBootId)
     local now = os.time()
     if type(payload) ~= 'table'
@@ -29,6 +37,9 @@ function HumaLike.ReplaceRuntimeCredentials(payload, expectedBootId)
         or not validCredential(payload.voice_access_token)
         or type(payload.access_tokens_expire_at) ~= 'string'
         or payload.access_tokens_expire_at == ''
+        or type(payload.edge_url) ~= 'string'
+        or not payload.edge_url:match('^https?://')
+        or not validAssignment(payload.edge_node_id, payload.edge_generation)
         or type(payload.voice_url) ~= 'string'
         or not payload.voice_url:match('^https?://')
         or not validCallbackCredential(payload.callback_current)
@@ -46,6 +57,9 @@ function HumaLike.ReplaceRuntimeCredentials(payload, expectedBootId)
         bootId = payload.boot_id,
         leaseId = payload.lease_id,
         edgeToken = payload.edge_access_token,
+        edgeUrl = payload.edge_url,
+        edgeNodeId = payload.edge_node_id,
+        edgeGeneration = payload.edge_generation,
         voiceToken = payload.voice_access_token,
         expiresAt = payload.access_tokens_expire_at,
         voiceUrl = payload.voice_url,
