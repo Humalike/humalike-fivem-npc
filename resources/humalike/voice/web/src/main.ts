@@ -86,10 +86,10 @@ const npcVolume = byId<HTMLInputElement>("npc-volume");
 micGain.value = String(settings.microphoneGain); npcVolume.value = String(settings.npcVolume);
 renderSettings(); renderStatus();
 
-byId("close").addEventListener("click", () => void nui("close"));
+byId("close").addEventListener("click", () => nuiBestEffort("close"));
 window.addEventListener("keydown", (event) => {
   if (event.key !== "Escape" || app.classList.contains("hidden")) return;
-  event.preventDefault(); void nui("close");
+  event.preventDefault(); nuiBestEffort("close");
 });
 byId("refresh").addEventListener("click", () => void refreshDevices());
 byId("reconnect").addEventListener("click", requestSession);
@@ -265,7 +265,7 @@ function setCabinCapability(active: boolean): void {
 function setDirectTargetCapability(active: boolean): void {
   if (directTargetCapability === active) return;
   directTargetCapability = active;
-  void nui("directTargetCapability", { active });
+  nuiBestEffort("directTargetCapability", { active });
   publishRealtime();
 }
 function sendTX(): void {
@@ -296,7 +296,7 @@ async function syncMediaTransmitting(active: boolean): Promise<void> {
 function setActualTransmitting(active: boolean): void {
   if (mediaTransmitting === active) return;
   mediaTransmitting = active;
-  void nui("transmitState", { active });
+  nuiBestEffort("transmitState", { active });
 }
 
 function scheduleReconnect(): void {
@@ -405,7 +405,7 @@ function sameStrings(left: string[], right: string[]): boolean {
   return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 function reportNPCSpeech(id: string, active: boolean): void {
-  void nui("actorSpeechState", { kind: "npc", id, active });
+  nuiBestEffort("actorSpeechState", { kind: "npc", id, active });
 }
 function fillDevices(select: HTMLSelectElement, devices: MediaDeviceInfo[], selected: string, fallback: string): void {
   select.replaceChildren(new Option(fallback, ""));
@@ -452,6 +452,13 @@ function isSession(value: unknown): value is Session {
 function byId<T extends HTMLElement = HTMLElement>(id: string): T { const node = document.getElementById(id); if (!node) throw new Error(`missing #${id}`); return node as T; }
 function saveSettings(): void { localStorage.setItem("humalike.voice.settings.v1", JSON.stringify(settings)); }
 function loadSettings(): Settings { try { return { ...defaults, ...JSON.parse(localStorage.getItem("humalike.voice.settings.v1") ?? "{}") as Partial<Settings> }; } catch { return { ...defaults }; } }
+function nuiBestEffort(name: string, body: unknown = {}): void {
+  void nui(name, body).catch((error: unknown) => {
+    if (!(error && typeof error === "object" && "name" in error && error.name === "AbortError")) {
+      console.error(`[humalike:nui] callback ${name} failed`, error);
+    }
+  });
+}
 async function nui(name: string, body: unknown = {}): Promise<void> {
   if (typeof GetParentResourceName !== "function") return;
   const controller = new AbortController();
