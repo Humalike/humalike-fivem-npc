@@ -13,8 +13,8 @@ test("rejects non-microphone and non-NPC edge publications", () => {
   assert.equal(publicationSourceId("edge-publisher:server-1:boot", "extra", "microphone", "server-1"), null);
 });
 
-test("maps player microphone only to its participant identity", () => {
-  assert.equal(publicationSourceId("player:7:session", "arbitrary", "microphone", "server-1"), "player:7:session");
+test("rejects player microphone publications", () => {
+  assert.equal(publicationSourceId("player:7:session", "arbitrary", "microphone", "server-1"), null);
 });
 
 test("derives a legacy server ID only from an exact valid fivem room", () => {
