@@ -160,6 +160,13 @@ AddEventHandler('humalike:core:ready', function()
     resetEdgeBindings()
 end)
 
+AddEventHandler('humalike:runtime:edgeChanged', function()
+    resetEdgeBindings()
+    for playerId in pairs(HumalikeWorldAuthority.players) do
+        TriggerClientEvent('humalike:world:npcEdgeReconnect', playerId)
+    end
+end)
+
 AddEventHandler('playerDropped', function()
     local prefix = tostring(source) .. ':'
     for key in pairs(pendingTickets) do

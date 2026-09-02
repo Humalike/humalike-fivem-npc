@@ -13,6 +13,15 @@ local pendingVoiceRequests = {}
 local assignmentRefreshPlayers = {}
 local requestVoiceSession
 
+local function retryAssignmentRefreshes()
+    for playerId in pairs(assignmentRefreshPlayers) do
+        assignmentRefreshPlayers[playerId] = nil
+        print(('[humalike] voice_session_retry reason=runtime_refreshed player_id=%d')
+            :format(playerId))
+        requestVoiceSession(playerId)
+    end
+end
+
 local function runtimeServerId()
     local credentials = HumaLike.RuntimeCredentials()
     return credentials and credentials.serverId or nil
@@ -84,11 +93,22 @@ AddEventHandler('humalike:core:ready', function()
         assignmentRefreshPlayers[playerId] = true
     end
     fullSnapshot()
-    for playerId in pairs(assignmentRefreshPlayers) do
+    retryAssignmentRefreshes()
+end)
+
+
+AddEventHandler('humalike:runtime:refreshed', retryAssignmentRefreshes)
+
+AddEventHandler('humalike:runtime:voiceChanged', function()
+    authorityRequestInFlight = false
+    pendingAuthority = {}
+    for playerId in pairs(pendingVoiceRequests) do
+        pendingVoiceRequests[playerId] = nil
+    end
+    for playerId in pairs(HumalikeWorldAuthority.players) do
+        voiceSessions[playerId] = nil
         assignmentRefreshPlayers[playerId] = nil
-        print(('[humalike] voice_session_retry reason=runtime_refreshed player_id=%d')
-            :format(playerId))
-        requestVoiceSession(playerId)
+        TriggerClientEvent('humalike:world:voiceReconnect', playerId)
     end
 end)
 
@@ -122,12 +142,14 @@ requestVoiceSession = function(rawPlayerId)
             TriggerClientEvent('humalike:world:voiceSessionFailed', playerId, 409)
             return
         end
-        if status == 409 and HumaLike.ErrorCode(response) == 'assignment_stale' then
+        local errorCode = HumaLike.ErrorCode(response)
+        if status == 409 and (errorCode == 'assignment_stale'
+            or errorCode == 'assignment_not_ready') then
             pendingVoiceRequests[playerId] = nil
             assignmentRefreshPlayers[playerId] = true
-            print(('[humalike] voice_assignment_stale server_id=%s player_id=%d action=refresh_runtime')
-                :format(serverId, playerId))
-            HumaLike.RequestBootstrap('voice assignment stale', 1, true)
+            print(('[humalike] voice_assignment_refresh code=%s server_id=%s player_id=%d action=refresh_runtime')
+                :format(errorCode, serverId, playerId))
+            HumaLike.RequestBootstrap(('voice %s'):format(errorCode), 1, true)
             return
         end
         pendingVoiceRequests[playerId] = nil

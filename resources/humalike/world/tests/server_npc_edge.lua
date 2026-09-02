@@ -80,8 +80,13 @@ assert(#requests == 6 and requests[6].url:match('upsert_player_session$'))
 requests[6].callback(200, 'upserted')
 handlers['humalike:core:ready']()
 assert(#requests == 7 and requests[7].url:match('sync_player_sessions$'))
+handlers['humalike:runtime:edgeChanged']()
+assert(#requests == 8 and requests[8].url:match('sync_player_sessions$'))
+assert(clientEvents[#clientEvents].name == 'humalike:world:npcEdgeReconnect'
+    and clientEvents[#clientEvents].target == 7,
+    'edge assignment change must reconnect edge clients only')
 HumalikeWorldAuthority.players = {}
 handlers['humalike:world:authoritySnapshot']({})
-assert(#requests == 7, 'empty authority must not sync and evict live sessions')
+assert(#requests == 8, 'empty authority must not sync and evict live sessions')
 
 print('server_npc_edge: ok')
