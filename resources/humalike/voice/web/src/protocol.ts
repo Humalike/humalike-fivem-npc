@@ -37,7 +37,7 @@ export interface Route {
   transmitMask: number;
 }
 export type ServerMessage =
-  | { v: 1; type: "ready"; identity: string; room: string; livekitUrl: string; livekitToken?: string; transmitLeaseMs: number; capabilities?: string[]; serverId?: string }
+  | { v: 1; type: "ready"; identity: string; room: string; livekitUrl: string; livekitToken?: string; transmitLeaseMs: number; capabilities?: string[]; serverId: string }
   | { v: 1; type: "route_snapshot"; routes: Route[] }
   | { v: 1; type: "error"; code: string; message: string };
 

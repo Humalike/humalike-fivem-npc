@@ -1,5 +1,4 @@
 Config = {
-    NpcLabelMaxDistance = 14,
     NpcLabels = {
         Enabled = true,
         MaxDistance = 14,

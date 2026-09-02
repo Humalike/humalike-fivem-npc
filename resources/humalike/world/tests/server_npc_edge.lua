@@ -12,11 +12,6 @@ HumalikeWorldAuthority = {
     },
 }
 HumalikeWorldDebug = function() end
-GetConvar = function(name)
-    if name == 'humalike_npc_service_url' then return 'https://npc.example' end
-    if name == 'humalike_npc_api_key' then return 'secret' end
-    return ''
-end
 json = {
     encode = function(value)
         if type(value) == 'table' and value.players and next(value.players) == nil then

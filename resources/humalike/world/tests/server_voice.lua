@@ -3,7 +3,7 @@ local decoded = {}
 
 WorldConfig = {
     voice = {
-        enabled = true, apiBaseUrl = 'https://voice.example', serverId = 'server-1',
+        enabled = true,
         deltaBatchIntervalMs = 100, snapshotIntervalMs = 60000,
     },
 }
@@ -15,7 +15,6 @@ HumalikeWorldAuthority = {
         },
     },
 }
-GetConvar = function(name) return name == 'humalike_voice_server_secret' and 'secret' or '' end
 json = {
     encode = function() return '{}' end,
     decode = function(body) return decoded[body] end,

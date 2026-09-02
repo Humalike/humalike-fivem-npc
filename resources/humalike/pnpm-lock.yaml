@@ -52,10 +52,6 @@ importers:
       typescript:
         specifier: 7.0.2
         version: 7.0.2
-      vite:
-        specifier: 8.1.5
-        version: 8.1.5
-
 packages:
 
   '@bufbuild/protobuf@1.10.1':

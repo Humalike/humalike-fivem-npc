@@ -62,7 +62,7 @@ local function collectCandidates()
     local radiusSquared = discoveryRadius * discoveryRadius
     local now = GetGameTimer()
     local transientTtl = math.max(0,
-        tonumber(Config.AmbientTransientRejectedCacheMs or Config.AmbientRejectedCacheMs) or 3000)
+        tonumber(Config.AmbientTransientRejectedCacheMs) or 3000)
     local stableTtl = math.max(transientTtl,
         tonumber(Config.AmbientStableRejectedCacheMs) or 20000)
     for index, ped in ipairs(pool) do
