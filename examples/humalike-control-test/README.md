@@ -11,7 +11,8 @@ ensure humalike
 ensure humalike-control-test
 ```
 
-Use a static NPC UUID and its configured model:
+Use an `external` NPC UUID and its configured model for binding. Use a separate
+`static` NPC UUID for despawn and respawn:
 
 ```text
 /humalike_npc_test bind <npcId> <model>
@@ -24,5 +25,6 @@ Use a static NPC UUID and its configured model:
 /humalike_npc_test release <npcId>
 ```
 
-`unbind` leaves the externally owned test ped in the world. `delete` deliberately
-deletes it without unbinding so the HumaLike recovery path can be verified.
+`unbind` leaves the externally owned test ped in the world. `delete`
+deliberately deletes it without unbinding so automatic runtime detachment can
+be verified; the external NPC remains offline until it is bound again.

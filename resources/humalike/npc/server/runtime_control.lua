@@ -27,8 +27,22 @@ local function copy(value)
 end
 
 local function targetForNpc(npcId)
-    local static = NpcRegistry and NpcRegistry[npcId] or nil
-    if static then return 'static', static, nil end
+    local persistent = NpcRegistry and NpcRegistry[npcId] or nil
+    if persistent and persistent.type == 'external' then
+        local entity = HumalikeNpcEntityOwnership
+            and HumalikeNpcEntityOwnership.ExternalEntity(npcId) or nil
+        if entity then
+            persistent.entity_id = entity
+            persistent.network_id = NetworkGetNetworkIdFromEntity(entity)
+            return 'external', persistent, nil
+        end
+        return nil
+    end
+    if persistent and persistent.type == 'static' then
+        local entity = persistent.entity_id
+        if entity and DoesEntityExist(entity) then return 'static', persistent, nil end
+        return nil
+    end
     local ambient = HumalikeFindAmbientLease and HumalikeFindAmbientLease(npcId) or nil
     if ambient then return 'ambient', ambient, ambient.lease_token end
     return nil
@@ -205,7 +219,7 @@ function HumalikeNpcRuntimeControl.NeutralizeAction(npcId, domains)
 
     local kind, target = targetForNpc(npcId)
     if not kind then return end
-    local entity = kind == 'static' and target.entity_id or target.entity_handle
+    local entity = kind == 'ambient' and target.entity_handle or target.entity_id
     if kind == 'ambient' and (not entity or not DoesEntityExist(entity))
         and HumalikeResolveAmbientEntity then
         entity = HumalikeResolveAmbientEntity(target.entity_id)
@@ -228,8 +242,12 @@ end
 
 function HumalikeNpcRuntimeControl.State(npcId)
     local kind, target = targetForNpc(npcId)
-    if not kind then return nil, 'npc_not_active' end
-    local entity = kind == 'static' and target.entity_id or target.entity_handle
+    local definition = NpcRegistry and NpcRegistry[npcId] or nil
+    if not kind and not definition then return nil, 'npc_not_found' end
+    if not kind then
+        kind, target = definition.type, definition
+    end
+    local entity = kind == 'ambient' and target.entity_handle or target.entity_id
     if kind == 'ambient' and (not entity or not DoesEntityExist(entity))
         and HumalikeResolveAmbientEntity then entity = HumalikeResolveAmbientEntity(target.entity_id) end
     local controlled = {}
@@ -247,16 +265,16 @@ function HumalikeNpcRuntimeControl.State(npcId)
         controlled.movement ~= nil and controlled.animation ~= nil
         and controlled.speech ~= nil and controlled.perception ~= nil
     )
-    local ownership = kind == 'static' and HumalikeNpcEntityOwnership
+    local ownership = kind ~= 'ambient' and HumalikeNpcEntityOwnership
         and HumalikeNpcEntityOwnership.State(npcId) or nil
     return {
         apiVersion = 1, npcId = npcId, kind = kind, active = exists,
         entity = entity,
-        networkId = kind == 'static' and target.network_id or target.network_id or target.entity_id,
+        networkId = target.network_id or (kind == 'ambient' and target.entity_id or nil),
         routingBucket = exists and GetEntityRoutingBucket(entity)
             or ownership and ownership.routingBucket or target.routing_bucket,
         modelHash = exists and GetEntityModel(entity) or nil,
-        aiEnabled = not fullyControlled, controlledDomains = controlled,
+        aiEnabled = exists and not fullyControlled, controlledDomains = controlled,
         entityOwner = ownership and ownership.entityOwner or 'humalike',
         bindingId = ownership and ownership.bindingId or nil,
         despawnId = ownership and ownership.despawnId or nil,

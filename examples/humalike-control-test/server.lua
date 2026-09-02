@@ -80,7 +80,7 @@ RegisterCommand('humalike_npc_test', function(source, args)
         if record and record.entity and DoesEntityExist(record.entity) then
             DeleteEntity(record.entity)
             testNpcs[npcId] = nil
-            reply(source, 'external ped deleted; wait for HumaLike recovery')
+            reply(source, 'external ped deleted; NPC is now offline')
         else
             reply(source, 'no external ped')
         end
@@ -113,7 +113,7 @@ RegisterCommand('humalike_npc_test', function(source, args)
     end
 end, true)
 
-AddEventHandler('humalike:integration:ready', rebind)
+AddEventHandler('humalike:npc:ready', rebind)
 
 AddEventHandler('onResourceStop', function(resourceName)
     if resourceName ~= GetCurrentResourceName() then return end

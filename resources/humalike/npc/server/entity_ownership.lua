@@ -27,10 +27,6 @@ local function unsignedHash(value)
     return value < 0 and value + 4294967296 or value
 end
 
-local function expectedModel(entry)
-    return unsignedHash(GetHashKey(entry.model))
-end
-
 local function clearEntry(entry)
     entry.entity_id, entry.network_id, entry.runtime_token = nil, nil, nil
 end
@@ -41,17 +37,7 @@ local function publicBinding(record)
     return result
 end
 
-local function publicDespawn(record)
-    local result = copy(record)
-    result.runtimeToken = nil
-    return result
-end
-
-local function notifyRemoved(npcId)
-    TriggerClientEvent('humalike:npc:npcRemoved', -1, npcId)
-end
-
-local function clearExternalState(record)
+local function clearEntityState(record)
     local entity = record.entity
     if not entity or not DoesEntityExist(entity) then return end
     local state = Entity(entity).state
@@ -69,25 +55,16 @@ local function invalidate(npcId, token)
     end
 end
 
-local function restore(npcId)
-    local entry = NpcRegistry and NpcRegistry[npcId]
-    if not entry then return end
-    clearEntry(entry)
-    local entity = EnsurePersistentNpc and EnsurePersistentNpc(entry) or nil
-    if entity then TriggerClientEvent('humalike:npc:npcAdded', -1, entry) end
-end
-
-local function detach(record, shouldRestore, shouldNotify)
+local function detach(record, notify)
     if not record or bindingsById[record.id] ~= record then return false end
     bindingsById[record.id] = nil
     bindingByNpc[record.npcId] = nil
     bindingByNetwork[record.networkId] = nil
-    clearExternalState(record)
+    clearEntityState(record)
     invalidate(record.npcId, record.runtimeToken)
     local entry = NpcRegistry and NpcRegistry[record.npcId]
     if entry then clearEntry(entry) end
-    if shouldNotify ~= false then notifyRemoved(record.npcId) end
-    if shouldRestore then restore(record.npcId) end
+    if notify ~= false then TriggerClientEvent('humalike:npc:npcRemoved', -1, record.npcId) end
     return true
 end
 
@@ -99,7 +76,7 @@ function HumalikeNpcEntityOwnership.ExternalEntity(npcId)
         or GetEntityType(entity) ~= 1 or IsPedAPlayer(entity)
         or unsignedHash(GetEntityModel(entity)) ~= record.modelHash
         or GetEntityRoutingBucket(entity) ~= record.routingBucket then
-        detach(record, false)
+        detach(record)
         return nil
     end
     return entity
@@ -129,43 +106,46 @@ function HumalikeNpcEntityOwnership.State(npcId)
             ownerResource = despawn.ownerResource,
         }
     end
-    return { entityOwner = 'humalike' }
+    local entry = NpcRegistry and NpcRegistry[npcId]
+    return { entityOwner = entry and entry.type == 'external' and 'external' or 'humalike' }
 end
 
 function HumalikeNpcEntityOwnership.ForgetNpc(npcId)
     local binding = bindingByNpc[npcId]
-    if binding then detach(binding, false, false) end
+    if binding then detach(binding, false) end
     despawnByNpc[npcId] = nil
 end
 
 function HumalikeNpcEntityOwnership.DefinitionChanged(npcId)
     local binding = bindingByNpc[npcId]
-    if binding then detach(binding, false, false) end
+    if binding then detach(binding, false) end
 end
 
 function HumalikeNpcEntityOwnership.Reconcile()
-    local restoreIds = {}
-    for npcId in pairs(bindingByNpc) do
+    for npcId in pairs(copy(bindingByNpc)) do
         local entity = HumalikeNpcEntityOwnership.ExternalEntity(npcId)
-        if not entity then
-            restoreIds[#restoreIds + 1] = npcId
-        else
-            local entry = NpcRegistry and NpcRegistry[npcId]
-            if entry then
-                PreparePersistentNpcEntity(entry, entity)
-                if type(entry.runtime_token) ~= 'string' then
-                    RegisterPersistentNpcBinding(entry, entity)
-                end
+        local entry = NpcRegistry and NpcRegistry[npcId]
+        if entity and entry and entry.type == 'external' then
+            PreparePersistentNpcEntity(entry, entity)
+            if type(entry.runtime_token) ~= 'string' then
+                RegisterPersistentNpcBinding(entry, entity)
             end
+        elseif entity then
+            detach(bindingByNpc[npcId])
         end
     end
-    for _, npcId in ipairs(restoreIds) do restore(npcId) end
 end
 
 function HumalikeNpcEntityOwnership.Resync()
-    for npcId, record in pairs(despawnByNpc) do
-        invalidate(npcId, record.runtimeToken)
+    for npcId, record in pairs(bindingByNpc) do
+        record.runtimeToken = nil
+        local entry = NpcRegistry and NpcRegistry[npcId]
+        if entry then
+            entry.runtime_token = nil
+            RegisterPersistentNpcBinding(entry, record.entity)
+        end
     end
+    for npcId, record in pairs(despawnByNpc) do invalidate(npcId, record.runtimeToken) end
 end
 
 exports('BindNpcEntity', function(npcId, networkId, options)
@@ -185,10 +165,9 @@ exports('BindNpcEntity', function(npcId, networkId, options)
         return nil, 'invalid_routing_bucket'
     end
     local entry = NpcRegistry and NpcRegistry[npcId]
-    if not entry then return nil, 'npc_not_active' end
-    if bindingByNpc[npcId] then
-        HumalikeNpcEntityOwnership.ExternalEntity(npcId)
-    end
+    if not entry then return nil, 'npc_not_found' end
+    if entry.type ~= 'external' then return nil, 'npc_not_external' end
+    if bindingByNpc[npcId] then HumalikeNpcEntityOwnership.ExternalEntity(npcId) end
     local networkOwner = bindingByNetwork[networkId]
     if networkOwner then HumalikeNpcEntityOwnership.ExternalEntity(networkOwner.npcId) end
     local existing = bindingByNpc[npcId]
@@ -198,7 +177,7 @@ exports('BindNpcEntity', function(npcId, networkId, options)
         end
         return publicBinding(existing)
     end
-    if existing or despawnByNpc[npcId] then return nil, 'npc_ownership_conflict' end
+    if existing then return nil, 'npc_ownership_conflict' end
     if bindingByNetwork[networkId] then return nil, 'entity_ownership_conflict' end
     local entity = NetworkGetEntityFromNetworkId(networkId)
     if entity == 0 or not DoesEntityExist(entity) then return nil, 'entity_not_found' end
@@ -208,7 +187,7 @@ exports('BindNpcEntity', function(npcId, networkId, options)
         return nil, 'entity_already_humalike'
     end
     local modelHash = unsignedHash(GetEntityModel(entity))
-    if modelHash ~= expectedModel(entry) then return nil, 'model_mismatch' end
+    if modelHash ~= unsignedHash(GetHashKey(entry.model)) then return nil, 'model_mismatch' end
     local actualBucket = GetEntityRoutingBucket(entity)
     if requestedBucket ~= nil and requestedBucket ~= actualBucket then
         return nil, 'routing_bucket_mismatch'
@@ -222,12 +201,6 @@ exports('BindNpcEntity', function(npcId, networkId, options)
     bindingsById[record.id] = record
     bindingByNpc[npcId] = record
     bindingByNetwork[networkId] = record
-
-    local oldToken = entry.runtime_token
-    notifyRemoved(npcId)
-    RemovePersistentNpc(npcId)
-    invalidate(npcId, oldToken)
-    clearEntry(entry)
     PreparePersistentNpcEntity(entry, entity)
     entry.entity_id, entry.network_id = entity, networkId
     RegisterPersistentNpcBinding(entry, entity)
@@ -240,7 +213,7 @@ exports('UnbindNpcEntity', function(bindingId)
     local record = type(bindingId) == 'string' and bindingsById[bindingId] or nil
     if not record then return false, 'binding_not_found' end
     if record.ownerResource ~= invoking then return false, 'not_owner' end
-    detach(record, true)
+    detach(record)
     return true
 end)
 
@@ -248,12 +221,14 @@ exports('DespawnNpc', function(npcId)
     local invoking = owner()
     if not invoking then return nil, 'external_resource_required' end
     local entry = type(npcId) == 'string' and NpcRegistry and NpcRegistry[npcId] or nil
-    if not entry then return nil, 'npc_not_active' end
-    if bindingByNpc[npcId] then return nil, 'npc_externally_bound' end
+    if not entry then return nil, 'npc_not_found' end
+    if entry.type ~= 'static' then return nil, 'npc_not_static' end
     local existing = despawnByNpc[npcId]
     if existing then
         if existing.ownerResource ~= invoking then return nil, 'not_owner' end
-        return publicDespawn(existing)
+        local result = copy(existing)
+        result.runtimeToken = nil
+        return result
     end
     if type(entry.runtime_token) ~= 'string' then return nil, 'runtime_binding_unavailable' end
     local record = {
@@ -261,12 +236,13 @@ exports('DespawnNpc', function(npcId)
         ownerResource = invoking, runtimeToken = entry.runtime_token,
     }
     despawnByNpc[npcId] = record
-    local oldToken = entry.runtime_token
-    notifyRemoved(npcId)
+    TriggerClientEvent('humalike:npc:npcRemoved', -1, npcId)
     RemovePersistentNpc(npcId)
-    invalidate(npcId, oldToken)
+    invalidate(npcId, record.runtimeToken)
     clearEntry(entry)
-    return publicDespawn(record)
+    local result = copy(record)
+    result.runtimeToken = nil
+    return result
 end)
 
 exports('RespawnNpc', function(npcId)
@@ -276,30 +252,28 @@ exports('RespawnNpc', function(npcId)
     if not record then return false, 'despawn_not_found' end
     if record.ownerResource ~= invoking then return false, 'not_owner' end
     despawnByNpc[npcId] = nil
-    restore(npcId)
-    return true
+    local entry = NpcRegistry and NpcRegistry[npcId]
+    local entity = entry and EnsurePersistentNpc(entry) or nil
+    if entity then TriggerClientEvent('humalike:npc:npcAdded', -1, entry) end
+    return entity ~= nil
 end)
 
 AddEventHandler('onResourceStop', function(resourceName)
     if resourceName == GetCurrentResourceName() then
-        for _, record in pairs(copy(bindingsById)) do
-            clearExternalState(record)
-        end
+        for _, record in pairs(copy(bindingsById)) do clearEntityState(record) end
         return
     end
-    local restoreIds = {}
     for _, record in pairs(copy(bindingsById)) do
-        if record.ownerResource == resourceName and detach(record, false) then
-            restoreIds[record.npcId] = true
-        end
+        if record.ownerResource == resourceName then detach(record) end
     end
     for npcId, record in pairs(copy(despawnByNpc)) do
         if record.ownerResource == resourceName then
             despawnByNpc[npcId] = nil
-            restoreIds[npcId] = true
+            local entry = NpcRegistry and NpcRegistry[npcId]
+            local entity = entry and EnsurePersistentNpc(entry) or nil
+            if entity then TriggerClientEvent('humalike:npc:npcAdded', -1, entry) end
         end
     end
-    for npcId in pairs(restoreIds) do restore(npcId) end
 end)
 
 AddEventHandler('humalike:core:ready', function()

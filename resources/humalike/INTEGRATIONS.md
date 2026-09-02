@@ -175,8 +175,9 @@ network boundaries; `entity` is only a local server handle.
 
 ## NPC entity ownership
 
-A server resource may attach a static HumaLike identity to a networked ped that
-it owns:
+A server resource may attach an external HumaLike identity to a networked ped
+that it owns. Configure the NPC as `external` in the dashboard; HumaLike never
+spawns or deletes its entity:
 
 ```lua
 local binding, err = exports.humalike:BindNpcEntity(npcId, networkId, {
@@ -188,9 +189,10 @@ local released, releaseErr = exports.humalike:UnbindNpcEntity(binding.id)
 
 The entity must exist, be a non-player ped, use the NPC's configured model and
 match the optional routing bucket. An NPC and a network entity can each have
-only one external binding. HumaLike does not delete externally owned entities;
-unbind removes its state and restores the managed static ped. Repeating the
-same bind from the same resource returns the existing binding.
+only one external binding. Unbind removes HumaLike state and leaves the ped
+untouched. The NPC remains offline until it is bound again. Repeating the same
+bind from the same resource returns the existing binding. Static and dynamic
+NPCs cannot be externally bound.
 
 Static NPCs can also be removed from the runtime without deleting their
 definition:
@@ -200,9 +202,11 @@ local despawn, err = exports.humalike:DespawnNpc(npcId)
 local restored, restoreErr = exports.humalike:RespawnNpc(npcId)
 ```
 
-Binding and despawn ownership belongs to the invoking resource. Its bindings
-are detached and its despawns restored when it stops. A resource that survives
-a HumaLike restart must bind again after `humalike:integration:ready`.
+Binding and despawn ownership belongs to the invoking resource. Its external
+bindings are detached and its static despawns restored when it stops. A
+resource that survives a HumaLike restart must bind again after
+`humalike:npc:ready`. This server event fires after the first successful roster
+sync for each HumaLike runtime generation.
 
 ## Neutral events
 

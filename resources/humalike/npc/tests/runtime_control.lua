@@ -7,12 +7,21 @@ local forgottenPoses = {}
 local entityStates = {
     [101] = { humalike_action = { key = 'follow_player', params = { player_id = 7 } } },
     [202] = { humalike_action = { key = 'kneel', params = {} } },
+    [303] = {},
 }
 source = 7
 
 NpcRegistry = {
     ['static-1'] = {
-        npc_id = 'static-1', entity_id = 101, network_id = 51, routing_bucket = 2,
+        npc_id = 'static-1', type = 'static', entity_id = 101, network_id = 51,
+        routing_bucket = 2,
+    },
+    ['external-1'] = {
+        npc_id = 'external-1', type = 'external', entity_id = 303, network_id = 53,
+        routing_bucket = 4,
+    },
+    ['external-offline'] = {
+        npc_id = 'external-offline', type = 'external', routing_bucket = 0,
     },
 }
 
@@ -20,9 +29,13 @@ function exports(name, callback) exported[name] = callback end
 function GetInvokingResource() return owner end
 function GetCurrentResourceName() return 'humalike' end
 function GetGameTimer() return now end
-function DoesEntityExist(entity) return entity == 101 or entity == 202 end
-function GetEntityRoutingBucket(entity) return entity == 101 and 2 or 3 end
-function GetEntityModel(entity) return entity == 101 and 10 or 20 end
+function DoesEntityExist(entity) return entity == 101 or entity == 202 or entity == 303 end
+function GetEntityRoutingBucket(entity)
+    if entity == 101 then return 2 end
+    return entity == 202 and 3 or 4
+end
+function GetEntityModel(entity) return entity == 101 and 10 or entity == 202 and 20 or 30 end
+function NetworkGetNetworkIdFromEntity(entity) return entity == 303 and 53 or 0 end
 function RegisterNetEvent() end
 function AddEventHandler(name, callback) handlers[name] = callback end
 function TriggerClientEvent(name, target, revision, controls)
@@ -50,6 +63,13 @@ end
 HumaLike = {
     RuntimeCredentials = function() return { bootId = 'boot-1' } end,
 }
+HumalikeNpcEntityOwnership = {
+    ExternalEntity = function(npcId) return npcId == 'external-1' and 303 or nil end,
+    State = function(npcId)
+        return npcId == 'external-1' and { entityOwner = 'external', bindingId = 'binding-1' }
+            or { entityOwner = 'humalike' }
+    end,
+}
 HumalikeHttp = {
     PostAction = function(name, body, callback)
         posts[#posts + 1] = { name = name, body = body }
@@ -61,6 +81,14 @@ dofile('server/runtime_control.lua')
 
 local state = assert(exported.GetNpcRuntimeState('static-1'))
 assert(state.kind == 'static' and state.active == true and state.networkId == 51)
+local externalState = assert(exported.GetNpcRuntimeState('external-1'))
+assert(externalState.kind == 'external' and externalState.active == true)
+assert(externalState.networkId == 53 and externalState.bindingId == 'binding-1')
+local offlineState = assert(exported.GetNpcRuntimeState('external-offline'))
+assert(offlineState.kind == 'external' and offlineState.active == false)
+assert(offlineState.aiEnabled == false)
+local _, offlineError = exported.AcquireNpcControl('external-offline', { domains = { 'speech' } })
+assert(offlineError == 'npc_not_active')
 
 local lease = assert(exported.AcquireNpcControl('static-1', {
     domains = { 'movement', 'animation' }, ttlMs = 30000, reason = 'mission',

@@ -33,7 +33,10 @@ function RegisterPersistentNpcBinding(entry, ped)
         if bindingInFlight[entry.npc_id] == ped then bindingInFlight[entry.npc_id] = nil end
         if not ok or not body or type(body.runtime_token) ~= 'string' then return end
         if activeEntity(entry.npc_id) ~= ped or not DoesEntityExist(ped)
-            or NetworkGetNetworkIdFromEntity(ped) ~= networkId then return end
+            or NetworkGetNetworkIdFromEntity(ped) ~= networkId then
+            RemovePersistentNpcRuntimeBinding(entry.npc_id, body.runtime_token)
+            return
+        end
         local tokenChanged = entry.runtime_token ~= body.runtime_token
         entry.runtime_token = body.runtime_token
         Entity(ped).state:set('humalike_runtime_token', body.runtime_token, true)
@@ -87,7 +90,7 @@ function PreparePersistentNpcEntity(entry, ped)
 end
 
 function EnsurePersistentNpc(entry, refreshBinding)
-    if HumalikeNpcEntityOwnership then
+    if entry.type == 'external' then
         local external = HumalikeNpcEntityOwnership.ExternalEntity(entry.npc_id)
         if external then
             entry.entity_id = external
@@ -98,6 +101,10 @@ function EnsurePersistentNpc(entry, refreshBinding)
             end
             return external
         end
+        entry.entity_id, entry.network_id, entry.runtime_token = nil, nil, nil
+        return nil
+    end
+    if HumalikeNpcEntityOwnership then
         if HumalikeNpcEntityOwnership.IsDespawned(entry.npc_id) then
             entry.entity_id, entry.network_id, entry.runtime_token = nil, nil, nil
             return nil
@@ -176,7 +183,7 @@ CreateThread(function()
             if not DoesEntityExist(ped) then
                 PersistentNpcEntities[npcId] = nil
                 local entry = NpcRegistry and NpcRegistry[npcId]
-                if entry and EnsurePersistentNpc(entry) then
+                if entry and entry.type == 'static' and EnsurePersistentNpc(entry) then
                     TriggerClientEvent('humalike:npc:npcAdded', -1, entry)
                 end
             else

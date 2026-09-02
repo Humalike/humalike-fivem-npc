@@ -42,18 +42,34 @@ function SetTimeout(_, callback) timers[#timers + 1] = callback end
 
 dofile('server/persistent.lua')
 
-local entry = { npc_id = 'static-1', model = 'model-one' }
-assert(EnsurePersistentNpc(entry) == 202)
-assert(created == 0 and entry.entity_id == 202 and entry.network_id == 52)
-assert(entityStates[202].humalike_npc_id == 'static-1')
+local external = { npc_id = 'external-1', type = 'external', model = 'model-one' }
+assert(EnsurePersistentNpc(external) == 202)
+assert(created == 0 and external.entity_id == 202 and external.network_id == 52)
+assert(entityStates[202].humalike_npc_id == 'external-1')
 assert(entityStates[202].humalike_position_reporter == 7)
 assert(posts[#posts].name == 'upsert_npc_runtime_binding')
 
-mode = 'despawned'
-assert(EnsurePersistentNpc(entry) == nil)
-assert(entry.entity_id == nil and entry.network_id == nil and entry.runtime_token == nil)
+local delayedCallback
+HumalikeHttp.PostAction = function(name, body, callback)
+    posts[#posts + 1] = { name = name, body = body }
+    if name == 'upsert_npc_runtime_binding' then
+        delayedCallback = callback
+    else
+        callback(true, 200, { removed = true })
+    end
+end
+local delayed = { npc_id = 'external-delayed', type = 'external', model = 'model-one' }
+RegisterPersistentNpcBinding(delayed, 202)
+mode = 'managed'
+delayedCallback(true, 200, { runtime_token = 'late-token' })
+assert(posts[#posts].name == 'remove_npc_runtime_binding')
+assert(posts[#posts].body.runtime_token == 'late-token')
 
 mode = 'managed'
+assert(EnsurePersistentNpc(external) == nil)
+assert(external.entity_id == nil and external.network_id == nil and external.runtime_token == nil)
+
+local entry = { npc_id = 'static-1', type = 'static', model = 'model-one' }
 assert(EnsurePersistentNpc(entry) == 303)
 assert(created == 1 and PersistentNpcEntities['static-1'] == 303)
 
