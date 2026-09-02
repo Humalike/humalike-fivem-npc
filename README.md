@@ -36,7 +36,7 @@ it for short-lived runtime credentials; service URLs and voice secrets do not
 need to be configured manually.
 
 Detailed installation and configuration documentation is available at
-[docs.humalike.com](https://docs.humalike.com/).
+[docs.humalike.com/ai-npc](https://docs.humalike.com/ai-npc).
 
 ## Framework support
 
