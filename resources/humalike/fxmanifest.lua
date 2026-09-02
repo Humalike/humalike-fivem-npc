@@ -17,7 +17,6 @@ files {
 
 shared_scripts {
     'world/config.lua',
-    'voice/config.lua',
     'npc/config/shared.lua',
     'npc/config/wounds.lua'
 }
@@ -115,6 +114,5 @@ client_scripts {
     'npc/client/direct_targets.lua',
     'npc/client/labels.lua',
     'voice/client/ptt.lua',
-    'voice/client/native_audio.lua',
     'voice/client/main.lua'
 }

@@ -19,6 +19,5 @@ export function publicationSourceId(participantIdentity, trackName, trackSource,
       || !participantIdentity.startsWith(`edge-publisher:${expectedServerId}:`)) return null;
     return name.length > 4 ? name : null;
   }
-  if (participantIdentity.startsWith("edge-publisher:")) return null;
-  return participantIdentity;
+  return null;
 }

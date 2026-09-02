@@ -38,7 +38,6 @@ let readyRequest: Promise<void> | null = null;
 let shuttingDown = false;
 let proximityBinding = "—";
 let deviceTestRunning = false;
-let speakingPlayers = new Set<string>();
 const nuiBootId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 installNpcEdgeTransport();
 
@@ -133,7 +132,6 @@ window.addEventListener("blur", () => setTestPTT(false));
 signalReady();
 window.setInterval(() => {
   if (txActive) sendTX();
-  publishCabinAudioSnapshot();
 }, 500);
 
 async function startSession(session: Session): Promise<void> {
@@ -161,11 +159,11 @@ function handleControlMessage(message: ServerMessage): void {
     return;
   }
   if (message.type === "route_snapshot") {
-    const audibleRoutes = message.routes.filter((route) => route.sourceKind === "npc" || route.sourceId.startsWith("npc:")
-      || route.kind === "vehicle_cabin");
+    const audibleRoutes = message.routes.filter((route) =>
+      route.sourceKind === "npc" || route.sourceId.startsWith("npc:"));
     routes = new Map(audibleRoutes.map((route) => [route.sourceId, route]));
     media?.setRoutes(audibleRoutes); for (const route of audibleRoutes) audio?.updateRoute(route);
-    publishCabinAudioSnapshot(); renderStatus(); return;
+    renderStatus(); return;
   }
   setCabinCapability(message.capabilities?.includes(
     CAPABILITY_AUTHORITATIVE_VEHICLE_CABINS) === true);
@@ -182,13 +180,12 @@ function handleControlMessage(message: ServerMessage): void {
 async function connectMedia(url: string, token: string, expectedServerId: string): Promise<void> {
   let client: MediaClient | null = null;
   try {
-    audio ??= new AudioEngine(reportActorSpeech);
+    audio ??= new AudioEngine(reportNPCSpeech);
     audio.setNPCVolume(settings.npcVolume); audio.setMasterVolume(1);
     await audio.resume(); await applyOutput();
     client = new MediaClient(expectedServerId, (identity, stream) => {
       const route = routes.get(identity); if (route) audio?.attach(identity, stream, route);
-      publishCabinAudioSnapshot();
-    }, (identity) => { audio?.detach(identity); publishCabinAudioSnapshot(); }, (status) => {
+    }, (identity) => { audio?.detach(identity); }, (status) => {
       if (media !== client) return;
       mediaStatus = status;
       if (status === "closed" || status === "error") {
@@ -323,8 +320,6 @@ function disconnect(): void {
   setDirectTargetCapability(false);
   mediaTransmitOperation++;
   setActualTransmitting(false);
-  for (const playerId of speakingPlayers) reportActorSpeech("player", playerId, false);
-  speakingPlayers.clear();
   const previous = control; control = null; previous?.close(); controlStatus = "idle"; disconnectMedia(); renderStatus();
 }
 function disconnectMedia(): void {
@@ -332,7 +327,6 @@ function disconnectMedia(): void {
   setActualTransmitting(false);
   const previous = media; media = null; previous?.disconnect();
   mediaStatus = "idle"; microphone?.close(); microphone = null;
-  publishCabinAudioSnapshot();
 }
 function shutdown(): void { shuttingDown = true; window.clearTimeout(reconnectTimer); setNativePTT(false); disconnect(); }
 
@@ -370,7 +364,7 @@ async function testOutput(): Promise<void> {
   if (deviceTestRunning) return;
   deviceTestRunning = true; setDeviceTestButtons(true); clearError();
   try {
-    audio ??= new AudioEngine(reportActorSpeech);
+    audio ??= new AudioEngine(reportNPCSpeech);
     audio.setNPCVolume(settings.npcVolume); audio.setMasterVolume(1);
     await applyOutput(); await audio.playHeadphoneTest("audio/voice-test.wav");
   } catch (error) { fail(error instanceof Error ? error.message : "Test słuchawek nie powiódł się"); }
@@ -410,15 +404,8 @@ function normalizeTargetNpcIds(value: unknown): string[] {
 function sameStrings(left: string[], right: string[]): boolean {
   return left.length === right.length && left.every((value, index) => value === right[index]);
 }
-function reportActorSpeech(kind: "npc" | "player", id: string, active: boolean): void {
-  if (kind === "player") {
-    if (active) speakingPlayers.add(id); else speakingPlayers.delete(id);
-  }
-  void nui("actorSpeechState", { kind, id, active });
-  if (kind === "player") publishCabinAudioSnapshot();
-}
-function publishCabinAudioSnapshot(): void {
-  void nui("cabinAudioSnapshot", { players: audio?.audibleCabinPlayers() ?? [] });
+function reportNPCSpeech(id: string, active: boolean): void {
+  void nui("actorSpeechState", { kind: "npc", id, active });
 }
 function fillDevices(select: HTMLSelectElement, devices: MediaDeviceInfo[], selected: string, fallback: string): void {
   select.replaceChildren(new Option(fallback, ""));

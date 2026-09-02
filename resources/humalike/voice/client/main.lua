@@ -13,7 +13,6 @@ local nuiReady = false
 local nuiBootId = nil
 local sessionRetryGeneration = 0
 local PTT_RELEASE_TAIL_MS = 200
-local speakingPlayers = {}
 local PTT_COMMAND = '+humalike_voice_ptt'
 local PTT_RELEASE_COMMAND = '-' .. PTT_COMMAND:sub(2)
 local PTT_CONTROL = GetHashKey(PTT_COMMAND) | 0x80000000
@@ -133,25 +132,10 @@ end)
 
 RegisterNUICallback('actorSpeechState', function(data, callback)
     local actorId = type(data) == 'table' and data.id or nil
-    if type(actorId) == 'string' and #actorId > 0 and #actorId <= 128 then
-        if data.kind == 'npc' then
-            TriggerEvent('humalike-voice:npcSpeaking', actorId, data.active == true)
-        elseif data.kind == 'player' then
-            local serverId = tonumber(actorId)
-            if serverId and serverId > 0 then
-                speakingPlayers[serverId] = data.active == true or nil
-                local player = GetPlayerFromServerId(serverId)
-                local ped = player ~= -1 and GetPlayerPed(player) or 0
-                setMouthAnimation(ped, data.active == true)
-            end
-        end
+    if type(actorId) == 'string' and #actorId > 0 and #actorId <= 128
+        and data.kind == 'npc' then
+        TriggerEvent('humalike-voice:npcSpeaking', actorId, data.active == true)
     end
-    callback({ ok = true })
-end)
-
-RegisterNUICallback('cabinAudioSnapshot', function(data, callback)
-    local players = type(data) == 'table' and data.players or nil
-    HumalikeVoiceNativeAudio.UpdateSnapshot(players)
     callback({ ok = true })
 end)
 
@@ -182,7 +166,6 @@ exports('GetStatus', function()
         cabin = cabinMembership,
         cabinEpoch = cabinEpoch,
         cabinRevision = cabinRevision,
-        nativeDedupe = HumalikeVoiceNativeAudio.Status(),
     }
 end)
 
@@ -302,7 +285,6 @@ end)
 CreateThread(function()
     Wait(500)
     refreshPttBindings()
-    if VoiceConfig.disableMumble then MumbleSetActive(false) end
     if nuiReady then syncNuiState() end
 end)
 
@@ -327,12 +309,7 @@ CreateThread(function()
             local ped = PlayerPedId()
             setMouthAnimation(ped, true)
         end
-        for serverId in pairs(speakingPlayers) do
-            local player = GetPlayerFromServerId(serverId)
-            local ped = player ~= -1 and GetPlayerPed(player) or 0
-            setMouthAnimation(ped, true)
-        end
-        Wait((panelOpen or transmitting or next(speakingPlayers)) and 500 or 1500)
+        Wait((panelOpen or transmitting) and 500 or 1500)
     end
 end)
 
@@ -360,9 +337,7 @@ AddEventHandler('onClientResourceStop', function(resource)
     HumalikeNpcDirectTargets.SetAvailable(false)
     mediaTransmitting = false
     TriggerEvent('humalike:voice:transmittingChanged', false)
-    speakingPlayers = {}
     sessionRetryGeneration = sessionRetryGeneration + 1
     SetNuiFocus(false, false)
-    if VoiceConfig.disableMumble then MumbleSetActive(true) end
     SendNUIMessage({ type = 'voice:shutdown' })
 end)

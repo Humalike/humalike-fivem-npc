@@ -24,7 +24,6 @@
         "npc/config",
         "npc/client",
         "npc/server",
-        "voice/config.lua",
         "voice/client",
         "voice/server",
         "nui/host/dist"
