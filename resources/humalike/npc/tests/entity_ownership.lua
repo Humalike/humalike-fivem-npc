@@ -97,8 +97,12 @@ assert(managed == 101 and NpcRegistry['static-1'].entity_id == 101)
 
 local despawn = assert(exported.DespawnNpc('static-1'))
 assert(despawn.ownerResource == 'mission-one' and managed == nil)
+assert(despawn.runtimeToken == nil)
 assert(HumalikeNpcEntityOwnership.IsDespawned('static-1'))
 assert(exported.DespawnNpc('static-1').id == despawn.id)
+local invalidationCount = #invalidations
+handlers['humalike:core:ready']()
+assert(#invalidations == invalidationCount + 1)
 invoking = 'mission-two'
 assert(exported.RespawnNpc('static-1') == false)
 invoking = 'mission-one'

@@ -65,7 +65,15 @@ HumalikeHttp.PostAction = function(name, body, callback)
 end
 RemovePersistentNpcRuntimeBinding('static-1', 'old-token')
 assert(#timers == 1 and attempts == 1)
+assert(posts[#posts].body.boot_id == 'boot-1')
 timers[1]()
 assert(attempts == 2)
+
+HumaLike.RuntimeCredentials = function() return nil end
+RemovePersistentNpcRuntimeBinding('static-1', 'offline-token')
+assert(#timers == 2 and attempts == 2)
+HumaLike.RuntimeCredentials = function() return { bootId = 'boot-2' } end
+timers[2]()
+assert(posts[#posts].body.boot_id == 'boot-2')
 
 print('persistent_ownership: ok')

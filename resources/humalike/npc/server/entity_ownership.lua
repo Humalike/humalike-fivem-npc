@@ -41,6 +41,12 @@ local function publicBinding(record)
     return result
 end
 
+local function publicDespawn(record)
+    local result = copy(record)
+    result.runtimeToken = nil
+    return result
+end
+
 local function notifyRemoved(npcId)
     TriggerClientEvent('humalike:npc:npcRemoved', -1, npcId)
 end
@@ -156,6 +162,12 @@ function HumalikeNpcEntityOwnership.Reconcile()
     for _, npcId in ipairs(restoreIds) do restore(npcId) end
 end
 
+function HumalikeNpcEntityOwnership.Resync()
+    for npcId, record in pairs(despawnByNpc) do
+        invalidate(npcId, record.runtimeToken)
+    end
+end
+
 exports('BindNpcEntity', function(npcId, networkId, options)
     local invoking = owner()
     if not invoking then return nil, 'external_resource_required' end
@@ -241,11 +253,12 @@ exports('DespawnNpc', function(npcId)
     local existing = despawnByNpc[npcId]
     if existing then
         if existing.ownerResource ~= invoking then return nil, 'not_owner' end
-        return copy(existing)
+        return publicDespawn(existing)
     end
+    if type(entry.runtime_token) ~= 'string' then return nil, 'runtime_binding_unavailable' end
     local record = {
         apiVersion = 1, id = nextId(invoking), npcId = npcId,
-        ownerResource = invoking,
+        ownerResource = invoking, runtimeToken = entry.runtime_token,
     }
     despawnByNpc[npcId] = record
     local oldToken = entry.runtime_token
@@ -253,7 +266,7 @@ exports('DespawnNpc', function(npcId)
     RemovePersistentNpc(npcId)
     invalidate(npcId, oldToken)
     clearEntry(entry)
-    return copy(record)
+    return publicDespawn(record)
 end)
 
 exports('RespawnNpc', function(npcId)
@@ -287,4 +300,8 @@ AddEventHandler('onResourceStop', function(resourceName)
         end
     end
     for npcId in pairs(restoreIds) do restore(npcId) end
+end)
+
+AddEventHandler('humalike:core:ready', function()
+    HumalikeNpcEntityOwnership.Resync()
 end)

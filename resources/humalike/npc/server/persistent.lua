@@ -14,7 +14,8 @@ local function activeEntity(npcId)
 end
 
 function RegisterPersistentNpcBinding(entry, ped)
-    if not HumaLike.RuntimeCredentials() then return end
+    local credentials = HumaLike.RuntimeCredentials()
+    if not credentials then return end
     local networkId = NetworkGetNetworkIdFromEntity(ped)
     if networkId <= 0 then return end
     if bindingInFlight[entry.npc_id] == ped then return end
@@ -22,6 +23,7 @@ function RegisterPersistentNpcBinding(entry, ped)
     entry.entity_id = ped
     entry.network_id = networkId
     HumalikeHttp.PostAction('upsert_npc_runtime_binding', {
+        boot_id = credentials.bootId,
         npc_id = entry.npc_id,
         entity_id = ped,
         network_id = networkId,
@@ -50,7 +52,16 @@ function RemovePersistentNpcRuntimeBinding(npcId, runtimeToken, attempt)
         bindingRemovalPending[key] = true
     end
     attempt = attempt or 1
+    local credentials = HumaLike.RuntimeCredentials()
+    if not credentials then
+        local delay = math.min(500 * (2 ^ math.min(attempt - 1, 6)), 30000)
+        SetTimeout(delay, function()
+            RemovePersistentNpcRuntimeBinding(npcId, runtimeToken, attempt + 1)
+        end)
+        return
+    end
     HumalikeHttp.PostAction('remove_npc_runtime_binding', {
+        boot_id = credentials.bootId,
         npc_id = npcId,
         runtime_token = runtimeToken,
     }, function(ok)
