@@ -1,5 +1,5 @@
 local handlers, timers, requests, statuses = {}, {}, {}, {}
-local readyEvents = {}
+local readyEvents, edgeEvents, voiceEvents, refreshEvents = {}, {}, {}, {}
 
 GetConvar = function(name)
     if name == 'humalike_license_key' then return 'ak_' .. string.rep('x', 40) end
@@ -40,11 +40,20 @@ dofile('../server/core/bootstrap.lua')
 AddEventHandler('humalike:core:ready', function(payload)
     readyEvents[#readyEvents + 1] = payload
 end)
+AddEventHandler('humalike:runtime:edgeChanged', function(payload)
+    edgeEvents[#edgeEvents + 1] = payload
+end)
+AddEventHandler('humalike:runtime:voiceChanged', function(payload)
+    voiceEvents[#voiceEvents + 1] = payload
+end)
+AddEventHandler('humalike:runtime:refreshed', function(payload)
+    refreshEvents[#refreshEvents + 1] = payload
+end)
 
 assert(HumaLike.RetryDelay(1, 0) == 200)
 assert(HumaLike.RetryDelay(99, 1) == 2400)
-assert(HumaLike.RenewalDelay(0) == 240000)
-assert(HumaLike.RenewalDelay(1) == 360000)
+assert(HumaLike.RenewalDelay(0) == 8000)
+assert(HumaLike.RenewalDelay(1) == 12000)
 
 local function credentials(bootId)
     return {
@@ -58,6 +67,8 @@ local function credentials(bootId)
         edge_node_id = 'edge-a',
         edge_generation = 7,
         voice_url = 'https://voice.example',
+        voice_node_id = 'voice-a',
+        voice_generation = 4,
         callback_current = {
             token = string.rep('c', 64), valid_from_unix = 50, valid_until_unix = 200,
         },
@@ -73,6 +84,9 @@ assert(HumaLike.ReplaceRuntimeCredentials(malformed, 'boot-1') == false)
 local malformedEdge = credentials('boot-1')
 malformedEdge.edge_generation = nil
 assert(HumaLike.ReplaceRuntimeCredentials(malformedEdge, 'boot-1') == false)
+local malformedVoice = credentials('boot-1')
+malformedVoice.voice_node_id = nil
+assert(HumaLike.ReplaceRuntimeCredentials(malformedVoice, 'boot-1') == false)
 
 TriggerEvent('onResourceStart', 'humalike')
 assert(#timers == 1 and timers[1].delay == 0)
@@ -104,22 +118,40 @@ assert(HumaLike.RuntimeCredentials().bootId == bootId)
 assert(HumaLike.RuntimeCredentials().edgeUrl == 'https://edge-a.example')
 assert(HumaLike.RuntimeCredentials().edgeNodeId == 'edge-a')
 assert(HumaLike.RuntimeCredentials().edgeGeneration == 7)
-assert(#timers == 5 and timers[5].delay >= 240000 and timers[5].delay <= 360000)
+assert(HumaLike.RuntimeCredentials().voiceNodeId == 'voice-a')
+assert(HumaLike.RuntimeCredentials().voiceGeneration == 4)
+assert(#timers == 5 and timers[5].delay >= 8000 and timers[5].delay <= 12000)
 assert(#readyEvents == 1)
 
 timers[5].callback()
 assert(requests[5].action == 'renew_fivem_runtime')
 assert(requests[5].targetUrl == nil,
     'renewal discovery must continue to use the stable endpoint')
+local renewed = credentials(bootId)
+renewed.edge_access_token = string.rep('f', 64)
+renewed.voice_access_token = string.rep('w', 64)
+requests[5].callback(200, renewed)
+assert(#edgeEvents == 0 and #voiceEvents == 0,
+    'token renewal for the same assignments must not reconnect either plane')
+
+timers[6].callback()
 local moved = credentials(bootId)
 moved.edge_url = 'https://edge-b.example'
 moved.edge_node_id = 'edge-b'
 moved.edge_generation = 8
-requests[5].callback(200, moved)
-assert(#readyEvents == 2)
-assert(readyEvents[2].reason == 'edge assignment changed during renewal')
+requests[6].callback(200, moved)
+assert(#readyEvents == 1 and #edgeEvents == 1 and #voiceEvents == 0)
 assert(HumaLike.RuntimeCredentials().edgeNodeId == 'edge-b')
 assert(HumaLike.RuntimeCredentials().edgeGeneration == 8)
+
+timers[7].callback()
+local voiceMoved = moved
+voiceMoved.voice_url = 'https://voice-b.example'
+voiceMoved.voice_node_id = 'voice-b'
+voiceMoved.voice_generation = 5
+requests[7].callback(200, voiceMoved)
+assert(#edgeEvents == 1 and #voiceEvents == 1)
+assert(#refreshEvents == 0, 'periodic assignment changes are plane-specific')
 
 local credentialsVisibleDuringStop = false
 AddEventHandler('humalike:core:stopping', function()

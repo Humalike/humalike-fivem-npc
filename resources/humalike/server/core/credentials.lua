@@ -42,6 +42,7 @@ function HumaLike.ReplaceRuntimeCredentials(payload, expectedBootId)
         or not validAssignment(payload.edge_node_id, payload.edge_generation)
         or type(payload.voice_url) ~= 'string'
         or not payload.voice_url:match('^https?://')
+        or not validAssignment(payload.voice_node_id, payload.voice_generation)
         or not validCallbackCredential(payload.callback_current)
         or not validCallbackCredential(payload.callback_next)
         or payload.callback_current.valid_from_unix > now + 60
@@ -63,6 +64,8 @@ function HumaLike.ReplaceRuntimeCredentials(payload, expectedBootId)
         voiceToken = payload.voice_access_token,
         expiresAt = payload.access_tokens_expire_at,
         voiceUrl = payload.voice_url,
+        voiceNodeId = payload.voice_node_id,
+        voiceGeneration = payload.voice_generation,
         callbackCurrent = payload.callback_current,
         callbackNext = payload.callback_next
     }

@@ -43,6 +43,7 @@ HumalikeNpcDirectTargets = {
 assert(loadfile('client/main.lua'))()
 assert(type(nuiCallbacks.ready) == 'function')
 assert(type(handlers['humalike:world:registrationRequested']) == 'function')
+assert(type(handlers['humalike:world:voiceReconnect']) == 'function')
 
 assert(nuiCallbacks.diagnostic == nil)
 assert(nuiCallbacks.cabinDiagnostic == nil)
@@ -77,4 +78,7 @@ assert(replayed['voice:targets'], 'new NUI document did not receive direct NPC t
 assert(replayed['voice:cabin'], 'new NUI document did not receive current cabin state')
 assert(replayed['game:realtime'], 'new NUI document did not receive current realtime state')
 assert(replayed['game:listener'], 'new NUI document did not receive current listener state')
+handlers['humalike:world:voiceReconnect']()
+assert(nuiMessages[#nuiMessages].type == 'voice:reconnect',
+    'voice assignment change did not request a NUI reconnect')
 print('session_ready: ok')

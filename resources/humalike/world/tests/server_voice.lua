@@ -39,7 +39,8 @@ HumaLike = {
     ErrorCode = function(body) return body and body.error and body.error.code or nil end,
     RequestBootstrap = function(reason, attempt, immediate)
         bootstrapRequests = bootstrapRequests + 1
-        assert(reason == 'voice assignment stale' and attempt == 1 and immediate)
+        assert((reason == 'voice assignment_stale' or reason == 'voice assignment_not_ready')
+            and attempt == 1 and immediate)
         return true
     end,
     PostVoice = function(path, body, callback)
@@ -101,5 +102,16 @@ handlers['humalike:world:authorityChanged']({ kind = 'remove', playerId = '7' })
 HumalikeWorldAuthority.players[7] = nil
 droppedPlayerRequest.callback(200, 'ready')
 assert(#clientEvents == 3)
+
+handlers['humalike:runtime:voiceChanged']()
+assert(clientEvents[#clientEvents].name == 'humalike:world:voiceReconnect'
+    and clientEvents[#clientEvents].target == 8,
+    'voice assignment change must reconnect connected players')
+
+source = 8
+handlers['humalike:world:requestVoiceSession']()
+decoded.notReady = { error = { code = 'assignment_not_ready' } }
+requests[#requests].callback(409, 'notReady')
+assert(bootstrapRequests == 2, 'assignment_not_ready must refresh runtime immediately')
 
 print('server_voice: ok')

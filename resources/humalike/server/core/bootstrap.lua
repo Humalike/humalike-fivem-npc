@@ -14,14 +14,32 @@ local function sameEdgeAssignment(left, right)
         and left.edgeGeneration == right.edgeGeneration
 end
 
-local function announceRuntime(reason)
-    local credentials = HumaLike.RuntimeCredentials()
-    print(('[humalike] edge_runtime_installed node_id=%s generation=%s url=%s reason=%s')
-        :format(
-            credentials.edgeNodeId or 'legacy',
-            credentials.edgeGeneration or 0,
-            credentials.edgeUrl,
-            reason))
+local function sameVoiceAssignment(left, right)
+    return left and right
+        and left.voiceUrl == right.voiceUrl
+        and left.voiceNodeId == right.voiceNodeId
+        and left.voiceGeneration == right.voiceGeneration
+end
+
+local function assignmentLabel(credentials, plane)
+    return credentials[plane .. 'NodeId'] or 'legacy',
+        credentials[plane .. 'Generation'] or 0,
+        credentials[plane .. 'Url']
+end
+
+local function announceAssignment(plane, credentials, reason)
+    local nodeId, assignmentGeneration, url = assignmentLabel(credentials, plane)
+    print(('[humalike] runtime_assignment_changed plane=%s node_id=%s generation=%s url=%s reason=%s')
+        :format(plane, nodeId, assignmentGeneration, url, reason))
+    TriggerEvent(('humalike:runtime:%sChanged'):format(plane), {
+        nodeId = nodeId,
+        generation = assignmentGeneration,
+        url = url,
+        reason = reason,
+    })
+end
+
+local function announceInitialRuntime(reason)
     HumaLike.SetStatus('ready', reason)
     TriggerEvent('humalike:core:ready', {
         generation = generation,
@@ -39,12 +57,25 @@ local function uuid4()
 end
 
 local function installRuntime(payload, reason)
+    local previous = HumaLike.RuntimeCredentials()
     local ok, validationError = HumaLike.ReplaceRuntimeCredentials(payload, bootId)
     if not ok then return false, validationError end
+    local current = HumaLike.RuntimeCredentials()
     generation = generation + 1
     bootstrapInFlight = false
     bootstrapScheduled = false
-    announceRuntime(reason)
+    if not previous then
+        announceInitialRuntime(reason)
+    else
+        if not sameEdgeAssignment(previous, current) then
+            announceAssignment('edge', current, reason)
+        end
+        if not sameVoiceAssignment(previous, current) then
+            announceAssignment('voice', current, reason)
+        end
+        HumaLike.SetStatus('ready', reason)
+        TriggerEvent('humalike:runtime:refreshed', { reason = reason })
+    end
     return true
 end
 
@@ -67,9 +98,17 @@ local function scheduleRenewal(expectedGeneration, attempt)
                 local ok, validationError = HumaLike.ReplaceRuntimeCredentials(payload, bootId)
                 if ok then
                     local current = HumaLike.RuntimeCredentials()
-                    if not sameEdgeAssignment(previous, current) then
+                    local edgeChanged = not sameEdgeAssignment(previous, current)
+                    local voiceChanged = not sameVoiceAssignment(previous, current)
+                    if edgeChanged or voiceChanged then
                         generation = generation + 1
-                        announceRuntime('edge assignment changed during renewal')
+                        if edgeChanged then
+                            announceAssignment('edge', current, 'assignment changed during renewal')
+                        end
+                        if voiceChanged then
+                            announceAssignment('voice', current, 'assignment changed during renewal')
+                        end
+                        HumaLike.SetStatus('ready', 'runtime assignment changed during renewal')
                         scheduleRenewal(generation, 1)
                     else
                         HumaLike.SetStatus('ready', 'runtime credentials renewed')
