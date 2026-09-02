@@ -3,7 +3,10 @@ local responseStatus, responseBody = 200, '{}'
 local runtimeAvailable = true
 local bootstrapRequests = 0
 
-GetConvar = function() return 'https://edge.example' end
+GetConvar = function(name)
+    assert(name == 'humalike_control_plane_url')
+    return 'https://npc.example'
+end
 json = {
     encode = function(value)
         if type(value) == 'table' and next(value) == nil then return '[]' end
@@ -89,7 +92,7 @@ assert(not HumaLike.IsEdgeAssignmentError(403,
 
 HumaLike.EdgeRequest('bootstrap_fivem_runtime', 'license', {}, function() end)
 assert(requests[#requests].url ==
-    'https://edge.example/v1/npc/actions/bootstrap_fivem_runtime',
-    'bootstrap discovery must continue to use the stable endpoint')
+    'https://npc.example/v1/npc/actions/bootstrap_fivem_runtime',
+    'bootstrap discovery must use the stable control plane')
 
 print('core_http: ok')
