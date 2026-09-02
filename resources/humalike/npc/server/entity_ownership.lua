@@ -120,12 +120,19 @@ end
 function HumalikeNpcEntityOwnership.ForgetNpc(npcId)
     local binding = bindingByNpc[npcId]
     if binding then detach(binding, false) end
-    despawnByNpc[npcId] = nil
+    if despawnByNpc[npcId] then
+        despawnByNpc[npcId] = nil
+        HumalikeNpcRuntimeState.Publish()
+    end
 end
 
-function HumalikeNpcEntityOwnership.DefinitionChanged(npcId)
+function HumalikeNpcEntityOwnership.DefinitionChanged(npcId, nextKind)
     local binding = bindingByNpc[npcId]
     if binding then detach(binding, false) end
+    if nextKind ~= 'static' and despawnByNpc[npcId] then
+        despawnByNpc[npcId] = nil
+        HumalikeNpcRuntimeState.Publish()
+    end
 end
 
 function HumalikeNpcEntityOwnership.Reconcile()

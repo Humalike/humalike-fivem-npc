@@ -110,6 +110,11 @@ assert(exported.RespawnNpc('static-1') == true and managed == 101)
 assert(#HumalikeNpcEntityOwnership.SuppressedStaticNpcIds() == 0)
 assert(runtimeStatePublishes == 2)
 
+assert(exported.DespawnNpc('static-1'))
+HumalikeNpcEntityOwnership.DefinitionChanged('static-1', 'external')
+assert(#HumalikeNpcEntityOwnership.SuppressedStaticNpcIds() == 0)
+assert(runtimeStatePublishes == 4)
+
 local rebound = assert(exported.BindNpcEntity('external-1', 52, { routingBucket = 2 }))
 exists[202] = false
 HumalikeNpcEntityOwnership.Reconcile()

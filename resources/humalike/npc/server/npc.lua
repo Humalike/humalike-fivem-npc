@@ -84,7 +84,7 @@ function SyncNpcRoster(onDone, repairBindings)
             elseif not visuallyEqual(existing, entry) then
                 if ResetNpcWorldState then ResetNpcWorldState(npcId) end
                 if HumalikeNpcEntityOwnership then
-                    HumalikeNpcEntityOwnership.DefinitionChanged(npcId)
+                    HumalikeNpcEntityOwnership.DefinitionChanged(npcId, entry.type)
                 end
                 RemovePersistentNpc(npcId)
                 NpcRegistry[npcId] = entry
