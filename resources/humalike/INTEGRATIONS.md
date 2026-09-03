@@ -149,11 +149,16 @@ Server resources can temporarily take over selected AI domains without
 changing the NPC definition or its entity binding:
 
 ```lua
-local lease, err = exports.humalike:AcquireNpcControl(npcId, {
+local result = exports.humalike:AcquireNpcControl(npcId, {
     domains = { 'movement', 'animation' },
     ttlMs = 30000,
     reason = 'hostage_scenario',
 })
+if not result.ok then
+    print(('HumaLike control failed: %s'):format(result.error))
+    return
+end
+local lease = result.value
 ```
 
 The domains are `movement`, `animation`, `speech`, `perception` and `all`.
@@ -161,9 +166,9 @@ The domains are `movement`, `animation`, `speech`, `perception` and `all`.
 TTL must be between 1 second and 5 minutes.
 
 ```lua
-local renewed, renewErr = exports.humalike:RenewNpcControl(lease.id, 30000)
-local released, releaseErr = exports.humalike:ReleaseNpcControl(lease.id)
-local state, stateErr = exports.humalike:GetNpcRuntimeState(npcId)
+local renewed = exports.humalike:RenewNpcControl(lease.id, 30000)
+local released = exports.humalike:ReleaseNpcControl(lease.id)
+local state = exports.humalike:GetNpcRuntimeState(npcId)
 ```
 
 Only the resource that acquired a lease can renew or release it. Leases expire
@@ -180,11 +185,16 @@ that it owns. Configure the NPC as `external` in the dashboard; HumaLike never
 spawns or deletes its entity:
 
 ```lua
-local binding, err = exports.humalike:BindNpcEntity(npcId, networkId, {
+local result = exports.humalike:BindNpcEntity(npcId, networkId, {
     routingBucket = 0,
 })
+if not result.ok then
+    print(('HumaLike bind failed: %s'):format(result.error))
+    return
+end
+local binding = result.value
 
-local released, releaseErr = exports.humalike:UnbindNpcEntity(binding.id)
+local released = exports.humalike:UnbindNpcEntity(binding.id)
 ```
 
 The entity must exist, be a non-player ped, use the NPC's configured model and
@@ -198,9 +208,13 @@ Static NPCs can also be removed from the runtime without deleting their
 definition:
 
 ```lua
-local despawn, err = exports.humalike:DespawnNpc(npcId)
-local restored, restoreErr = exports.humalike:RespawnNpc(npcId)
+local despawn = exports.humalike:DespawnNpc(npcId)
+local restored = exports.humalike:RespawnNpc(npcId)
 ```
+
+These exports return one MessagePack-safe result because FiveM resource exports
+carry one return value. Successful results use `{ apiVersion = 1, ok = true,
+value = ... }`; failures use `{ apiVersion = 1, ok = false, error = "..." }`.
 
 Binding and despawn ownership belongs to the invoking resource. Its external
 bindings are detached and its static despawns restored when it stops. A
