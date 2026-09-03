@@ -181,8 +181,9 @@ network boundaries; `entity` is only a local server handle.
 ## NPC entity ownership
 
 A server resource may attach an external HumaLike identity to a networked ped
-that it owns. Configure the NPC as `external` in the dashboard; HumaLike never
-spawns or deletes its entity:
+that it owns. Configure the NPC as `external` in the dashboard; the integrating
+resource retains lifecycle and movement ownership. HumaLike never spawns,
+positions, freezes or deletes the entity:
 
 ```lua
 local result = exports.humalike:BindNpcEntity(npcId, networkId, {
