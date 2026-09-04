@@ -93,7 +93,8 @@ function HumalikeUploadPopulationFiles()
             print(('[humalike-npc] upload_population_files failed (HTTP %s)'):format(tostring(status)))
             return
         end
-        HumalikeDebug('population files: %d sent, control plane says %s',
-            #files, type(body) == 'table' and tostring(body.status) or '?')
+        HumalikeDebug('population files: %d sent, edge forwarded %s, dropped %s', #files,
+            type(body) == 'table' and tostring(body.forwarded) or '?',
+            type(body) == 'table' and tostring(body.dropped) or '?')
     end)
 end

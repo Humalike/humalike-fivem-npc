@@ -60,7 +60,7 @@ local posted
 HumalikeHttp = {
     PostAction = function(action, payload, callback)
         posted = { action = action, payload = payload }
-        callback(true, 200, { status = 'stored' })
+        callback(true, 200, { forwarded = 4, dropped = 0 })
     end,
 }
 local debugLines = {}
@@ -91,5 +91,5 @@ end
 HumalikeUploadPopulationFiles()
 assert(posted.action == 'upload_population_files')
 assert(#posted.payload.files == 4)
-assert(debugLines[1] == 'population files: 4 sent, control plane says stored', debugLines[1])
+assert(debugLines[1] == 'population files: 4 sent, edge forwarded 4, dropped 0', debugLines[1])
 print('server_population ok')
