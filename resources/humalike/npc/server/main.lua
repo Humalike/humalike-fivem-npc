@@ -9,6 +9,7 @@ local function reportCapabilities()
 end
 
 local pendingReadyGeneration
+local populationUploaded = false
 
 local function rosterSynced(ok)
     if not ok or not pendingReadyGeneration then return end
@@ -21,6 +22,11 @@ AddEventHandler('humalike:core:ready', function(runtime)
     pendingReadyGeneration = runtime and runtime.generation or 0
     SyncNpcRoster(rosterSynced, true)
     reportCapabilities()
+    -- Once per boot: credential renewals fire ready again, the files don't change.
+    if not populationUploaded then
+        populationUploaded = true
+        HumalikeUploadPopulationFiles()
+    end
 end)
 
 AddEventHandler('humalike:providers:changed', function(domain)
