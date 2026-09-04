@@ -17,3 +17,21 @@ for i = 1, #counts do if a[i][1] ~= c[i][1] then differs = true end end
 assert(differs, 'different seeds look different')
 assert(#HumalikeStyleFor(nil, counts) == #counts, 'nil seed still maps')
 print('style ok')
+
+-- An explicit look sets exactly the listed slots, within the model's counts.
+local set, props, cleared = {}, {}, {}
+function DoesEntityExist() return true end
+function IsPedAPlayer() return false end
+function NetworkHasControlOfEntity() return true end
+function GetNumberOfPedDrawableVariations(_, c) return c == 3 and 4 or 1 end
+function GetNumberOfPedTextureVariations() return 2 end
+function GetNumberOfPedPropDrawableVariations() return 3 end
+function GetNumberOfPedPropTextureVariations() return 1 end
+function SetPedComponentVariation(_, c, d, t) set[c] = { d, t } end
+function SetPedPropIndex(_, p, d, t) props[p] = { d, t } end
+function ClearPedProp(_, p) cleared[p] = true end
+assert(HumalikeApplyExplicitStyle(7, { components = { ["3"] = { 2, 5 }, ["4"] = { 9, 0 } }, props = { ["0"] = { -1, 0 }, ["1"] = { 1, 0 } } }))
+assert(set[3][1] == 2 and set[3][2] == 1, 'drawable set, texture wrapped into range')
+assert(set[4] == nil, 'a drawable past the model count is ignored')
+assert(cleared[0] and props[1][1] == 1, 'props: -1 clears, index sets')
+print('explicit style ok')

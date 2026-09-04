@@ -29,6 +29,34 @@ function HumalikeStyleFor(seed, counts)
     return choices
 end
 
+--- Dress `ped` in an explicit look: { components = { ["3"] = { drawable, texture } },
+--- props = { ["0"] = { drawable, texture } } } with drawable -1 = no prop.
+--- Slots the look does not mention keep what the game rolled.
+function HumalikeApplyExplicitStyle(ped, style)
+    if type(style) ~= 'table' or not ped or ped <= 0 or not DoesEntityExist(ped) then return false end
+    if IsPedAPlayer(ped) or not NetworkHasControlOfEntity(ped) then return false end
+    for slot, choice in pairs(style.components or {}) do
+        local component, drawable, texture = tonumber(slot), tonumber(choice[1]), tonumber(choice[2]) or 0
+        if component and drawable and drawable >= 0
+            and drawable < GetNumberOfPedDrawableVariations(ped, component) then
+            local textures = GetNumberOfPedTextureVariations(ped, component, drawable)
+            SetPedComponentVariation(ped, component, drawable, textures > 0 and texture % textures or 0, 0)
+        end
+    end
+    for slot, choice in pairs(style.props or {}) do
+        local prop, drawable, texture = tonumber(slot), tonumber(choice[1]), tonumber(choice[2]) or 0
+        if prop and drawable then
+            if drawable < 0 then
+                ClearPedProp(ped, prop)
+            elseif drawable < GetNumberOfPedPropDrawableVariations(ped, prop) then
+                local textures = GetNumberOfPedPropTextureVariations(ped, prop, drawable)
+                SetPedPropIndex(ped, prop, drawable, textures > 0 and texture % textures or 0, true)
+            end
+        end
+    end
+    return true
+end
+
 --- Dress `ped` as `seed` says. No-op without a seed, for a ped we cannot
 --- control, or for player models (their wardrobe is the player's own).
 function HumalikeApplyPedStyle(ped, seed)
@@ -72,10 +100,15 @@ function HumalikeApplyPedStyle(ped, seed)
     return true
 end
 
-AddEventHandler('humalike:npc:ambientPedAssigned', function(_, ped, entry)
-    if type(entry) == 'table' then HumalikeApplyPedStyle(ped, entry.style_seed) end
-end)
+local function dress(ped, entry)
+    if type(entry) ~= 'table' then return end
+    -- The chosen look wins; the seed only covers slots the look leaves out.
+    if type(entry.style) == 'table' then
+        HumalikeApplyExplicitStyle(ped, entry.style)
+    else
+        HumalikeApplyPedStyle(ped, entry.style_seed)
+    end
+end
 
-AddEventHandler('humalike:npc:persistentPedAssigned', function(_, ped, entry)
-    if type(entry) == 'table' then HumalikeApplyPedStyle(ped, entry.style_seed) end
-end)
+AddEventHandler('humalike:npc:ambientPedAssigned', function(_, ped, entry) dress(ped, entry) end)
+AddEventHandler('humalike:npc:persistentPedAssigned', function(_, ped, entry) dress(ped, entry) end)
