@@ -107,6 +107,7 @@ local function playerLeaseSlice(playerId, body)
                 expires_in_seconds = lease.expires_in_seconds,
                 voice_active = lease.voice_active,
                 voice_muted = lease.voice_muted == true,
+                style_seed = lease.style_seed,
             }
         end
     end

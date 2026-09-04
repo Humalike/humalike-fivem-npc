@@ -198,6 +198,7 @@ local function bindAmbientLease(lease)
         lease_token = lease.lease_token,
         language = lease.language,
         voice_muted = lease.voice_muted == true,
+        style_seed = lease.style_seed,
     }
     Entity(ped).state:set('humalike_npc_id', npcId, false)
     if changed then
