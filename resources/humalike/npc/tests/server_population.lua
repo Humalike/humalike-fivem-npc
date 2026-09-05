@@ -86,8 +86,10 @@ for _, file in ipairs(files) do
     assert(type(file.content) == 'string' and #file.content > 0, file.path .. ' has content')
 end
 
-HumalikeNpcPopulation.Upload()
+local outcome
+HumalikeNpcPopulation.Upload(function(ok) outcome = ok end)
 assert(posted.action == 'upload_population_files')
 assert(#posted.payload.files == 4)
+assert(outcome == true)
 assert(debugLines[1] == 'population files: 4 sent, edge forwarded 4, dropped 0', debugLines[1])
 print('server_population ok')

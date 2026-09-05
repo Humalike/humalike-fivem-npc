@@ -3,21 +3,12 @@ HumalikeNpcStyle = HumalikeNpcStyle or {}
 local COMPONENTS = 12
 local PROPS = { 0, 1, 2, 6, 7 }
 
-function HumalikeNpcStyle.Choices(seed, counts)
+function HumalikeNpcStyle.Roll(seed)
     local state = (tonumber(seed) or 0) % 2147483648
-    local function next()
+    return function(count)
         state = (state * 1103515245 + 12345) % 2147483648
-        return state // 65536
+        return (state // 65536) % count
     end
-    local choices = {}
-    for index, count in ipairs(counts) do
-        local drawables = math.max(tonumber(count[1]) or 0, 0)
-        local drawable = drawables > 0 and next() % drawables or 0
-        local textures = math.max(tonumber(count[2]) or 0, 0)
-        local texture = textures > 0 and next() % textures or 0
-        choices[index] = { drawable, texture }
-    end
-    return choices
 end
 
 local function controllable(ped)
@@ -51,34 +42,24 @@ end
 
 function HumalikeNpcStyle.ApplySeed(ped, seed)
     if not seed or not controllable(ped) then return false end
-    local counts = {}
-    for component = 0, COMPONENTS - 1 do
-        counts[#counts + 1] = { GetNumberOfPedDrawableVariations(ped, component), 0 }
-    end
-    local choices = HumalikeNpcStyle.Choices(seed, counts)
+    local roll = HumalikeNpcStyle.Roll(seed)
     for component = 0, COMPONENTS - 1 do
         local drawables = GetNumberOfPedDrawableVariations(ped, component)
-        if drawables > 1 then
-            local choice = choices[component + 1]
-            local drawable = choice[1] % drawables
+        if drawables > 0 then
+            local drawable = roll(drawables)
             local textures = GetNumberOfPedTextureVariations(ped, component, drawable)
-            SetPedComponentVariation(ped, component, drawable, textures > 0 and (choice[2] + choice[1]) % textures or 0, 0)
+            SetPedComponentVariation(ped, component, drawable, textures > 0 and roll(textures) or 0, 0)
         end
     end
-    local propCounts = {}
     for _, prop in ipairs(PROPS) do
-        propCounts[#propCounts + 1] = { GetNumberOfPedPropDrawableVariations(ped, prop) + 1, 0 }
-    end
-    local propChoices = HumalikeNpcStyle.Choices(seed + 7919, propCounts)
-    for index, prop in ipairs(PROPS) do
         local drawables = GetNumberOfPedPropDrawableVariations(ped, prop)
         if drawables > 0 then
-            local drawable = propChoices[index][1] % (drawables + 1) - 1
+            local drawable = roll(drawables + 1) - 1
             if drawable < 0 then
                 ClearPedProp(ped, prop)
             else
                 local textures = GetNumberOfPedPropTextureVariations(ped, prop, drawable)
-                SetPedPropIndex(ped, prop, drawable, textures > 0 and propChoices[index][2] % textures or 0, true)
+                SetPedPropIndex(ped, prop, drawable, textures > 0 and roll(textures) or 0, true)
             end
         end
     end
@@ -87,8 +68,9 @@ end
 
 function HumalikeNpcStyle.Dress(ped, entry)
     if type(entry) ~= 'table' then return false end
-    if type(entry.style) == 'table' then return HumalikeNpcStyle.ApplyExplicit(ped, entry.style) end
-    return HumalikeNpcStyle.ApplySeed(ped, entry.style_seed)
+    local seeded = HumalikeNpcStyle.ApplySeed(ped, entry.style_seed)
+    local explicit = HumalikeNpcStyle.ApplyExplicit(ped, entry.style)
+    return seeded or explicit
 end
 
 AddEventHandler('humalike:npc:ambientPedAssigned', function(_, ped, entry) HumalikeNpcStyle.Dress(ped, entry) end)

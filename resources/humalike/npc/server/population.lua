@@ -67,15 +67,16 @@ function HumalikeNpcPopulation.Collect()
     return files
 end
 
-function HumalikeNpcPopulation.Upload()
+function HumalikeNpcPopulation.Upload(onDone)
     local files = HumalikeNpcPopulation.Collect()
     HumalikeHttp.PostAction('upload_population_files', { files = files }, function(ok, status, body)
-        if not ok then
+        if ok then
+            HumalikeDebug('population files: %d sent, edge forwarded %s, dropped %s', #files,
+                type(body) == 'table' and tostring(body.forwarded) or '?',
+                type(body) == 'table' and tostring(body.dropped) or '?')
+        else
             print(('[humalike-npc] upload_population_files failed (HTTP %s)'):format(tostring(status)))
-            return
         end
-        HumalikeDebug('population files: %d sent, edge forwarded %s, dropped %s', #files,
-            type(body) == 'table' and tostring(body.forwarded) or '?',
-            type(body) == 'table' and tostring(body.dropped) or '?')
+        if onDone then onDone(ok == true) end
     end)
 end

@@ -24,7 +24,7 @@ AddEventHandler('humalike:core:ready', function(runtime)
     reportCapabilities()
     if not populationUploaded then
         populationUploaded = true
-        HumalikeNpcPopulation.Upload()
+        HumalikeNpcPopulation.Upload(function(ok) populationUploaded = ok end)
     end
 end)
 

@@ -23,7 +23,13 @@ function SyncNpcRoster(callback, repair)
     rosterCallback = callback
 end
 function GetSupportedActions() return { 'wave' } end
-HumalikeNpcPopulation = { Upload = function() populationUploads = populationUploads + 1 end }
+local populationOutcome = true
+HumalikeNpcPopulation = {
+    Upload = function(onDone)
+        populationUploads = populationUploads + 1
+        onDone(populationOutcome)
+    end,
+}
 HumalikeHttp = {
     PostAction = function(name, body, callback)
         assert(name == 'report_capabilities')
@@ -42,11 +48,15 @@ assert(commands['humalikenpc:status'].restricted == true)
 assert(commands['humalikenpc:reload'].restricted == true)
 
 assert(rosterCalls == 0 and capabilityCalls == 0 and populationUploads == 0)
-handlers['humalike:core:ready']({ generation = 3 })
+populationOutcome = false
+handlers['humalike:core:ready']({ generation = 2 })
 assert(rosterCalls == 1 and capabilityCalls == 1 and populationUploads == 1)
+populationOutcome = true
+handlers['humalike:core:ready']({ generation = 3 })
+assert(rosterCalls == 2 and capabilityCalls == 2 and populationUploads == 2, 'a failed upload is retried on the next ready')
 assert(ready == nil)
 rosterCallback(true)
 assert(ready[1] == 'humalike:npc:ready')
 assert(ready[2].apiVersion == 1 and ready[2].generation == 3)
 handlers['humalike:core:ready']({ generation = 4 })
-assert(rosterCalls == 2 and capabilityCalls == 2 and populationUploads == 1)
+assert(rosterCalls == 3 and capabilityCalls == 3 and populationUploads == 2, 'a successful upload is not repeated')
