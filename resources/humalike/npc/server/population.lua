@@ -49,7 +49,7 @@ end
 local function expand(resource, path)
     if not path:find('*', 1, true) then return { path } end
     local directory, name = path:match('^(.-)/?([^/]*)$')
-    if directory:find('*', 1, true) or path:find('["\n]') then return {} end
+    if directory:find('*', 1, true) or not path:match('^[%w%._%-/ ]+$') then return {} end
     local pattern = '^' .. name:gsub('[%^%$%(%)%%%.%[%]%+%-%?]', '%%%0'):gsub('%*', '.*') .. '$'
     local paths = {}
     for _, entry in ipairs(listDirectory(resource, directory)) do
