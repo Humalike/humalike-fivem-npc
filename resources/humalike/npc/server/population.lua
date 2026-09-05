@@ -31,8 +31,36 @@ local function declaredFiles(resource)
     return found
 end
 
+local function listDirectory(resource, directory)
+    local root = GetResourcePath(resource)
+    if type(root) ~= 'string' or type(io) ~= 'table' or not io.popen then return {} end
+    local full = root .. '/' .. directory
+    local command = package.config:sub(1, 1) == '\\'
+        and ('dir /b "%s" 2>nul'):format((full:gsub('/', '\\')))
+        or ('ls -1 "%s" 2>/dev/null'):format(full)
+    local ok, pipe = pcall(io.popen, command)
+    if not ok or not pipe then return {} end
+    local names = {}
+    for line in pipe:lines() do names[#names + 1] = line end
+    pipe:close()
+    return names
+end
+
+local function expand(resource, path)
+    if not path:find('*', 1, true) then return { path } end
+    local directory, name = path:match('^(.-)/?([^/]*)$')
+    if directory:find('*', 1, true) or path:find('["\n]') then return {} end
+    local pattern = '^' .. name:gsub('[%^%$%(%)%%%.%[%]%+%-%?]', '%%%0'):gsub('%*', '.*') .. '$'
+    local paths = {}
+    for _, entry in ipairs(listDirectory(resource, directory)) do
+        if entry:match(pattern) then
+            paths[#paths + 1] = directory ~= '' and directory .. '/' .. entry or entry
+        end
+    end
+    return paths
+end
+
 local function readFile(resource, path)
-    if path:find('*', 1, true) then return nil end
     local content = LoadResourceFile(resource, path)
     if type(content) ~= 'string' or content == '' then return nil end
     return content
@@ -46,19 +74,21 @@ function HumalikeNpcPopulation.Collect()
             local candidates = declaredFiles(resource)
             for _, probe in ipairs(STREAMED) do candidates[#candidates + 1] = probe end
             for _, candidate in ipairs(candidates) do
-                local key = resource .. '/' .. candidate.path
-                if not seen[key] then
-                    seen[key] = true
-                    local content = readFile(resource, candidate.path)
-                    if content and #content <= MAX_FILE_BYTES
-                        and total + #content <= MAX_TOTAL_BYTES then
-                        total = total + #content
-                        files[#files + 1] = {
-                            kind = candidate.kind,
-                            resource = resource,
-                            path = candidate.path,
-                            content = content,
-                        }
+                for _, path in ipairs(expand(resource, candidate.path)) do
+                    local key = resource .. '/' .. path
+                    if not seen[key] then
+                        seen[key] = true
+                        local content = readFile(resource, path)
+                        if content and #content <= MAX_FILE_BYTES
+                            and total + #content <= MAX_TOTAL_BYTES then
+                            total = total + #content
+                            files[#files + 1] = {
+                                kind = candidate.kind,
+                                resource = resource,
+                                path = path,
+                                content = content,
+                            }
+                        end
                     end
                 end
             end

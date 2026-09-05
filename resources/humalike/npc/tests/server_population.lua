@@ -8,7 +8,13 @@ local resources = {
             { 'VEHICLE_METADATA_FILE', '"vehicles.meta"' },
             { 'PED_METADATA_FILE', '"metas/*_peds.meta"' },
         },
-        files = { ['peds.meta'] = '<CPedModelInfo__InitDataList/>' },
+        files = {
+            ['peds.meta'] = '<CPedModelInfo__InitDataList/>',
+            ['metas/a_peds.meta'] = '<a/>',
+            ['metas/b_peds.meta'] = '<b/>',
+            ['metas/vehicles.meta'] = 'never matched',
+        },
+        listing = { metas = { 'a_peds.meta', 'b_peds.meta', 'vehicles.meta' } },
     },
     {
         name = 'population_tweaks',
@@ -47,6 +53,14 @@ function GetResourceMetadata(name, key, index)
     if key == 'data_file_extra' then return entry[2] end
 end
 function LoadResourceFile(name, path) return byName(name).files[path] end
+function GetResourcePath(name) return '/srv/resources/' .. name end
+local listed = {}
+function io.popen(command)
+    listed[#listed + 1] = command
+    local resource, directory = command:match('/srv/resources/([^/]+)/([^"]*)"')
+    local names = byName(resource).listing and byName(resource).listing[directory] or {}
+    return { lines = function() return coroutine.wrap(function() for _, n in ipairs(names) do coroutine.yield(n) end end) end, close = function() end }
+end
 json = {
     decode = function(text)
         if text:sub(1, 1) == '[' then return { text:match('%["([^"]+)"%]') } end
@@ -58,7 +72,7 @@ local posted
 HumalikeHttp = {
     PostAction = function(action, payload, callback)
         posted = { action = action, payload = payload }
-        callback(true, 200, { forwarded = 4, dropped = 0 })
+        callback(true, 200, { forwarded = 6, dropped = 0 })
     end,
 }
 local debugLines = {}
@@ -73,6 +87,8 @@ for _, file in ipairs(files) do
 end
 table.sort(got)
 local expected = {
+    'peds_meta custom_peds metas/a_peds.meta',
+    'peds_meta custom_peds metas/b_peds.meta',
     'peds_meta custom_peds peds.meta',
     'popcycle population_tweaks data/popcycle.dat',
     'popgroups population_tweaks popgroups.ymt',
@@ -85,11 +101,12 @@ end
 for _, file in ipairs(files) do
     assert(type(file.content) == 'string' and #file.content > 0, file.path .. ' has content')
 end
+assert(#listed == 1 and listed[1]:find('custom_peds/metas"', 1, true), 'one listing, for the wildcard directory: ' .. tostring(listed[1]))
 
 local outcome
 HumalikeNpcPopulation.Upload(function(ok) outcome = ok end)
 assert(posted.action == 'upload_population_files')
-assert(#posted.payload.files == 4)
+assert(#posted.payload.files == 6)
 assert(outcome == true)
-assert(debugLines[1] == 'population files: 4 sent, edge forwarded 4, dropped 0', debugLines[1])
+assert(debugLines[1] == 'population files: 6 sent, edge forwarded 6, dropped 0', debugLines[1])
 print('server_population ok')
