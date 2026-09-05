@@ -22,10 +22,9 @@ AddEventHandler('humalike:core:ready', function(runtime)
     pendingReadyGeneration = runtime and runtime.generation or 0
     SyncNpcRoster(rosterSynced, true)
     reportCapabilities()
-    -- Once per boot: credential renewals fire ready again, the files don't change.
     if not populationUploaded then
         populationUploaded = true
-        HumalikeUploadPopulationFiles()
+        HumalikeNpcPopulation.Upload()
     end
 end)
 

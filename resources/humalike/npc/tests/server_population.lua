@@ -1,5 +1,3 @@
--- Population files: declared data_file entries and streamed overrides are
--- collected from every started resource and sent once.
 local resources = {
     { name = 'humalike', state = 'started', meta = {}, files = {} },
     {
@@ -68,7 +66,7 @@ function HumalikeDebug(fmt, ...) debugLines[#debugLines + 1] = fmt:format(...) e
 
 dofile('server/population.lua')
 
-local files = HumalikeCollectPopulationFiles()
+local files = HumalikeNpcPopulation.Collect()
 local got = {}
 for _, file in ipairs(files) do
     got[#got + 1] = ('%s %s %s'):format(file.kind, file.resource, file.path)
@@ -88,7 +86,7 @@ for _, file in ipairs(files) do
     assert(type(file.content) == 'string' and #file.content > 0, file.path .. ' has content')
 end
 
-HumalikeUploadPopulationFiles()
+HumalikeNpcPopulation.Upload()
 assert(posted.action == 'upload_population_files')
 assert(#posted.payload.files == 4)
 assert(debugLines[1] == 'population files: 4 sent, edge forwarded 4, dropped 0', debugLines[1])

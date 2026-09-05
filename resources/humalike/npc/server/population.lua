@@ -1,15 +1,4 @@
---- Population files: what this server streets, sent once per boot.
---
--- A dynamic NPC is leased onto a street pedestrian of exactly its ped model,
--- so the control plane picks each persona's model from the models the game
--- spawns on THIS server. The game decides that from four data files; a server
--- that ships its own copies (or addon peds) declares them in a resource
--- manifest as `data_file` entries, which the manifest metadata exposes here.
--- Stock GTA files need no upload — the control plane holds those.
---
--- Wire: POST upload_population_files { files = [{ kind, resource, path,
--- content }] }. Content is sent verbatim (text); the control plane
--- de-duplicates by content hash, so re-sending every boot is cheap.
+HumalikeNpcPopulation = HumalikeNpcPopulation or {}
 
 local KINDS = {
     DLC_POP_GROUPS = 'popgroups',
@@ -17,24 +6,19 @@ local KINDS = {
     ZONEBIND_FILE = 'zonebind',
     PED_METADATA_FILE = 'peds_meta',
 }
-
---- Overrides some servers stream instead of declaring; probed by name.
-local STREAMED_CANDIDATES = {
+local STREAMED = {
     { kind = 'popgroups', path = 'stream/popgroups.ymt' },
     { kind = 'popcycle', path = 'stream/popcycle.dat' },
     { kind = 'zonebind', path = 'stream/zonebind.ymt' },
 }
-
 local MAX_FILE_BYTES = 4 * 1024 * 1024
 local MAX_TOTAL_BYTES = 12 * 1024 * 1024
 
 local function declaredFiles(resource)
     local found = {}
-    local count = GetNumResourceMetadata(resource, 'data_file') or 0
-    for index = 0, count - 1 do
+    for index = 0, (GetNumResourceMetadata(resource, 'data_file') or 0) - 1 do
         local kind = KINDS[GetResourceMetadata(resource, 'data_file', index) or '']
         if kind then
-            -- The manifest stores the path JSON-encoded: "peds.meta" (or a list).
             local extra = GetResourceMetadata(resource, 'data_file_extra', index)
             local ok, decoded = pcall(json.decode, extra or '')
             local path = ok and decoded or extra
@@ -48,22 +32,19 @@ local function declaredFiles(resource)
 end
 
 local function readFile(resource, path)
-    if path:find('*', 1, true) then return nil end -- globs are not resolvable here
+    if path:find('*', 1, true) then return nil end
     local content = LoadResourceFile(resource, path)
     if type(content) ~= 'string' or content == '' then return nil end
     return content
 end
 
---- Every population data file every started resource declares or streams.
-function HumalikeCollectPopulationFiles()
+function HumalikeNpcPopulation.Collect()
     local files, total, seen = {}, 0, {}
     for index = 0, (GetNumResources() or 0) - 1 do
         local resource = GetResourceByFindIndex(index)
         if resource and GetResourceState(resource) == 'started' then
             local candidates = declaredFiles(resource)
-            for _, probe in ipairs(STREAMED_CANDIDATES) do
-                candidates[#candidates + 1] = probe
-            end
+            for _, probe in ipairs(STREAMED) do candidates[#candidates + 1] = probe end
             for _, candidate in ipairs(candidates) do
                 local key = resource .. '/' .. candidate.path
                 if not seen[key] then
@@ -86,8 +67,8 @@ function HumalikeCollectPopulationFiles()
     return files
 end
 
-function HumalikeUploadPopulationFiles()
-    local files = HumalikeCollectPopulationFiles()
+function HumalikeNpcPopulation.Upload()
+    local files = HumalikeNpcPopulation.Collect()
     HumalikeHttp.PostAction('upload_population_files', { files = files }, function(ok, status, body)
         if not ok then
             print(('[humalike-npc] upload_population_files failed (HTTP %s)'):format(tostring(status)))

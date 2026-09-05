@@ -15,7 +15,6 @@ local function encodeBody(payload)
     end
     return json.encode(payload)
 end
---- Bodies that are megabytes of game data files; the debug line shows a count.
 local QUIET_ACTIONS = { upload_population_files = true }
 
 function HumalikeHttp.PostAction(name, payload, callback)

@@ -23,7 +23,7 @@ function SyncNpcRoster(callback, repair)
     rosterCallback = callback
 end
 function GetSupportedActions() return { 'wave' } end
-function HumalikeUploadPopulationFiles() populationUploads = populationUploads + 1 end
+HumalikeNpcPopulation = { Upload = function() populationUploads = populationUploads + 1 end }
 HumalikeHttp = {
     PostAction = function(name, body, callback)
         assert(name == 'report_capabilities')
@@ -48,7 +48,5 @@ assert(ready == nil)
 rosterCallback(true)
 assert(ready[1] == 'humalike:npc:ready')
 assert(ready[2].apiVersion == 1 and ready[2].generation == 3)
--- A credential renewal fires ready again: roster and capabilities repeat,
--- the population files go once per boot.
 handlers['humalike:core:ready']({ generation = 4 })
 assert(rosterCalls == 2 and capabilityCalls == 2 and populationUploads == 1)
