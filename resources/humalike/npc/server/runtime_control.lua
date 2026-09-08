@@ -239,38 +239,41 @@ end
 
 exports('GetNpcRuntimeState', function(npcId)
     local state, err = HumalikeNpcRuntimeControl.State(npcId)
-    return state and copy(state) or nil, err
+    if not state then return HumalikeExportResult.Failure(err) end
+    return HumalikeExportResult.Success(copy(state))
 end)
 
 exports('AcquireNpcControl', function(npcId, options)
     local owner = invokingOwner()
-    if not owner then return nil, 'external_resource_required' end
-    return acquire(npcId, options, owner)
+    if not owner then return HumalikeExportResult.Failure('external_resource_required') end
+    local lease, err = acquire(npcId, options, owner)
+    if not lease then return HumalikeExportResult.Failure(err) end
+    return HumalikeExportResult.Success(lease)
 end)
 
 exports('RenewNpcControl', function(leaseId, ttlMs)
     local owner = invokingOwner()
-    if not owner then return nil, 'external_resource_required' end
+    if not owner then return HumalikeExportResult.Failure('external_resource_required') end
     local lease = type(leaseId) == 'string' and leases[leaseId] or nil
-    if not lease then return nil, 'lease_not_found' end
-    if lease.ownerResource ~= owner then return nil, 'not_owner' end
+    if not lease then return HumalikeExportResult.Failure('lease_not_found') end
+    if lease.ownerResource ~= owner then return HumalikeExportResult.Failure('not_owner') end
     local ttl = normalizeTtl(ttlMs)
-    if not ttl then return nil, 'invalid_ttl' end
+    if not ttl then return HumalikeExportResult.Failure('invalid_ttl') end
     lease.expiresAtMs = nowMs() + ttl
     local result = copy(lease)
     result.expiresInMs, result.expiresAtMs, result.incarnation = ttl, nil, nil
-    return result
+    return HumalikeExportResult.Success(result)
 end)
 
 exports('ReleaseNpcControl', function(leaseId)
     local owner = invokingOwner()
-    if not owner then return false, 'external_resource_required' end
+    if not owner then return HumalikeExportResult.Failure('external_resource_required') end
     local lease = type(leaseId) == 'string' and leases[leaseId] or nil
-    if not lease then return false, 'lease_not_found' end
-    if lease.ownerResource ~= owner then return false, 'not_owner' end
+    if not lease then return HumalikeExportResult.Failure('lease_not_found') end
+    if lease.ownerResource ~= owner then return HumalikeExportResult.Failure('not_owner') end
     releaseLease(lease)
     publish()
-    return true
+    return HumalikeExportResult.Success()
 end)
 
 RegisterNetEvent('humalike:npc:requestRuntimeControls')

@@ -40,13 +40,14 @@ local function bind(source, npcId, model)
         DeleteEntity(entity)
         return reply(source, 'network ID unavailable')
     end
-    local binding, err = exports.humalike:BindNpcEntity(npcId, networkId, {
+    local result = exports.humalike:BindNpcEntity(npcId, networkId, {
         routingBucket = GetPlayerRoutingBucket(source),
     })
-    if not binding then
+    if not result.ok then
         DeleteEntity(entity)
-        return reply(source, ('bind failed: %s'):format(tostring(err)))
+        return reply(source, ('bind failed: %s'):format(result.error))
     end
+    local binding = result.value
     testNpcs[npcId] = { entity = entity, networkId = networkId, bindingId = binding.id }
     reply(source, ('bound %s to network %d'):format(npcId, networkId))
 end
@@ -54,10 +55,10 @@ end
 local function rebind()
     for npcId, record in pairs(testNpcs) do
         if record.entity and DoesEntityExist(record.entity) then
-            local binding = exports.humalike:BindNpcEntity(npcId, record.networkId, {
+            local result = exports.humalike:BindNpcEntity(npcId, record.networkId, {
                 routingBucket = GetEntityRoutingBucket(record.entity),
             })
-            record.bindingId = binding and binding.id or nil
+            record.bindingId = result.ok and result.value.id or nil
         end
     end
 end
@@ -69,9 +70,9 @@ RegisterCommand('humalike_npc_test', function(source, args)
     elseif operation == 'unbind' and npcId then
         local record = testNpcs[npcId]
         if record and record.bindingId then
-            local ok, err = exports.humalike:UnbindNpcEntity(record.bindingId)
-            if ok then record.bindingId = nil end
-            reply(source, ok and 'unbound' or ('failed: ' .. tostring(err)))
+            local result = exports.humalike:UnbindNpcEntity(record.bindingId)
+            if result.ok then record.bindingId = nil end
+            reply(source, result.ok and 'unbound' or ('failed: ' .. result.error))
         else
             reply(source, 'no test binding')
         end
@@ -85,29 +86,31 @@ RegisterCommand('humalike_npc_test', function(source, args)
             reply(source, 'no external ped')
         end
     elseif operation == 'despawn' and npcId then
-        local result, err = exports.humalike:DespawnNpc(npcId)
-        reply(source, result and ('despawned: ' .. result.id) or ('failed: ' .. tostring(err)))
+        local result = exports.humalike:DespawnNpc(npcId)
+        reply(source, result.ok and ('despawned: ' .. result.value.id)
+            or ('failed: ' .. result.error))
     elseif operation == 'respawn' and npcId then
-        local ok, err = exports.humalike:RespawnNpc(npcId)
-        reply(source, ok and 'respawned' or ('failed: ' .. tostring(err)))
+        local result = exports.humalike:RespawnNpc(npcId)
+        reply(source, result.ok and 'respawned' or ('failed: ' .. result.error))
     elseif operation == 'state' and npcId then
-        local state, err = exports.humalike:GetNpcRuntimeState(npcId)
-        reply(source, state and json.encode(state) or ('failed: ' .. tostring(err)))
+        local result = exports.humalike:GetNpcRuntimeState(npcId)
+        reply(source, result.ok and json.encode(result.value) or ('failed: ' .. result.error))
     elseif operation == 'control' and npcId and args[3] then
         local domains = {}
         for domain in args[3]:gmatch('[^,]+') do domains[#domains + 1] = domain end
-        local lease, err = exports.humalike:AcquireNpcControl(npcId, {
+        local result = exports.humalike:AcquireNpcControl(npcId, {
             domains = domains, ttlMs = tonumber(args[4]) or 30000,
             reason = 'manual_test',
         })
-        if lease then testLeases[npcId] = lease.id end
-        reply(source, lease and ('lease: ' .. lease.id) or ('failed: ' .. tostring(err)))
+        if result.ok then testLeases[npcId] = result.value.id end
+        reply(source, result.ok and ('lease: ' .. result.value.id)
+            or ('failed: ' .. result.error))
     elseif operation == 'release' and npcId then
         local leaseId = testLeases[npcId]
-        local ok, err
-        if leaseId then ok, err = exports.humalike:ReleaseNpcControl(leaseId) end
-        if ok then testLeases[npcId] = nil end
-        reply(source, ok and 'lease released' or ('failed: ' .. tostring(err)))
+        local result = leaseId and exports.humalike:ReleaseNpcControl(leaseId)
+            or { ok = false, error = 'test_lease_not_found' }
+        if result.ok then testLeases[npcId] = nil end
+        reply(source, result.ok and 'lease released' or ('failed: ' .. result.error))
     else
         reply(source, 'usage: /humalike_npc_test <bind|unbind|delete|despawn|respawn|state|control|release> <npcId> [value]')
     end

@@ -23,23 +23,25 @@ CreateThread(function()
         for npcId, ped in pairs(LoadedPeds or {}) do
             if ped and DoesEntityExist(ped) then
                 activePeds[ped] = true
-                local signature = ('%s:%s'):format(
-                    NetworkGetNetworkIdFromEntity(ped),
-                    tostring(Entity(ped).state.humalike_runtime_token))
-                if NetworkHasControlOfEntity(ped) then
-                    if configuredPeds[ped] ~= signature then
-                        local entry = KnownNpcs and KnownNpcs[npcId] or nil
-                        if entry then
+                local entry = KnownNpcs and KnownNpcs[npcId] or nil
+                if entry and entry.type == 'static' then
+                    local signature = ('%s:%s'):format(
+                        NetworkGetNetworkIdFromEntity(ped),
+                        tostring(Entity(ped).state.humalike_runtime_token))
+                    if NetworkHasControlOfEntity(ped) then
+                        if configuredPeds[ped] ~= signature then
                             configurePersistentPed(ped, entry)
                             configuredPeds[ped] = signature
+                        else
+                            FreezeEntityPosition(ped, true)
+                            SetBlockingOfNonTemporaryEvents(ped, true)
+                            if IsPedFleeing(ped)
+                                and not (IsActionControlled and IsActionControlled(ped)) then
+                                ClearPedTasks(ped)
+                            end
                         end
                     else
-                        FreezeEntityPosition(ped, true)
-                        SetBlockingOfNonTemporaryEvents(ped, true)
-                        if IsPedFleeing(ped)
-                            and not (IsActionControlled and IsActionControlled(ped)) then
-                            ClearPedTasks(ped)
-                        end
+                        configuredPeds[ped] = nil
                     end
                 else
                     configuredPeds[ped] = nil
