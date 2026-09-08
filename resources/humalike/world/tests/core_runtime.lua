@@ -1,5 +1,6 @@
 local handlers, timers, requests, statuses = {}, {}, {}, {}
 local readyEvents, edgeEvents, voiceEvents, refreshEvents = {}, {}, {}, {}
+local persistedLease = nil
 
 GetConvar = function(name)
     if name == 'humalike_license_key' then return 'ak_' .. string.rep('x', 40) end
@@ -7,6 +8,8 @@ GetConvar = function(name)
 end
 GetCurrentResourceName = function() return 'humalike' end
 GetGameTimer = function() return 7 end
+GetResourceKvpString = function() return persistedLease end
+SetResourceKvp = function(_, value) persistedLease = value end
 os.time = function() return 100 end
 SetTimeout = function(delay, callback)
     timers[#timers + 1] = { delay = delay, callback = callback }
@@ -92,6 +95,7 @@ TriggerEvent('onResourceStart', 'humalike')
 assert(#timers == 1 and timers[1].delay == 0)
 timers[1].callback()
 assert(#requests == 1 and requests[1].action == 'bootstrap_fivem_runtime')
+assert(requests[1].payload.previous_lease_id == nil)
 assert(HumaLike.RequestBootstrap('duplicate', 1, true) == false)
 assert(HumaLike.RequestBootstrap('duplicate', 1, true) == false)
 requests[1].callback(401, { error = { code = 'UNAUTHORIZED' } })
@@ -115,6 +119,7 @@ local bootId = requests[4].payload.boot_id
 requests[4].callback(200, credentials(bootId))
 assert(statuses[#statuses].phase == 'ready')
 assert(HumaLike.RuntimeCredentials().bootId == bootId)
+assert(persistedLease == 'lease-1')
 assert(HumaLike.RuntimeCredentials().edgeUrl == 'https://edge-a.example')
 assert(HumaLike.RuntimeCredentials().edgeNodeId == 'edge-a')
 assert(HumaLike.RuntimeCredentials().edgeGeneration == 7)

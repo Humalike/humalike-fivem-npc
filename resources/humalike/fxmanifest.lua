@@ -17,7 +17,6 @@ files {
 
 shared_scripts {
     'world/config.lua',
-    'voice/config.lua',
     'npc/config/shared.lua',
     'npc/config/wounds.lua'
 }
@@ -48,12 +47,15 @@ server_scripts {
     'integration/providers/ox_inventory/server.lua',
     'integration/providers/qb_inventory/server.lua',
     'npc/server/http.lua',
+    'npc/server/runtime_state.lua',
     'npc/server/pose_ledger.lua',
     'npc/server/pose_threat.lua',
+    'npc/server/entity_ownership.lua',
     'npc/server/persistent.lua',
     'npc/server/npc.lua',
     'npc/server/sessions.lua',
     'npc/server/ambient.lua',
+    'npc/server/runtime_control.lua',
     'npc/server/developer_tools.lua',
     'npc/server/wounded.lua',
     'npc/server/wounds.lua',
@@ -112,9 +114,9 @@ client_scripts {
     'npc/client/ambient_control.lua',
     'npc/client/ambient.lua',
     'npc/client/developer_tools.lua',
+    'npc/client/runtime_control.lua',
     'npc/client/direct_targets.lua',
     'npc/client/labels.lua',
     'voice/client/ptt.lua',
-    'voice/client/native_audio.lua',
     'voice/client/main.lua'
 }

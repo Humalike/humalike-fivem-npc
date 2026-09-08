@@ -77,7 +77,6 @@ Config.AmbientRevive = {
     CompletionToleranceMs = 500,
     SessionTimeoutMs = 10000,
 }
-Config.DefaultVoiceDistance = 15.0
 Config.NpcLabels = {
     Enabled = GetConvar('humalike_npc_labels_enabled', 'true') == 'true',
     MaxDistance = tonumber(GetConvar('humalike_npc_labels_distance', '14.0')) or 14.0,
@@ -90,7 +89,6 @@ Config.NpcLabels = {
     ShowDefaultLanguage = GetConvar('humalike_npc_labels_show_default_language', 'false') == 'true',
     LanguageLabels = { pl = 'pl', en = 'en', de = 'de', es = 'es', fr = 'fr' },
 }
-Config.NpcLabelMaxDistance = Config.NpcLabels.MaxDistance
 Config.RosterSyncIntervalMs = 30000
 Config.SupportedActions = {
     'wave',

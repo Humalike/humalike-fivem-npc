@@ -143,6 +143,71 @@ The standalone player provider has no job system. Empty job requirements pass;
 any configured job requirement is denied until a player provider implements
 `HasJob`.
 
+## NPC runtime control
+
+Server resources can temporarily take over selected AI domains without
+changing the NPC definition or its entity binding:
+
+```lua
+local lease, err = exports.humalike:AcquireNpcControl(npcId, {
+    domains = { 'movement', 'animation' },
+    ttlMs = 30000,
+    reason = 'hostage_scenario',
+})
+```
+
+The domains are `movement`, `animation`, `speech`, `perception` and `all`.
+`all` must be requested alone. A conflicting lease is rejected atomically.
+TTL must be between 1 second and 5 minutes.
+
+```lua
+local renewed, renewErr = exports.humalike:RenewNpcControl(lease.id, 30000)
+local released, releaseErr = exports.humalike:ReleaseNpcControl(lease.id)
+local state, stateErr = exports.humalike:GetNpcRuntimeState(npcId)
+```
+
+Only the resource that acquired a lease can renew or release it. Leases expire
+at their TTL, when their owner resource stops, when the NPC disappears, or when
+an ambient NPC receives a new runtime incarnation. `GetNpcRuntimeState` returns
+the current entity and network ID, routing bucket, NPC kind, AI status and the
+owner of each controlled domain. Callers should use `networkId` across event or
+network boundaries; `entity` is only a local server handle.
+
+## NPC entity ownership
+
+A server resource may attach an external HumaLike identity to a networked ped
+that it owns. Configure the NPC as `external` in the dashboard; HumaLike never
+spawns or deletes its entity:
+
+```lua
+local binding, err = exports.humalike:BindNpcEntity(npcId, networkId, {
+    routingBucket = 0,
+})
+
+local released, releaseErr = exports.humalike:UnbindNpcEntity(binding.id)
+```
+
+The entity must exist, be a non-player ped, use the NPC's configured model and
+match the optional routing bucket. An NPC and a network entity can each have
+only one external binding. Unbind removes HumaLike state and leaves the ped
+untouched. The NPC remains offline until it is bound again. Repeating the same
+bind from the same resource returns the existing binding. Static and dynamic
+NPCs cannot be externally bound.
+
+Static NPCs can also be removed from the runtime without deleting their
+definition:
+
+```lua
+local despawn, err = exports.humalike:DespawnNpc(npcId)
+local restored, restoreErr = exports.humalike:RespawnNpc(npcId)
+```
+
+Binding and despawn ownership belongs to the invoking resource. Its external
+bindings are detached and its static despawns restored when it stops. A
+resource that survives a HumaLike restart must bind again after
+`humalike:npc:ready`. This server event fires after the first successful roster
+sync for each HumaLike runtime generation.
+
 ## Neutral events
 
 Server integrations can translate their own event bus with

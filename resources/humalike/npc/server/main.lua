@@ -8,8 +8,18 @@ local function reportCapabilities()
         end)
 end
 
-AddEventHandler('humalike:core:ready', function()
-    SyncNpcRoster(nil, true)
+local pendingReadyGeneration
+
+local function rosterSynced(ok)
+    if not ok or not pendingReadyGeneration then return end
+    local generation = pendingReadyGeneration
+    pendingReadyGeneration = nil
+    TriggerEvent('humalike:npc:ready', { apiVersion = 1, generation = generation })
+end
+
+AddEventHandler('humalike:core:ready', function(runtime)
+    pendingReadyGeneration = runtime and runtime.generation or 0
+    SyncNpcRoster(rosterSynced, true)
     reportCapabilities()
 end)
 
@@ -23,7 +33,7 @@ AddEventHandler('onResourceStart', function(resourceName)
     CreateThread(function()
         while true do
             Wait(Config.RosterSyncIntervalMs)
-            SyncNpcRoster()
+            SyncNpcRoster(rosterSynced)
         end
     end)
 end)
@@ -32,7 +42,9 @@ AddEventHandler('humalike:npc:requestRoster', function()
     local source = source
     local snapshot = {}
     for _, entry in pairs(NpcRegistry) do
-        snapshot[#snapshot + 1] = entry
+        if entry.entity_id and DoesEntityExist(entry.entity_id) then
+            snapshot[#snapshot + 1] = entry
+        end
     end
     TriggerClientEvent('humalike:npc:rosterSnapshot', source, snapshot)
 end)

@@ -1,5 +1,5 @@
 export function readyServerId(
-  serverId: string | undefined,
+  serverId: string,
   room: string,
 ): string | null;
 export function publicationSourceId(

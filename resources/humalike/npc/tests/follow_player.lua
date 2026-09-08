@@ -18,6 +18,7 @@ local partner, vehicle = 10, 20
 local living = { [1] = true, [2] = true, [3] = true, [partner] = true, [vehicle] = true }
 local threads, bagHandler = {}, nil
 local bags, follows, enters, leaves, clears = {}, {}, {}, {}, {}
+local keepTask, blocking = {}, {}
 local inVehicle = {}
 local occupied = { [vehicle] = {} }
 local locks = { [vehicle] = 1 }
@@ -74,8 +75,8 @@ function IsPedAPlayer() return false end
 function NetworkHasControlOfEntity() return true end
 function IsEntityDead() return false end
 function IsPedRagdoll() return false end
-function SetBlockingOfNonTemporaryEvents() end
-function SetPedKeepTask() end
+function SetBlockingOfNonTemporaryEvents(ped, value) blocking[ped] = value end
+function SetPedKeepTask(ped, value) keepTask[ped] = value end
 function Entity(ped)
     return { state = { set = function(_self, key, value) bags[ped .. key] = value end } }
 end
@@ -101,6 +102,10 @@ end
 
 loadClient()
 NpcActionSustain.hands_up = function() end
+MarkActionControl(1, 'hands_up', {})
+bagHandler('entity:1', 'humalike_action', nil)
+assert(ActionControlledPeds[1] == nil and keepTask[1] == false and blocking[1] == false,
+    'clearing replicated action state stops local sustain without clearing native tasks')
 MarkActionControl(1, 'hands_up', {})
 local clearsBeforeFollow = #clears
 NpcActions.follow_player(1, { player_id = 7 })

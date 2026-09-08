@@ -9,7 +9,7 @@ local timers = {}
 local retryDelays = {}
 local hashes = { WEAPON_UNARMED = 0, WEAPON_PISTOL = 10, WEAPON_CARBINERIFLE = 20 }
 
-Config = { DefaultVoiceDistance = 15 }
+Config = {}
 NpcRegistry = { ['npc-1'] = { x = 10, y = 0, z = 0, voice_distance = 12 } }
 AmbientNpcLeases = {
     [55] = { npc_id = 'ambient-1', lease_token = 'ambient-lease' },

@@ -127,6 +127,11 @@ local function dispatchAction(target, actionKey, params, invocationId)
             return completed.result
         end
     end
+    if HumalikeNpcRuntimeControl then
+        local allowed, controlReason = HumalikeNpcRuntimeControl.AllowsAction(
+            target.npc_id, actionKey)
+        if not allowed then return false, controlReason end
+    end
 
     local delivered, reason
     if target.kind == 'static' then

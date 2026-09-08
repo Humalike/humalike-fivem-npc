@@ -1,14 +1,9 @@
 const VALID_SERVER_ID = /^[A-Za-z0-9._-]{1,64}$/;
 
 export function readyServerId(serverId, room) {
-  const explicit = typeof serverId === "string" && VALID_SERVER_ID.test(serverId)
-    ? serverId : null;
-  if (serverId !== undefined && explicit === null) return null;
-  if (typeof room !== "string" || !room.startsWith("fivem:")) return null;
-  const legacy = room.slice(6);
-  if (!VALID_SERVER_ID.test(legacy)) return null;
-  if (explicit !== null && explicit !== legacy) return null;
-  return explicit ?? legacy;
+  if (typeof serverId !== "string" || !VALID_SERVER_ID.test(serverId)) return null;
+  if (room !== `fivem:${serverId}`) return null;
+  return serverId;
 }
 
 export function publicationSourceId(participantIdentity, trackName, trackSource, expectedServerId) {
@@ -19,6 +14,5 @@ export function publicationSourceId(participantIdentity, trackName, trackSource,
       || !participantIdentity.startsWith(`edge-publisher:${expectedServerId}:`)) return null;
     return name.length > 4 ? name : null;
   }
-  if (participantIdentity.startsWith("edge-publisher:")) return null;
-  return participantIdentity;
+  return null;
 }
