@@ -100,6 +100,23 @@ assert(externalState.networkId == 53 and externalState.bindingId == 'binding-1')
 local offlineState = success(exported.GetNpcRuntimeState('external-offline'))
 assert(offlineState.kind == 'external' and offlineState.active == false)
 assert(offlineState.aiEnabled == false)
+NpcRegistry['external-offline'].name = 'Offline character'
+NpcRegistry['external-offline'].model = 'a_m_m_business_01'
+NpcRegistry['external-offline'].runtime_token = 'must-not-leak'
+local roster = success(exported.ListNpcRuntimeStates())
+assert(#roster == 3 and roster[1].npcId == 'external-1')
+assert(roster[2].npcId == 'external-offline' and roster[2].active == false)
+assert(roster[2].name == 'Offline character' and roster[2].model == 'a_m_m_business_01')
+assert(roster[2].runtime_token == nil)
+roster[2].name = 'Changed by caller'
+assert(NpcRegistry['external-offline'].name == 'Offline character')
+AmbientNpcLeases = { [202] = {npc_id='ambient-1', lease_token='secret'}, [203] = {npc_id='ambient-1'} }
+local withAmbient = success(exported.ListNpcRuntimeStates())
+assert(#withAmbient == 4 and withAmbient[1].npcId == 'ambient-1')
+assert(withAmbient[1].kind == 'ambient' and withAmbient[1].active)
+assert(withAmbient[1].lease_token == nil and withAmbient[1].networkId == 52)
+AmbientNpcLeases = {}
+assert(#success(exported.ListNpcRuntimeStates()) == 3, 'Expired ambient leases disappear')
 failure(exported.AcquireNpcControl('external-offline', { domains = { 'speech' } }),
     'npc_not_active')
 

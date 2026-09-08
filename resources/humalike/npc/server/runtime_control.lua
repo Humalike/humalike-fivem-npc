@@ -243,6 +243,33 @@ exports('GetNpcRuntimeState', function(npcId)
     return HumalikeExportResult.Success(copy(state))
 end)
 
+exports('ListNpcRuntimeStates', function()
+    local rows = {}
+    for npcId, definition in pairs(NpcRegistry or {}) do
+        local state = HumalikeNpcRuntimeControl.State(npcId)
+        if state then
+            state.name = definition.name
+            state.model = definition.model
+            rows[#rows + 1] = copy(state)
+        end
+    end
+    local seen = {}
+    for _, row in ipairs(rows) do seen[row.npcId] = true end
+    for _, lease in pairs(AmbientNpcLeases or {}) do
+        if not seen[lease.npc_id] then
+            local state = HumalikeNpcRuntimeControl.State(lease.npc_id)
+            if state and state.kind == 'ambient' then
+                state.name = 'Dynamic NPC'
+                state.model = state.modelHash and tostring(state.modelHash) or nil
+                rows[#rows + 1] = copy(state)
+                seen[lease.npc_id] = true
+            end
+        end
+    end
+    table.sort(rows, function(left, right) return left.npcId < right.npcId end)
+    return HumalikeExportResult.Success(rows)
+end)
+
 exports('AcquireNpcControl', function(npcId, options)
     local owner = invokingOwner()
     if not owner then return HumalikeExportResult.Failure('external_resource_required') end
