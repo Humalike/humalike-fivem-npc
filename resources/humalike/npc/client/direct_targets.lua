@@ -63,7 +63,10 @@ local function calculate(listener)
 
     for npcId, entry in pairs(HumalikeWorldRegistry.entries) do
         local ped = entry.entity
-        if ped and ped > 0 and DoesEntityExist(ped) and not IsEntityDead(ped) then
+        local voiceUnavailable = HumalikeNpcRuntimeControl
+            and HumalikeNpcRuntimeControl.IsVoiceUnavailable(npcId)
+        if not voiceUnavailable and ped and ped > 0
+            and DoesEntityExist(ped) and not IsEntityDead(ped) then
             if followTarget(ped, localServerId) then followers[#followers + 1] = npcId end
             if playerVehicle ~= 0 and GetVehiclePedIsIn(ped, false) == playerVehicle then
                 vehiclePeers[#vehiclePeers + 1] = npcId

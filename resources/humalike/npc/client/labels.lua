@@ -13,6 +13,8 @@ local function directTargetReady(npcId)
 end
 
 local function voiceMuted(npcId, entry)
+    if HumalikeNpcRuntimeControl
+        and HumalikeNpcRuntimeControl.IsVoiceUnavailable(npcId) then return true end
     local ready = directTargetReady(npcId)
     if HumalikeNpcDirectTargets and HumalikeNpcDirectTargets.IsExclusive
         and HumalikeNpcDirectTargets.IsExclusive() == true then
@@ -107,7 +109,7 @@ end
 
 function HumaLikeNpcLabels.BuildFrame()
     local labels = labelConfig()
-    local maxDistance = tonumber(labels.MaxDistance or Config.NpcLabelMaxDistance) or 14.0
+    local maxDistance = tonumber(labels.MaxDistance) or 14.0
     local maxDistanceSquared = maxDistance * maxDistance
     local height = tonumber(labels.Height) or 0.98
     local camera = GetGameplayCamCoord()
@@ -143,7 +145,7 @@ CreateThread(function()
             Wait(1000)
         else
             local now = GetGameTimer()
-            local maxDistance = tonumber(labels.MaxDistance or Config.NpcLabelMaxDistance) or 14.0
+            local maxDistance = tonumber(labels.MaxDistance) or 14.0
             local refreshMs = math.max(50, tonumber(labels.CandidateRefreshMs) or 200)
             if now - candidatesAt >= refreshMs then
                 candidates = nearbyCandidates(maxDistance,

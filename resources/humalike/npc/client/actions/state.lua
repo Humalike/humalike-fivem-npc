@@ -69,6 +69,8 @@ AddStateBagChangeHandler('humalike_action', nil, function(bagName, _key, value)
         if current and NpcActionSustain[current] ~= nil then
             ActionControlledPeds[ped] = nil
             ActionParams[ped] = nil
+            SetPedKeepTask(ped, false)
+            SetBlockingOfNonTemporaryEvents(ped, false)
         end
     end
 end)

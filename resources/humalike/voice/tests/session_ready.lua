@@ -30,7 +30,6 @@ exports = setmetatable({
     },
 }, { __call = function() end })
 
-HumalikeVoiceNativeAudio = { Status = function() return {} end }
 HumalikeVoicePtt = {}
 local directTargetsAvailable
 HumalikeNpcDirectTargets = {

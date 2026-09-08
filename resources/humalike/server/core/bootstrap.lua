@@ -149,7 +149,8 @@ function HumaLike.RequestBootstrap(reason, attempt, immediate)
         HumaLike.SetStatus('bootstrapping', ('%s; request attempt %d'):format(
             reason or 'bootstrap requested', attempt))
         HumaLike.EdgeRequest('bootstrap_fivem_runtime', license, {
-            boot_id = bootId
+            boot_id = bootId,
+            previous_lease_id = HumaLike.PreviousRuntimeLeaseId()
         }, function(status, payload)
             bootstrapInFlight = false
             if stopping then return end

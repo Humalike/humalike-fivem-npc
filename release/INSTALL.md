@@ -15,7 +15,7 @@ The NUI is already built and included in the archive. Server owners do not need
 Node.js or pnpm to install a release.
 
 For configuration and framework guides, visit
-https://docs.humalike.com/.
+https://docs.humalike.com/ai-npc.
 
 ## Update
 
