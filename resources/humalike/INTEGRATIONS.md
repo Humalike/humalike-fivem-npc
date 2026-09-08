@@ -178,6 +178,16 @@ the current entity and network ID, routing bucket, NPC kind, AI status and the
 owner of each controlled domain. Callers should use `networkId` across event or
 network boundaries; `entity` is only a local server handle.
 
+`exports.humalike:ListNpcRuntimeStates()` returns the same success envelope with
+an array of states for the current synced roster, including unbound external
+NPCs. Each state also includes `name` and configured `model`; rows are sorted by
+`npcId`. It does not return credentials or NPC definitions absent from the roster.
+
+`ListNpcRuntimeStates` also includes the current server ambient AI leases as
+`kind = "ambient"`, deduplicated by NPC ID. These rows use a generic name and
+model hash string; no lease tokens are returned. This is current runtime state,
+not player encounter history.
+
 ## NPC entity ownership
 
 A server resource may attach an external HumaLike identity to a networked ped
