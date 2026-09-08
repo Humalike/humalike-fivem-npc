@@ -9,7 +9,6 @@ local function reportCapabilities()
 end
 
 local pendingReadyGeneration
-local populationUploaded = false
 
 local function rosterSynced(ok)
     if not ok or not pendingReadyGeneration then return end
@@ -22,10 +21,6 @@ AddEventHandler('humalike:core:ready', function(runtime)
     pendingReadyGeneration = runtime and runtime.generation or 0
     SyncNpcRoster(rosterSynced, true)
     reportCapabilities()
-    if not populationUploaded then
-        populationUploaded = true
-        HumalikeNpcPopulation.Upload(function(ok) populationUploaded = ok end)
-    end
 end)
 
 AddEventHandler('humalike:providers:changed', function(domain)

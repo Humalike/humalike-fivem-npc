@@ -53,7 +53,6 @@ server_scripts {
     'npc/server/entity_ownership.lua',
     'npc/server/persistent.lua',
     'npc/server/npc.lua',
-    'npc/server/population.lua',
     'npc/server/sessions.lua',
     'npc/server/ambient.lua',
     'npc/server/runtime_control.lua',

@@ -15,12 +15,9 @@ local function encodeBody(payload)
     end
     return json.encode(payload)
 end
-local DEBUG_BODY_BYTES = 8 * 1024
-
 function HumalikeHttp.PostAction(name, payload, callback)
     local requestBody = encodeBody(payload)
-    HumalikeDebug('-> POST %s %s', name,
-        #requestBody > DEBUG_BODY_BYTES and ('(%d bytes)'):format(#requestBody) or requestBody)
+    HumalikeDebug('-> POST %s %s', name, requestBody)
     HumaLike.PostEdgeAction(name, payload or {}, function(ok, status, decoded)
         HumalikeDebug('<- %s %s status=%s', name, ok and 'ok' or 'FAILED', status)
         if callback then callback(ok, status, decoded) end
