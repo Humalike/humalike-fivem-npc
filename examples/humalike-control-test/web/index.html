@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HumaLike · NPC lab</title>
+<link rel="stylesheet" href="style.css"><script src="app.js" defer></script>
+</head>
+<body>
+<main id="panel" hidden>
+<header><div><p class="eyebrow">HUMALIKE / DEVELOPMENT</p><h1>NPC lab</h1><p class="subtitle">Spawn a body. Attach an identity. Test the lifecycle.</p></div><button id="close" class="quiet" aria-label="Close panel">Close <kbd>Esc</kbd></button></header>
+<nav class="tabs" aria-label="NPC type"><button id="external-tab" aria-pressed="true">External</button><button id="static-tab" aria-pressed="false">Static</button><button id="dynamic-tab" aria-pressed="false">Dynamic</button></nav>
+<section class="stats" aria-label="Roster summary"><div><strong id="total">0</strong><span id="total-label">External NPCs</span></div><div><strong id="bound">0</strong><span id="bound-label">Bound</span></div><div><strong id="offline">0</strong><span>Offline</span></div><div><strong id="owned">0</strong><span>Test peds</span></div></section>
+<div class="toolbar"><input id="search" type="search" placeholder="Search name, model or NPC ID" aria-label="Search NPCs"><select id="filter" aria-label="Filter status"><option value="all">All statuses</option><option id="bound-option" value="bound">Bound</option><option value="offline">Offline</option><option value="test">Test peds</option></select><button id="refresh">Refresh</button></div>
+<p id="message" role="status" aria-live="polite"></p>
+<div class="table-wrap"><table><thead><tr><th>Character</th><th>Runtime</th><th>Body</th><th>Actions</th></tr></thead><tbody id="rows"></tbody></table><p id="empty" hidden>No external NPCs in the synced roster. Enable them in the dashboard and wait for roster sync.</p></div>
+<footer><span>Spawn uses the configured model, next to you. Teleport requires being on foot and follows the NPC routing bucket.</span><span id="updated">Waiting for server</span></footer>
+<dialog id="confirm"><h2>Delete this test ped?</h2><p id="confirm-name"></p><p>The body is removed without unbinding first, testing automatic detachment. The NPC definition stays in the dashboard.</p><div><button id="cancel-delete">Cancel</button><button id="confirm-delete" class="danger">Delete ped</button></div></dialog>
+</main>
+</body></html>
