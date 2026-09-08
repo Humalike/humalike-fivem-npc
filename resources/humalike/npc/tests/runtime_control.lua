@@ -78,21 +78,32 @@ HumalikeHttp = {
     end,
 }
 
+dofile('../server/core/export_result.lua')
 dofile('server/runtime_state.lua')
 dofile('server/runtime_control.lua')
 
-local state = assert(exported.GetNpcRuntimeState('static-1'))
+local function success(result)
+    assert(result.apiVersion == 1 and result.ok == true and result.error == nil)
+    return result.value
+end
+
+local function failure(result, expected)
+    assert(result.apiVersion == 1 and result.ok == false and result.error == expected)
+    assert(result.value == nil)
+end
+
+local state = success(exported.GetNpcRuntimeState('static-1'))
 assert(state.kind == 'static' and state.active == true and state.networkId == 51)
-local externalState = assert(exported.GetNpcRuntimeState('external-1'))
+local externalState = success(exported.GetNpcRuntimeState('external-1'))
 assert(externalState.kind == 'external' and externalState.active == true)
 assert(externalState.networkId == 53 and externalState.bindingId == 'binding-1')
-local offlineState = assert(exported.GetNpcRuntimeState('external-offline'))
+local offlineState = success(exported.GetNpcRuntimeState('external-offline'))
 assert(offlineState.kind == 'external' and offlineState.active == false)
 assert(offlineState.aiEnabled == false)
-local _, offlineError = exported.AcquireNpcControl('external-offline', { domains = { 'speech' } })
-assert(offlineError == 'npc_not_active')
+failure(exported.AcquireNpcControl('external-offline', { domains = { 'speech' } }),
+    'npc_not_active')
 
-local lease = assert(exported.AcquireNpcControl('static-1', {
+local lease = success(exported.AcquireNpcControl('static-1', {
     domains = { 'movement', 'animation' }, ttlMs = 30000, reason = 'mission',
 }))
 assert(lease.ownerResource == 'mission-one' and lease.expiresInMs == 30000)
@@ -103,30 +114,27 @@ assert(clientEvents[#clientEvents].controls['static-1'].movement == true)
 assert(entityStates[101].humalike_action == nil, 'takeover stops sustained HumaLike actions')
 assert(forgottenPoses[#forgottenPoses] == 'static-1', 'animation takeover forgets replayable poses')
 
-local controlled = assert(exported.GetNpcRuntimeState('static-1'))
+local controlled = success(exported.GetNpcRuntimeState('static-1'))
 assert(controlled.controlledDomains.movement.ownerResource == 'mission-one')
 assert(HumalikeNpcRuntimeControl.AllowsAction('static-1', 'follow_player') == false)
 assert(HumalikeNpcRuntimeControl.AllowsAction('static-1', 'wave') == false)
 assert(HumalikeNpcRuntimeControl.AllowsAction('static-1', 'give_item') == true)
 
-local _, conflict = exported.AcquireNpcControl('static-1', {
+failure(exported.AcquireNpcControl('static-1', {
     domains = { 'movement' }, ttlMs = 1000,
-})
-assert(conflict == 'domain_conflict')
-local _, invalidAll = exported.AcquireNpcControl('ambient-1', {
+}), 'domain_conflict')
+failure(exported.AcquireNpcControl('ambient-1', {
     domains = { 'all', 'speech' }, ttlMs = 1000,
-})
-assert(invalidAll == 'all_domain_must_be_exclusive')
+}), 'all_domain_must_be_exclusive')
 
 owner = 'mission-two'
-local released, releaseError = exported.ReleaseNpcControl(lease.id)
-assert(released == false and releaseError == 'not_owner')
+failure(exported.ReleaseNpcControl(lease.id), 'not_owner')
 owner = 'mission-one'
-assert(exported.RenewNpcControl(lease.id, 5000).expiresInMs == 5000)
-assert(exported.ReleaseNpcControl(lease.id) == true)
+assert(success(exported.RenewNpcControl(lease.id, 5000)).expiresInMs == 5000)
+assert(exported.ReleaseNpcControl(lease.id).ok == true)
 assert(HumalikeNpcRuntimeControl.AllowsAction('static-1', 'follow_player') == true)
 
-local ambient = assert(exported.AcquireNpcControl('ambient-1', {
+local ambient = success(exported.AcquireNpcControl('ambient-1', {
     domains = { 'all' }, ttlMs = 1000,
 }))
 assert(ambient.kind == 'ambient')
@@ -135,7 +143,7 @@ assert(entityStates[202].humalike_action == nil, 'all takeover also stops ambien
 handlers.onResourceStop('mission-one')
 assert(HumalikeNpcRuntimeControl.AllowsAction('ambient-1', 'give_item') == true)
 
-local incarnated = assert(exported.AcquireNpcControl('ambient-1', {
+local incarnated = success(exported.AcquireNpcControl('ambient-1', {
     domains = { 'movement' }, ttlMs = 1000,
 }))
 ambientToken = 'ambient-token-2'
@@ -143,11 +151,11 @@ local cleanup = coroutine.create(cleanupThread)
 assert(coroutine.resume(cleanup))
 assert(coroutine.resume(cleanup))
 assert(HumalikeNpcRuntimeControl.AllowsAction('ambient-1', 'follow_player') == true)
-assert(exported.ReleaseNpcControl(incarnated.id) == false)
+failure(exported.ReleaseNpcControl(incarnated.id), 'lease_not_found')
 
 owner = nil
-local _, ownerError = exported.AcquireNpcControl('static-1', { domains = { 'speech' } })
-assert(ownerError == 'external_resource_required')
+failure(exported.AcquireNpcControl('static-1', { domains = { 'speech' } }),
+    'external_resource_required')
 
 handlers['humalike:npc:requestRuntimeControls']()
 assert(clientEvents[#clientEvents].target == 7)
@@ -163,11 +171,11 @@ end
 local postsBeforeRetry = #posts
 assert(exported.AcquireNpcControl('static-1', {
     domains = { 'speech' }, ttlMs = 1000,
-}))
+}).ok)
 assert(#retryTimers == 1)
 assert(exported.AcquireNpcControl('static-1', {
     domains = { 'perception' }, ttlMs = 1000,
-}))
+}).ok)
 assert(#retryTimers == 2 and #posts == postsBeforeRetry + 2)
 HumalikeHttp.PostAction = function(name, body, callback)
     posts[#posts + 1] = { name = name, body = body }
