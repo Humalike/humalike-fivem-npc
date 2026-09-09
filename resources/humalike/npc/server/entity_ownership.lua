@@ -163,47 +163,53 @@ end
 
 exports('BindNpcEntity', function(npcId, networkId, options)
     local invoking = owner()
-    if not invoking then return nil, 'external_resource_required' end
+    if not invoking then return HumalikeExportResult.Failure('external_resource_required') end
     if type(npcId) ~= 'string' or npcId == '' or #npcId > 64 then
-        return nil, 'invalid_npc_id'
+        return HumalikeExportResult.Failure('invalid_npc_id')
     end
     if type(networkId) ~= 'number' or networkId % 1 ~= 0 or networkId <= 0 then
-        return nil, 'invalid_network_id'
+        return HumalikeExportResult.Failure('invalid_network_id')
     end
     options = options or {}
-    if type(options) ~= 'table' then return nil, 'invalid_options' end
+    if type(options) ~= 'table' then return HumalikeExportResult.Failure('invalid_options') end
     local requestedBucket = options.routingBucket
     if requestedBucket ~= nil and (type(requestedBucket) ~= 'number'
         or requestedBucket % 1 ~= 0 or requestedBucket < 0) then
-        return nil, 'invalid_routing_bucket'
+        return HumalikeExportResult.Failure('invalid_routing_bucket')
     end
     local entry = NpcRegistry and NpcRegistry[npcId]
-    if not entry then return nil, 'npc_not_found' end
-    if entry.type ~= 'external' then return nil, 'npc_not_external' end
+    if not entry then return HumalikeExportResult.Failure('npc_not_found') end
+    if entry.type ~= 'external' then return HumalikeExportResult.Failure('npc_not_external') end
     if bindingByNpc[npcId] then HumalikeNpcEntityOwnership.ExternalEntity(npcId) end
     local networkOwner = bindingByNetwork[networkId]
     if networkOwner then HumalikeNpcEntityOwnership.ExternalEntity(networkOwner.npcId) end
     local existing = bindingByNpc[npcId]
     if existing and existing.ownerResource == invoking and existing.networkId == networkId then
         if requestedBucket ~= nil and requestedBucket ~= existing.routingBucket then
-            return nil, 'routing_bucket_mismatch'
+            return HumalikeExportResult.Failure('routing_bucket_mismatch')
         end
-        return publicBinding(existing)
+        return HumalikeExportResult.Success(publicBinding(existing))
     end
-    if existing then return nil, 'npc_ownership_conflict' end
-    if bindingByNetwork[networkId] then return nil, 'entity_ownership_conflict' end
+    if existing then return HumalikeExportResult.Failure('npc_ownership_conflict') end
+    if bindingByNetwork[networkId] then
+        return HumalikeExportResult.Failure('entity_ownership_conflict')
+    end
     local entity = NetworkGetEntityFromNetworkId(networkId)
-    if entity == 0 or not DoesEntityExist(entity) then return nil, 'entity_not_found' end
-    if GetEntityType(entity) ~= 1 then return nil, 'entity_not_ped' end
-    if IsPedAPlayer(entity) then return nil, 'player_ped_not_allowed' end
+    if entity == 0 or not DoesEntityExist(entity) then
+        return HumalikeExportResult.Failure('entity_not_found')
+    end
+    if GetEntityType(entity) ~= 1 then return HumalikeExportResult.Failure('entity_not_ped') end
+    if IsPedAPlayer(entity) then return HumalikeExportResult.Failure('player_ped_not_allowed') end
     if Entity(entity).state.humalike_npc_id ~= nil then
-        return nil, 'entity_already_humalike'
+        return HumalikeExportResult.Failure('entity_already_humalike')
     end
     local modelHash = unsignedHash(GetEntityModel(entity))
-    if modelHash ~= unsignedHash(GetHashKey(entry.model)) then return nil, 'model_mismatch' end
+    if modelHash ~= unsignedHash(GetHashKey(entry.model)) then
+        return HumalikeExportResult.Failure('model_mismatch')
+    end
     local actualBucket = GetEntityRoutingBucket(entity)
     if requestedBucket ~= nil and requestedBucket ~= actualBucket then
-        return nil, 'routing_bucket_mismatch'
+        return HumalikeExportResult.Failure('routing_bucket_mismatch')
     end
 
     local record = {
@@ -217,33 +223,35 @@ exports('BindNpcEntity', function(npcId, networkId, options)
     PreparePersistentNpcEntity(entry, entity)
     entry.entity_id, entry.network_id = entity, networkId
     RegisterPersistentNpcBinding(entry, entity)
-    return publicBinding(record)
+    return HumalikeExportResult.Success(publicBinding(record))
 end)
 
 exports('UnbindNpcEntity', function(bindingId)
     local invoking = owner()
-    if not invoking then return false, 'external_resource_required' end
+    if not invoking then return HumalikeExportResult.Failure('external_resource_required') end
     local record = type(bindingId) == 'string' and bindingsById[bindingId] or nil
-    if not record then return false, 'binding_not_found' end
-    if record.ownerResource ~= invoking then return false, 'not_owner' end
+    if not record then return HumalikeExportResult.Failure('binding_not_found') end
+    if record.ownerResource ~= invoking then return HumalikeExportResult.Failure('not_owner') end
     detach(record)
-    return true
+    return HumalikeExportResult.Success()
 end)
 
 exports('DespawnNpc', function(npcId)
     local invoking = owner()
-    if not invoking then return nil, 'external_resource_required' end
+    if not invoking then return HumalikeExportResult.Failure('external_resource_required') end
     local entry = type(npcId) == 'string' and NpcRegistry and NpcRegistry[npcId] or nil
-    if not entry then return nil, 'npc_not_found' end
-    if entry.type ~= 'static' then return nil, 'npc_not_static' end
+    if not entry then return HumalikeExportResult.Failure('npc_not_found') end
+    if entry.type ~= 'static' then return HumalikeExportResult.Failure('npc_not_static') end
     local existing = despawnByNpc[npcId]
     if existing then
-        if existing.ownerResource ~= invoking then return nil, 'not_owner' end
+        if existing.ownerResource ~= invoking then return HumalikeExportResult.Failure('not_owner') end
         local result = copy(existing)
         result.runtimeToken = nil
-        return result
+        return HumalikeExportResult.Success(result)
     end
-    if type(entry.runtime_token) ~= 'string' then return nil, 'runtime_binding_unavailable' end
+    if type(entry.runtime_token) ~= 'string' then
+        return HumalikeExportResult.Failure('runtime_binding_unavailable')
+    end
     local record = {
         apiVersion = 1, id = nextId(invoking), npcId = npcId,
         ownerResource = invoking, runtimeToken = entry.runtime_token,
@@ -256,21 +264,22 @@ exports('DespawnNpc', function(npcId)
     HumalikeNpcRuntimeState.Publish()
     local result = copy(record)
     result.runtimeToken = nil
-    return result
+    return HumalikeExportResult.Success(result)
 end)
 
 exports('RespawnNpc', function(npcId)
     local invoking = owner()
-    if not invoking then return false, 'external_resource_required' end
+    if not invoking then return HumalikeExportResult.Failure('external_resource_required') end
     local record = type(npcId) == 'string' and despawnByNpc[npcId] or nil
-    if not record then return false, 'despawn_not_found' end
-    if record.ownerResource ~= invoking then return false, 'not_owner' end
+    if not record then return HumalikeExportResult.Failure('despawn_not_found') end
+    if record.ownerResource ~= invoking then return HumalikeExportResult.Failure('not_owner') end
     despawnByNpc[npcId] = nil
     HumalikeNpcRuntimeState.Publish()
     local entry = NpcRegistry and NpcRegistry[npcId]
     local entity = entry and EnsurePersistentNpc(entry) or nil
     if entity then TriggerClientEvent('humalike:npc:npcAdded', -1, entry) end
-    return entity ~= nil
+    if not entity then return HumalikeExportResult.Failure('spawn_failed') end
+    return HumalikeExportResult.Success()
 end)
 
 AddEventHandler('onResourceStop', function(resourceName)

@@ -66,62 +66,68 @@ function EnsurePersistentNpc(entry)
     return 101
 end
 
+dofile('../server/core/export_result.lua')
 dofile('server/entity_ownership.lua')
 
-local _, staticError = exported.BindNpcEntity('static-1', 52, { routingBucket = 2 })
-assert(staticError == 'npc_not_external')
-local _, vehicleError = exported.BindNpcEntity('external-1', 53, { routingBucket = 2 })
-assert(vehicleError == 'entity_not_ped')
-local _, playerError = exported.BindNpcEntity('external-1', 54, { routingBucket = 2 })
-assert(playerError == 'player_ped_not_allowed')
-local _, modelError = exported.BindNpcEntity('external-1', 55, { routingBucket = 2 })
-assert(modelError == 'model_mismatch')
-local _, bucketError = exported.BindNpcEntity('external-1', 52, { routingBucket = 0 })
-assert(bucketError == 'routing_bucket_mismatch')
+local function success(result)
+    assert(result.apiVersion == 1 and result.ok == true and result.error == nil)
+    return result.value
+end
 
-local binding = assert(exported.BindNpcEntity('external-1', 52, { routingBucket = 2 }))
+local function failure(result, expected)
+    assert(result.apiVersion == 1 and result.ok == false and result.error == expected)
+    assert(result.value == nil)
+end
+
+failure(exported.BindNpcEntity('static-1', 52, { routingBucket = 2 }), 'npc_not_external')
+failure(exported.BindNpcEntity('external-1', 53, { routingBucket = 2 }), 'entity_not_ped')
+failure(exported.BindNpcEntity('external-1', 54, { routingBucket = 2 }),
+    'player_ped_not_allowed')
+failure(exported.BindNpcEntity('external-1', 55, { routingBucket = 2 }), 'model_mismatch')
+failure(exported.BindNpcEntity('external-1', 52, { routingBucket = 0 }),
+    'routing_bucket_mismatch')
+
+local binding = success(exported.BindNpcEntity('external-1', 52, { routingBucket = 2 }))
 assert(binding.ownerResource == 'mission-one' and binding.networkId == 52)
 assert(managed == 101, 'binding external NPC must not replace a static ped')
 assert(states[202].humalike_npc_id == 'external-1')
 assert(NpcRegistry['external-1'].entity_id == 202)
 assert(HumalikeNpcEntityOwnership.State('external-1').entityOwner == 'external')
-assert(exported.BindNpcEntity('external-1', 52, {}).id == binding.id)
+assert(success(exported.BindNpcEntity('external-1', 52, {})).id == binding.id)
 
 invoking = 'mission-two'
-assert(exported.UnbindNpcEntity(binding.id) == false)
+failure(exported.UnbindNpcEntity(binding.id), 'not_owner')
 invoking = 'mission-one'
-assert(exported.UnbindNpcEntity(binding.id) == true)
+assert(exported.UnbindNpcEntity(binding.id).ok)
 assert(states[202].humalike_npc_id == nil and exists[202])
 assert(NpcRegistry['external-1'].entity_id == nil)
 assert(managed == 101, 'unbind must not spawn or delete an external ped')
 assert(HumalikeNpcEntityOwnership.State('external-1').entityOwner == 'external')
 
-local _, externalDespawnError = exported.DespawnNpc('external-1')
-assert(externalDespawnError == 'npc_not_static')
-local despawn = assert(exported.DespawnNpc('static-1'))
+failure(exported.DespawnNpc('external-1'), 'npc_not_static')
+local despawn = success(exported.DespawnNpc('static-1'))
 assert(despawn.runtimeToken == nil and managed == nil)
 assert(HumalikeNpcEntityOwnership.IsDespawned('static-1'))
 assert(HumalikeNpcEntityOwnership.SuppressedStaticNpcIds()[1] == 'static-1')
 assert(runtimeStatePublishes == 1)
 invoking = 'mission-two'
-assert(exported.RespawnNpc('static-1') == false)
+failure(exported.RespawnNpc('static-1'), 'not_owner')
 invoking = 'mission-one'
-assert(exported.RespawnNpc('static-1') == true and managed == 101)
+assert(exported.RespawnNpc('static-1').ok and managed == 101)
 assert(#HumalikeNpcEntityOwnership.SuppressedStaticNpcIds() == 0)
 assert(runtimeStatePublishes == 2)
 
-assert(exported.DespawnNpc('static-1'))
+assert(exported.DespawnNpc('static-1').ok)
 HumalikeNpcEntityOwnership.DefinitionChanged('static-1', 'external')
 assert(#HumalikeNpcEntityOwnership.SuppressedStaticNpcIds() == 0)
 assert(runtimeStatePublishes == 4)
 
-local rebound = assert(exported.BindNpcEntity('external-1', 52, { routingBucket = 2 }))
+local rebound = success(exported.BindNpcEntity('external-1', 52, { routingBucket = 2 }))
 exists[202] = false
 HumalikeNpcEntityOwnership.Reconcile()
 assert(NpcRegistry['external-1'].entity_id == nil)
-assert(exported.UnbindNpcEntity(rebound.id) == false)
+failure(exported.UnbindNpcEntity(rebound.id), 'binding_not_found')
 
 invoking = nil
-local _, ownerError = exported.BindNpcEntity('external-1', 52, {})
-assert(ownerError == 'external_resource_required')
+failure(exported.BindNpcEntity('external-1', 52, {}), 'external_resource_required')
 print('entity_ownership: ok')

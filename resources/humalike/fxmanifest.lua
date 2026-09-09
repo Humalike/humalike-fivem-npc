@@ -24,6 +24,7 @@ shared_scripts {
 server_scripts {
     'server/core/status.lua',
     'server/core/retries.lua',
+    'server/core/export_result.lua',
     'server/core/credentials.lua',
     'server/core/http.lua',
     'server/core/callbacks.lua',
@@ -85,6 +86,7 @@ client_scripts {
     'world/client/collector.lua',
     'world/client/npc_edge.lua',
     'world/client/main.lua',
+    'npc/client/style.lua',
     'npc/client/persistent_control.lua',
     'npc/client/actions/state.lua',
     'npc/client/actions/wave.lua',
