@@ -136,7 +136,7 @@ local function scheduleRenewal(expectedGeneration, attempt)
                 HumaLike.RequestBootstrap('renewal credentials malformed', 1, true)
                 return
             elseif status == 401 or status == 403 then
-                HumaLike.ClearRuntimeCredentials()
+                invalidateRuntime()
                 HumaLike.SetStatus('bootstrapping',
                     'runtime identity rejected; bootstrapping')
                 HumaLike.RequestBootstrap('renewal identity rejected', 1, true)

@@ -227,6 +227,19 @@ requests[12].callback(200, reassigned)
 assert(#edgeEvents == 2 and edgeEvents[2].nodeId == 'edge-c')
 assert(#voiceEvents == 2 and voiceEvents[2].nodeId == 'voice-c')
 
+local refreshCountBeforeRejectedRenewal = #refreshEvents
+timers[14].callback()
+assert(requests[13].action == 'renew_fivem_runtime')
+requests[13].callback(401, { error = { code = 'UNAUTHORIZED' } })
+assert(HumaLike.RuntimeCredentials() == nil,
+    'a rejected renewal must invalidate active runtime credentials')
+assert(statuses[#statuses].phase == 'bootstrapping')
+assert(#timers == 15 and timers[15].delay == 0)
+timers[15].callback()
+requests[14].callback(200, reassigned)
+assert(#refreshEvents == refreshCountBeforeRejectedRenewal + 1,
+    'bootstrap after rejected renewal must notify runtime consumers')
+
 local credentialsVisibleDuringStop = false
 AddEventHandler('humalike:core:stopping', function()
     credentialsVisibleDuringStop = HumaLike.RuntimeCredentials() ~= nil
