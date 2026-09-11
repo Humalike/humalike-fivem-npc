@@ -49,7 +49,7 @@ HumalikeHttp = {
 
 Config = {
     PoseAbandonMs = 120000, PoseAbandonRadius = 60.0, PoseAbandonTickMs = 5000,
-    PoseThreat = { Enabled = true, Radius = 30.0, ClearMs = 60000 },
+    PoseThreat = { Enabled = true, Radius = 30.0, ClearMs = 10000 },
     PoseThreatTickMs = 2500,
 }
 NpcRegistry = { ['static-1'] = { npc_id = 'static-1', entity_id = 101 } }
@@ -69,31 +69,37 @@ now = now + 600000
 HumalikePoseThreatSweep()
 assert(#posts == 0, 'a scene with a weapon out is never all-clear')
 armedByPed[700] = nil
+now = now + 600000
 HumalikePoseThreatSweep()
-assert(#posts == 0, 'the minute starts now, not retroactively')
-now = now + 59000
+assert(#posts == 0, 'holstered but still standing there: the body stays kept')
+playerCoords['7'] = { x = 31, y = 0, z = 0 }
+HumalikePoseThreatSweep()
+assert(#posts == 0, 'the window starts when they walk off, not retroactively')
+now = now + 9000
 HumalikePoseThreatSweep()
 assert(#posts == 0, 'still inside the window')
 now = now + 2000
 HumalikePoseThreatSweep()
-assert(#posts == 1, 'a calm minute reaches the edge')
+assert(#posts == 1, 'everyone gone for the window reaches the edge')
 assert(posts[1][1] == 'ingest_world_event')
 assert(posts[1][2].event.type == 'threat_subsided')
 assert(posts[1][2].event.npc_id == 'static-1')
-assert(posts[1][2].fivem_session_id == 7, 'attributed to the nearest witness')
+assert(posts[1][2].fivem_session_id == 7, 'attributed to the nearest witness, however far')
 now = now + 60000
 HumalikePoseThreatSweep()
 assert(#posts == 1, 'the all-clear is not repeated')
-armedByPed[700] = true
+playerCoords['7'] = { x = 5, y = 0, z = 0 }
 HumalikePoseThreatSweep()
-armedByPed[700] = nil
+playerCoords['7'] = { x = 31, y = 0, z = 0 }
 HumalikePoseThreatSweep()
-now = now + 61000
+now = now + 11000
 HumalikePoseThreatSweep()
-assert(#posts == 2, 'a second threat earns a second all-clear')
+assert(#posts == 2, 'coming back and leaving again earns a second all-clear')
 posts = {}
+playerCoords['7'] = { x = 0, y = 0, z = 0 }
 RecordNpcPose('static-1', 'stand_up')
 RecordNpcPose('static-1', 'start_dancing', staticTarget)
+playerCoords['7'] = { x = 31, y = 0, z = 0 }
 now = now + 300000
 HumalikePoseThreatSweep()
 assert(#posts == 0, 'a dancing NPC is left to enjoy itself')
