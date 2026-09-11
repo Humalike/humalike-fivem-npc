@@ -57,14 +57,14 @@ function HumaLike.ReplaceRuntimeCredentials(payload, expectedBootId)
         or type(payload.access_tokens_expire_at) ~= 'string'
         or payload.access_tokens_expire_at == ''
         or type(payload.edge_url) ~= 'string'
-        or not payload.edge_url:match('^https?://')
+        or not payload.edge_url:match('^https://')
         or not validAssignment(
             payload.edge_assignment_id,
             payload.edge_node_id,
             payload.edge_boot_id,
             payload.edge_generation)
         or type(payload.voice_url) ~= 'string'
-        or not payload.voice_url:match('^https?://')
+        or not payload.voice_url:match('^https://')
         or not validAssignment(
             payload.voice_assignment_id,
             payload.voice_node_id,

@@ -110,6 +110,14 @@ end
 local malformed = credentials('boot-1')
 malformed.voice_url = nil
 assert(HumaLike.ReplaceRuntimeCredentials(malformed, 'boot-1') == false)
+local insecureVoice = credentials('boot-1')
+insecureVoice.voice_url = 'http://voice.example'
+assert(HumaLike.ReplaceRuntimeCredentials(insecureVoice, 'boot-1') == false,
+    'runtime credentials must reject an insecure public voice URL')
+local insecureEdge = credentials('boot-1')
+insecureEdge.edge_url = 'http://edge.example'
+assert(HumaLike.ReplaceRuntimeCredentials(insecureEdge, 'boot-1') == false,
+    'runtime credentials must reject an insecure assigned edge URL')
 local malformedEdge = credentials('boot-1')
 malformedEdge.edge_generation = nil
 assert(HumaLike.ReplaceRuntimeCredentials(malformedEdge, 'boot-1') == false)
