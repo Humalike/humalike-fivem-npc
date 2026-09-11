@@ -32,10 +32,7 @@ local function setHeldReactionsBlocked(ped, blocked)
     end
 end
 
--- A held ped stopped for someone: it turns to them and keeps looking at
--- them, instead of standing frozen at whatever angle the hold caught it.
--- Returns true while a turn is in progress, so the caller does not stamp a
--- stand-still task over it.
+-- Returns true while a turn is in progress, so no stand-still is stamped over it.
 local function faceController(ped, control)
     local player = GetPlayerFromServerId(control.controller_source or -1)
     local target = player ~= -1 and GetPlayerPed(player) or 0

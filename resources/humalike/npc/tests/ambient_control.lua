@@ -63,8 +63,6 @@ function TaskStandStill(_, duration)
     assert(duration == Config.AmbientControl.StandTaskDurationMs)
     standCalls = standCalls + 1
 end
--- The controller (server id 7) is local player 1 with ped 99, standing 5 m
--- north of the held ped; headings are set per test below.
 local pedHeading = 0.0
 local turnCalls, lookCalls = 0, 0
 function GetPlayerFromServerId(serverId) return serverId == 7 and 1 or -1 end
@@ -163,16 +161,15 @@ end
 
 runHoldIteration()
 assert(taskClears == 1 and standCalls == 1)
-assert(lookCalls == 1 and turnCalls == 0, 'already facing north: stands and looks')
+assert(lookCalls == 1 and turnCalls == 0)
 runHoldIteration()
 assert(taskClears == 1 and standCalls == 2)
 pedHeading = 180.0
 runHoldIteration()
-assert(standCalls == 2 and turnCalls == 1 and lookCalls == 3,
-    'facing away: a turn towards the player, no stand-still stamped over it')
+assert(standCalls == 2 and turnCalls == 1 and lookCalls == 3)
 pedHeading = 350.0
 runHoldIteration()
-assert(standCalls == 3 and turnCalls == 1, 'within tolerance again: back to standing')
+assert(standCalls == 3 and turnCalls == 1)
 pedHeading = 0.0
 
 hasControl = false

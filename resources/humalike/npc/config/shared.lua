@@ -27,7 +27,7 @@ Config.AmbientControl = {
     RequestCooldownMs = 750,
     StandTaskDurationMs = 2000,
     StandTaskRefreshMs = 500,
-    FaceToleranceDeg = 25.0, -- a held ped turns to its player beyond this
+    FaceToleranceDeg = 25.0,
 }
 Config.Population = {
     SpawnPointTimeoutMs = 2000,
