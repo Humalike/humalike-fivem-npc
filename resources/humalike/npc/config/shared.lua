@@ -163,7 +163,7 @@ Config.PoseAbandonTickMs = 5000
 Config.PoseThreat = {
     Enabled = GetConvar('humalike_npc_pose_threat_watch', 'true') == 'true',
     Radius = tonumber(GetConvar('humalike_npc_pose_threat_radius', '30')) or 30.0,
-    ClearMs = tonumber(GetConvar('humalike_npc_pose_threat_clear_ms', '60000')) or 60000,
+    ClearMs = tonumber(GetConvar('humalike_npc_pose_threat_clear_ms', '10000')) or 10000,
 }
 Config.PoseThreatTickMs = 2500
 Config.Follow = {
