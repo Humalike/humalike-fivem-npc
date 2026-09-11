@@ -80,9 +80,7 @@ function HumaLike.PostEdgeAction(action, payload, callback)
             if current and current.edgeToken == requestToken
                 and current.edgeUrl == requestUrl then
                 local code = HumaLike.ErrorCode(body) or ('HTTP_%s'):format(status)
-                if HumaLike.IsRuntimeIdentityError(status, body) then
-                    HumaLike.ClearRuntimeCredentials()
-                end
+                HumaLike.InvalidateRuntimeCredentials()
                 HumaLike.SetStatus('bootstrapping',
                     ('edge runtime rejected code=%s; refreshing assignment'):format(code))
                 print(('[humalike] edge_assignment_refresh code=%s url=%s action=%s')

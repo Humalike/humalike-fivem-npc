@@ -123,8 +123,8 @@ assert(#timers == 3 and timers[3].delay >= 400 and timers[3].delay <= 600)
 timers[3].callback()
 assert(#requests == 3)
 
-requests[3].callback(409, { error = { code = 'assignment_not_ready' } })
-assert(statuses[#statuses].detail == 'bootstrap failed with HTTP 409 code=assignment_not_ready')
+requests[3].callback(409, { error = { code = 'EDGE_ASSIGNMENT_NOT_READY' } })
+assert(statuses[#statuses].detail == 'runtime assignment is not ready')
 assert(#timers == 4 and timers[4].delay >= 800 and timers[4].delay <= 1200)
 timers[4].callback()
 assert(#requests == 4)
@@ -230,15 +230,37 @@ assert(#voiceEvents == 2 and voiceEvents[2].nodeId == 'voice-c')
 local refreshCountBeforeRejectedRenewal = #refreshEvents
 timers[14].callback()
 assert(requests[13].action == 'renew_fivem_runtime')
-requests[13].callback(401, { error = { code = 'UNAUTHORIZED' } })
+HumaLike.InvalidateRuntimeCredentials()
+requests[13].callback(200, credentials(bootId))
 assert(HumaLike.RuntimeCredentials() == nil,
-    'a rejected renewal must invalidate active runtime credentials')
-assert(statuses[#statuses].phase == 'bootstrapping')
+    'an in-flight renewal must not restore invalidated credentials')
+assert(#timers == 14, 'an invalidated renewal must not schedule another timer')
+assert(HumaLike.RequestBootstrap('rejected edge request', 1, true) == true)
 assert(#timers == 15 and timers[15].delay == 0)
 timers[15].callback()
 requests[14].callback(200, reassigned)
 assert(#refreshEvents == refreshCountBeforeRejectedRenewal + 1,
-    'bootstrap after rejected renewal must notify runtime consumers')
+    'bootstrap after edge rejection must notify runtime consumers')
+
+timers[16].callback()
+assert(requests[15].action == 'renew_fivem_runtime')
+requests[15].callback(409, { error = { code = 'VOICE_ASSIGNMENT_NOT_READY' } })
+assert(HumaLike.RuntimeCredentials() == nil,
+    'an unavailable voice assignment must invalidate active credentials')
+assert(statuses[#statuses].phase == 'bootstrapping')
+assert(#timers == 17 and timers[17].delay == 0)
+timers[17].callback()
+requests[16].callback(200, reassigned)
+assert(HumaLike.RuntimeCredentials() ~= nil)
+
+timers[18].callback()
+requests[17].callback(401, { error = { code = 'UNAUTHORIZED' } })
+assert(HumaLike.RuntimeCredentials() == nil,
+    'a rejected renewal must invalidate active runtime credentials')
+assert(#timers == 19 and timers[19].delay == 0)
+timers[19].callback()
+requests[18].callback(200, reassigned)
+assert(HumaLike.RuntimeCredentials() ~= nil)
 
 local credentialsVisibleDuringStop = false
 AddEventHandler('humalike:core:stopping', function()

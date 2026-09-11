@@ -24,6 +24,17 @@ local function invalidateRuntime()
     HumaLike.ClearRuntimeCredentials()
 end
 
+HumaLike.InvalidateRuntimeCredentials = invalidateRuntime
+
+local function assignmentRejected(status, payload)
+    if status ~= 409 then return false end
+    local code = HumaLike.ErrorCode(payload)
+    return code == 'EDGE_ASSIGNMENT_NOT_READY'
+        or code == 'VOICE_ASSIGNMENT_NOT_READY'
+        or code == 'EDGE_WRONG_OWNER'
+        or code == 'EDGE_ASSIGNMENT_STALE'
+end
+
 local function sameEdgeAssignment(left, right)
     return left and right
         and left.edgeUrl == right.edgeUrl
@@ -135,11 +146,12 @@ local function scheduleRenewal(expectedGeneration, attempt)
                     'renewal returned malformed credentials')
                 HumaLike.RequestBootstrap('renewal credentials malformed', 1, true)
                 return
-            elseif status == 401 or status == 403 then
+            elseif status == 401 or status == 403
+                or assignmentRejected(status, payload) then
                 invalidateRuntime()
                 HumaLike.SetStatus('bootstrapping',
-                    'runtime identity rejected; bootstrapping')
-                HumaLike.RequestBootstrap('renewal identity rejected', 1, true)
+                    'runtime assignment rejected; bootstrapping')
+                HumaLike.RequestBootstrap('renewal assignment rejected', 1, true)
                 return
             else
                 HumaLike.SetStatus('degraded',
@@ -182,11 +194,15 @@ function HumaLike.RequestBootstrap(reason, attempt, immediate)
                 invalidateRuntime()
                 HumaLike.SetStatus('degraded', validationError)
             elseif status == 401 or status == 403 then
+                invalidateRuntime()
                 if HumaLike.ErrorCode(payload) ~= 'RUNTIME_LEASE_UNKNOWN' then
                     HumaLike.SetStatus('unauthorized', 'license rejected by control plane')
                     return
                 end
                 HumaLike.SetStatus('degraded', 'control-plane runtime state unavailable')
+            elseif assignmentRejected(status, payload) then
+                invalidateRuntime()
+                HumaLike.SetStatus('degraded', 'runtime assignment is not ready')
             else
                 local errorCode = HumaLike.ErrorCode(payload)
                 HumaLike.SetStatus('degraded',

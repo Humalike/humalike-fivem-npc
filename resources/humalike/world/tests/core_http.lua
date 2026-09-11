@@ -34,6 +34,7 @@ HumaLike = {
         }
     end,
     ClearRuntimeCredentials = function() runtimeAvailable = false end,
+    InvalidateRuntimeCredentials = function() runtimeAvailable = false end,
     SetStatus = function() end,
     RequestBootstrap = function() bootstrapRequests = bootstrapRequests + 1 end,
 }
@@ -79,8 +80,8 @@ json.decode = function()
     return { error = { code = 'EDGE_ASSIGNMENT_STALE' } }
 end
 HumaLike.PostEdgeAction('get_npc_roster', {})
-assert(bootstrapRequests == 2 and runtimeAvailable,
-    'stale edge generation must retain credentials and request one bootstrap')
+assert(bootstrapRequests == 2 and not runtimeAvailable,
+    'stale edge generation must invalidate credentials and request one bootstrap')
 
 for _, code in ipairs({
     'EDGE_ASSIGNMENT_NOT_READY', 'EDGE_WRONG_OWNER', 'EDGE_ASSIGNMENT_STALE'
