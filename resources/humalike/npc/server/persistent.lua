@@ -24,8 +24,12 @@ function RegisterPersistentNpcBinding(entry, ped)
     if not credentials then return end
     local networkId = NetworkGetNetworkIdFromEntity(ped)
     if networkId <= 0 then return end
-    if bindingInFlight[entry.npc_id] == ped then return end
-    bindingInFlight[entry.npc_id] = ped
+    local assignment = HumaLike.EdgeAssignmentKey()
+    local activeRequest = bindingInFlight[entry.npc_id]
+    if activeRequest and activeRequest.ped == ped
+        and activeRequest.assignment == assignment then return end
+    local request = { ped = ped, assignment = assignment }
+    bindingInFlight[entry.npc_id] = request
     entry.entity_id = ped
     entry.network_id = networkId
     HumalikeHttp.PostAction('upsert_npc_runtime_binding', {
@@ -36,45 +40,92 @@ function RegisterPersistentNpcBinding(entry, ped)
         model_hash = unsignedHash(GetEntityModel(ped)),
         routing_bucket = GetEntityRoutingBucket(ped),
     }, function(ok, _, body)
-        if bindingInFlight[entry.npc_id] == ped then bindingInFlight[entry.npc_id] = nil end
+        if bindingInFlight[entry.npc_id] ~= request then return end
+        bindingInFlight[entry.npc_id] = nil
+        if not HumaLike.IsCurrentEdgeAssignment(assignment) then return end
         if not ok or not body or type(body.runtime_token) ~= 'string' then return end
         if activeEntity(entry.npc_id) ~= ped or not DoesEntityExist(ped)
             or NetworkGetNetworkIdFromEntity(ped) ~= networkId then
             RemovePersistentNpcRuntimeBinding(entry.npc_id, body.runtime_token)
             return
         end
-        local tokenChanged = entry.runtime_token ~= body.runtime_token
-        entry.runtime_token = body.runtime_token
+        local currentEntry = NpcRegistry and NpcRegistry[entry.npc_id] or entry
+        local tokenChanged = currentEntry.runtime_token ~= body.runtime_token
+        currentEntry.runtime_token = body.runtime_token
         Entity(ped).state:set('humalike_runtime_token', body.runtime_token, true)
         if HumalikeNpcEntityOwnership then
             HumalikeNpcEntityOwnership.SetRuntimeToken(entry.npc_id, ped, body.runtime_token)
         end
-        if tokenChanged then TriggerClientEvent('humalike:npc:npcAdded', -1, entry) end
+        if tokenChanged then TriggerClientEvent('humalike:npc:npcAdded', -1, currentEntry) end
     end)
 end
 
-function RemovePersistentNpcRuntimeBinding(npcId, runtimeToken, attempt)
+local function replayBindings(clearRemovals)
+    bindingInFlight = {}
+    if clearRemovals then
+        bindingRemovalPending = {}
+        bindingRemovalCount = {}
+        deferredBinding = {}
+    end
+    for npcId, entry in pairs(NpcRegistry or {}) do
+        local entity = activeEntity(npcId)
+        if entity and DoesEntityExist(entity) then
+            entry.runtime_token = nil
+            Entity(entity).state:set('humalike_runtime_token', nil, true)
+            if HumalikeNpcEntityOwnership then
+                HumalikeNpcEntityOwnership.SetRuntimeToken(npcId, entity, nil)
+            end
+            RegisterPersistentNpcBinding(entry, entity)
+        end
+    end
+end
+
+local function scheduleBindingRemovalRetry(key, request)
+    local delay = math.min(500 * (2 ^ math.min(request.attempt - 1, 6)), 30000)
+    request.retryGeneration = request.retryGeneration + 1
+    local generation = request.retryGeneration
+    SetTimeout(delay, function()
+        if bindingRemovalPending[key] ~= request
+            or request.retryGeneration ~= generation then return end
+        RemovePersistentNpcRuntimeBinding(
+            request.npcId, request.runtimeToken, request.attempt + 1, request)
+    end)
+end
+
+function RemovePersistentNpcRuntimeBinding(npcId, runtimeToken, attempt, request)
     if type(runtimeToken) ~= 'string' or runtimeToken == '' then return end
     local key = npcId .. ':' .. runtimeToken
     if not attempt then
         if bindingRemovalPending[key] then return end
-        bindingRemovalPending[key] = true
+        request = {
+            npcId = npcId,
+            runtimeToken = runtimeToken,
+            attempt = 0,
+            retryGeneration = 0,
+            inFlight = false,
+        }
+        bindingRemovalPending[key] = request
         bindingRemovalCount[npcId] = (bindingRemovalCount[npcId] or 0) + 1
-    end
-    attempt = attempt or 1
-    local credentials = HumaLike.RuntimeCredentials()
-    if not credentials then
-        local delay = math.min(500 * (2 ^ math.min(attempt - 1, 6)), 30000)
-        SetTimeout(delay, function()
-            RemovePersistentNpcRuntimeBinding(npcId, runtimeToken, attempt + 1)
-        end)
+    elseif bindingRemovalPending[key] ~= request then
         return
     end
+    attempt = attempt or 1
+    if request.inFlight then return end
+    request.attempt = attempt
+    request.retryGeneration = request.retryGeneration + 1
+    local credentials = HumaLike.RuntimeCredentials()
+    if not credentials then
+        scheduleBindingRemovalRetry(key, request)
+        return
+    end
+    request.inFlight = true
     HumalikeHttp.PostAction('remove_npc_runtime_binding', {
         boot_id = credentials.bootId,
         npc_id = npcId,
         runtime_token = runtimeToken,
     }, function(ok)
+        if bindingRemovalPending[key] ~= request then return end
+        request.inFlight = false
         if ok then
             bindingRemovalPending[key] = nil
             bindingRemovalCount[npcId] = math.max(0, (bindingRemovalCount[npcId] or 1) - 1)
@@ -88,10 +139,7 @@ function RemovePersistentNpcRuntimeBinding(npcId, runtimeToken, attempt)
             end
             return
         end
-        local delay = math.min(500 * (2 ^ math.min(attempt - 1, 6)), 30000)
-        SetTimeout(delay, function()
-            RemovePersistentNpcRuntimeBinding(npcId, runtimeToken, attempt + 1)
-        end)
+        scheduleBindingRemovalRetry(key, request)
     end)
 end
 
@@ -213,4 +261,16 @@ end)
 AddEventHandler('onResourceStop', function(resourceName)
     if resourceName ~= GetCurrentResourceName() then return end
     for npcId in pairs(PersistentNpcEntities) do RemovePersistentNpc(npcId) end
+end)
+
+AddEventHandler('humalike:runtime:edgeChanged', function()
+    replayBindings(true)
+end)
+AddEventHandler('humalike:runtime:refreshed', function(runtime)
+    if runtime and runtime.edgeChanged == true then return end
+    replayBindings(false)
+    for _, request in pairs(bindingRemovalPending) do
+        RemovePersistentNpcRuntimeBinding(
+            request.npcId, request.runtimeToken, request.attempt + 1, request)
+    end
 end)

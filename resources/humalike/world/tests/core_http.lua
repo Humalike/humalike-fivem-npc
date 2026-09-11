@@ -2,6 +2,8 @@ local requests = {}
 local responseStatus, responseBody = 200, '{}'
 local runtimeAvailable = true
 local bootstrapRequests = 0
+local currentAssignment = 'edge-a:7'
+local deferredHttp
 
 GetConvar = function(name)
     assert(name == 'humalike_control_plane_url')
@@ -21,6 +23,10 @@ PerformHttpRequest = function(url, callback, method, body, headers)
         body = body,
         headers = headers,
     }
+    if deferredHttp ~= nil then
+        deferredHttp = callback
+        return
+    end
     callback(responseStatus, responseBody, {})
 end
 HumaLike = {
@@ -37,6 +43,8 @@ HumaLike = {
     InvalidateRuntimeCredentials = function() runtimeAvailable = false end,
     SetStatus = function() end,
     RequestBootstrap = function() bootstrapRequests = bootstrapRequests + 1 end,
+    EdgeAssignmentKey = function() return currentAssignment end,
+    IsCurrentEdgeAssignment = function(expected) return expected == currentAssignment end,
 }
 
 dofile('../server/core/http.lua')
@@ -90,6 +98,22 @@ for _, code in ipairs({
 end
 assert(not HumaLike.IsEdgeAssignmentError(403,
     { error = { code = 'EDGE_WRONG_OWNER' } }))
+
+runtimeAvailable = true
+responseStatus = 200
+responseBody = '{}'
+deferredHttp = false
+local staleResult
+HumaLike.PostEdgeAction('get_npc_roster', {}, function(ok, status, body)
+    staleResult = { ok = ok, status = status, body = body }
+end)
+local oldResponse = deferredHttp
+currentAssignment = 'edge-b:8'
+deferredHttp = nil
+oldResponse(200, '{}', {})
+assert(staleResult.ok == false and staleResult.status == 409)
+assert(HumaLike.ErrorCode(staleResult.body) == 'EDGE_ASSIGNMENT_CHANGED',
+    'an old edge response must be rejected before reaching domain state')
 
 HumaLike.EdgeRequest('bootstrap_fivem_runtime', 'license', {}, function() end)
 assert(requests[#requests].url ==

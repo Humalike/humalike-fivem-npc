@@ -70,7 +70,14 @@ function HumaLike.PostEdgeAction(action, payload, callback)
     end
     local requestToken = credentials.edgeToken
     local requestUrl = credentials.edgeUrl
+    local requestAssignment = HumaLike.EdgeAssignmentKey and HumaLike.EdgeAssignmentKey()
     HumaLike.EdgeRequest(action, requestToken, payload or {}, function(status, body)
+        if requestAssignment and not HumaLike.IsCurrentEdgeAssignment(requestAssignment) then
+            if callback then
+                callback(false, 409, { error = { code = 'EDGE_ASSIGNMENT_CHANGED' } })
+            end
+            return
+        end
         if HumaLike.IsRuntimeIdentityError(status, body)
             or HumaLike.IsEdgeAssignmentError(status, body) then
             local current = HumaLike.RuntimeCredentials()

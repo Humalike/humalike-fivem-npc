@@ -62,6 +62,8 @@ function HumalikeFindAmbientLease(npcId)
 end
 HumaLike = {
     RuntimeCredentials = function() return { bootId = 'boot-1' } end,
+    EdgeAssignmentKey = function() return 'edge-a:7' end,
+    IsCurrentEdgeAssignment = function(expected) return expected == 'edge-a:7' end,
 }
 HumalikeNpcEntityOwnership = {
     ExternalEntity = function(npcId) return npcId == 'external-1' and 303 or nil end,

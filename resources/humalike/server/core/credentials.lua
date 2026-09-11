@@ -110,6 +110,21 @@ function HumaLike.RuntimeCredentials()
     return runtime
 end
 
+function HumaLike.EdgeAssignmentKey()
+    if not runtime then return nil end
+    return table.concat({
+        runtime.edgeAssignmentId,
+        runtime.edgeNodeId,
+        runtime.edgeBootId,
+        tostring(runtime.edgeGeneration),
+        runtime.edgeUrl,
+    }, '\31')
+end
+
+function HumaLike.IsCurrentEdgeAssignment(expected)
+    return expected ~= nil and expected == HumaLike.EdgeAssignmentKey()
+end
+
 function HumaLike.ClearRuntimeCredentials()
     runtime = nil
 end

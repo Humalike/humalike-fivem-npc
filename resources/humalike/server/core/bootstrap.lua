@@ -75,7 +75,9 @@ local function announceAssignment(plane, credentials, reason)
     print(('[humalike] runtime_assignment_changed plane=%s node_id=%s generation=%s url=%s reason=%s')
         :format(plane, nodeId, assignmentGeneration, url, reason))
     TriggerEvent(('humalike:runtime:%sChanged'):format(plane), {
+        assignmentId = credentials[plane .. 'AssignmentId'],
         nodeId = nodeId,
+        bootId = credentials[plane .. 'BootId'],
         generation = assignmentGeneration,
         url = url,
         reason = reason,
@@ -112,14 +114,20 @@ local function installRuntime(payload, reason)
     if not previous then
         announceInitialRuntime(reason)
     else
-        if not sameEdgeAssignment(previous, current) then
+        local edgeChanged = not sameEdgeAssignment(previous, current)
+        local voiceChanged = not sameVoiceAssignment(previous, current)
+        if edgeChanged then
             announceAssignment('edge', current, reason)
         end
-        if not sameVoiceAssignment(previous, current) then
+        if voiceChanged then
             announceAssignment('voice', current, reason)
         end
         HumaLike.SetStatus('ready', reason)
-        TriggerEvent('humalike:runtime:refreshed', { reason = reason })
+        TriggerEvent('humalike:runtime:refreshed', {
+            reason = reason,
+            edgeChanged = edgeChanged,
+            voiceChanged = voiceChanged,
+        })
     end
     return true
 end

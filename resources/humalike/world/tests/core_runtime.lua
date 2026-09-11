@@ -188,6 +188,9 @@ assert(HumaLike.RuntimeCredentials().edgeNodeId == 'edge-a')
 assert(HumaLike.RuntimeCredentials().edgeBootId ==
     '22222222-2222-4222-8222-222222222222')
 assert(HumaLike.RuntimeCredentials().edgeGeneration == 7)
+local initialEdgeKey = HumaLike.EdgeAssignmentKey()
+assert(type(initialEdgeKey) == 'string' and initialEdgeKey ~= '')
+assert(HumaLike.IsCurrentEdgeAssignment(initialEdgeKey))
 assert(HumaLike.RuntimeCredentials().voiceAssignmentId ==
     '33333333-3333-4333-8333-333333333333')
 assert(HumaLike.RuntimeCredentials().voiceNodeId == 'voice-a')
@@ -219,6 +222,10 @@ requests[7].callback(200, moved)
 assert(#readyEvents == 1 and #edgeEvents == 1 and #voiceEvents == 0)
 assert(HumaLike.RuntimeCredentials().edgeNodeId == 'edge-b')
 assert(HumaLike.RuntimeCredentials().edgeGeneration == 8)
+assert(not HumaLike.IsCurrentEdgeAssignment(initialEdgeKey),
+    'edge assignment identity must change with its generation')
+assert(edgeEvents[1].assignmentId == moved.edge_assignment_id)
+assert(edgeEvents[1].bootId == moved.edge_boot_id)
 
 timers[8].callback()
 local voiceMoved = moved
