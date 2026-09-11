@@ -32,6 +32,7 @@ local holdThread
 local hasControl = true
 local taskClears = 0
 local standCalls = 0
+local wanderCalls = 0
 
 function RegisterNetEvent() end
 function HumalikeDebug() end
@@ -55,13 +56,19 @@ function SetBlockingOfNonTemporaryEvents() end
 function TaskSetBlockingOfNonTemporaryEvents() end
 function ClearPedTasksImmediately() end
 function ClearPedTasks() taskClears = taskClears + 1 end
-function TaskWanderStandard() end
+function TaskWanderStandard() wanderCalls = wanderCalls + 1 end
 function TaskStandStill(_, duration)
     assert(duration == Config.AmbientControl.StandTaskDurationMs)
     standCalls = standCalls + 1
 end
 local actionControlled = false
 function IsActionControlled() return actionControlled end
+local pedKinds = {}
+function Entity(ped) return { state = { humalike_npc_kind = pedKinds[ped] } } end
+local reapplied = {}
+HumalikeNpcPopulationClient = {
+    Reapply = function(ped) reapplied[#reapplied + 1] = ped return true end,
+}
 
 AmbientInteractionAdapters.custom = {
     name = 'custom',
@@ -152,6 +159,20 @@ assert(taskClears == 2 and standCalls == 3)
 actionControlled = false
 runHoldIteration()
 assert(taskClears == 2 and standCalls == 4)
+
+dead = false
+handlers['humalike:npc:ambientControlChanged']('42', nil)
+assert(taskClears == 3 and wanderCalls == 1 and #reapplied == 0,
+    'a released GTA ped is handed the generic wander')
+handlers['humalike:npc:ambientControlChanged']('42', { mode = 'held', controller_source = 7 })
+pedKinds[42] = 'population'
+handlers['humalike:npc:ambientControlChanged']('42', nil)
+assert(taskClears == 3 and wanderCalls == 1 and #reapplied == 1 and reapplied[1] == 42,
+    'a released population body gets its planned behaviour back')
+handlers['humalike:npc:ambientControlChanged']('42', { mode = 'held', controller_source = 7 })
+handlers['humalike:npc:ambientControlSnapshot']({})
+assert(#reapplied == 2, 'a snapshot that drops the hold re-applies too')
+pedKinds[42] = nil
 AmbientInteractionAdapters['ox_target'] = {
     resource = 'ox_target',
     Available = function() return true end,

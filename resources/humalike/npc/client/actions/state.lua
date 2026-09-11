@@ -46,6 +46,7 @@ function MarkActionControl(ped, actionKey, params)
         end
         SetBlockingOfNonTemporaryEvents(ped, true)
         SetPedKeepTask(ped, true)
+        if HumalikeNpcPopulationClient then HumalikeNpcPopulationClient.OwnPace(ped) end
     end
 end
 
@@ -56,6 +57,7 @@ function ReleaseActionControl(ped)
         Entity(ped).state:set('humalike_action', nil, true)
         SetPedKeepTask(ped, false)
         SetBlockingOfNonTemporaryEvents(ped, false)
+        if HumalikeNpcPopulationClient then HumalikeNpcPopulationClient.RestorePace(ped) end
     end
 end
 AddStateBagChangeHandler('humalike_action', nil, function(bagName, _key, value)
@@ -71,6 +73,7 @@ AddStateBagChangeHandler('humalike_action', nil, function(bagName, _key, value)
             ActionParams[ped] = nil
             SetPedKeepTask(ped, false)
             SetBlockingOfNonTemporaryEvents(ped, false)
+            if HumalikeNpcPopulationClient then HumalikeNpcPopulationClient.RestorePace(ped) end
         end
     end
 end)

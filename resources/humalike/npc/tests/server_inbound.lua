@@ -87,11 +87,33 @@ HumalikeNpcRuntimeControl = {
     end,
 }
 
+local planRevision = 0
+local populationCleared = 0
+HumalikeNpcPopulation = {
+    ApplyPlan = function(body)
+        if type(body.revision) ~= 'number' then return false, 'invalid' end
+        if body.revision <= planRevision then return false, 'stale' end
+        planRevision = body.revision
+        return true
+    end,
+    Clear = function() populationCleared = populationCleared + 1 end,
+}
+function HumalikeClearAmbientLeases() end
+function RemovePersistentNpc() end
+
 dofile('server/inbound.lua')
 
 local function request(body, auth, path)
     return handlers[path or '/action'](body)
 end
+
+local planStatus, planResponse = request({ revision = 5, enabled = true }, nil, '/population/plan')
+assert(planStatus == 200 and planResponse.ok == true)
+planStatus, planResponse = request({ revision = 5, enabled = true }, nil, '/population/plan')
+assert(planStatus == 409 and planResponse.ok == false and planResponse.reason == 'stale',
+    'a stale plan revision is a conflict, not a delivery failure')
+planStatus, planResponse = request({ enabled = true }, nil, '/population/plan')
+assert(planStatus == 400 and planResponse.reason == 'invalid')
 
 local muteStatus, muteResponse = request({ revision = 1, npcs = {} }, nil, '/voice-mutes')
 assert(muteStatus == 200 and muteResponse.ok == true)
@@ -249,5 +271,8 @@ assert(request({
 assert(handOverCalls == 3)
 assert(#clientEvents == ceAmbient + 1)
 assert(clientEvents[#clientEvents].name == 'humalike:npc:playAmbientAction')
+
+assert(request({}, nil, '/clear-roster') == 202)
+assert(populationCleared == 1, 'clearing the roster clears the population too')
 
 print('server_inbound: ok')

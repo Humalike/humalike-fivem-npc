@@ -164,6 +164,7 @@ end)
 HumaLike.RegisterCallback('/clear-roster', function()
     HumalikeDebug('inbound push: clearing roster')
     HumalikeClearAmbientLeases()
+    if HumalikeNpcPopulation then HumalikeNpcPopulation.Clear() end
     for npcId in pairs(NpcRegistry) do
         RemovePersistentNpc(npcId)
         NpcRegistry[npcId] = nil
@@ -172,16 +173,19 @@ HumaLike.RegisterCallback('/clear-roster', function()
     return 202, { ok = true }
 end)
 
-HumaLike.RegisterCallback('/ambient/candidates/validate', function(body)
-    return 200, HumalikeValidateAmbientCandidates(body)
-end)
-
 HumaLike.RegisterCallback('/ambient/leases/validate', function(body)
     return 200, HumalikeValidateAmbientLeases(body)
 end)
 
 HumaLike.RegisterCallback('/ambient/leases', function(body)
     return 200, { ok = HumalikeApplyAmbientLeaseSnapshot(body) }
+end)
+
+HumaLike.RegisterCallback('/population/plan', function(body)
+    local applied, reason = HumalikeNpcPopulation.ApplyPlan(body)
+    if applied then return 200, { ok = true } end
+    -- A stale revision is an out-of-order push, not a delivery failure.
+    return reason == 'stale' and 409 or 400, { ok = false, reason = reason }
 end)
 
 HumaLike.RegisterCallback('/voice-mutes', function(body)

@@ -126,7 +126,3 @@ CreateThread(function()
         Wait(3000)
     end
 end)
-
-function HumalikeReportAmbientCandidates(candidates)
-    return exports['humalike']:ReportAmbientCandidates(candidates)
-end

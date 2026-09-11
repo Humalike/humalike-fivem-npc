@@ -1,5 +1,5 @@
 local handlers, threads = {}, {}
-local registered, unregistered, candidates = {}, {}, nil
+local registered, unregistered = {}, {}
 local registerCalls = 0
 local entities = { [10] = true, [20] = true }
 local ambientTag = 'ambient'
@@ -47,10 +47,6 @@ exports = setmetatable({}, {
                 registered[npcId] = nil
                 return true
             end,
-            ReportAmbientCandidates = function(_, value)
-                candidates = value
-                return true
-            end,
         }
     end,
 })
@@ -71,9 +67,6 @@ assert(registered.persistent == nil and unregistered[#unregistered] == 'persiste
 entities[10] = true
 handlers['humalike:world:registrationRequested']()
 assert(registered.persistent and registered.ambient)
-
-assert(HumalikeReportAmbientCandidates({ { network_id = 1 } }))
-assert(candidates and candidates[1].network_id == 1)
 
 handlers['humalike:npc:ambientPedRemoved']('ambient')
 assert(registered.ambient == nil)
