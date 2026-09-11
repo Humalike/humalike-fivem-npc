@@ -6,7 +6,6 @@ local threads = {}
 local sent
 local visible = {}
 local safeCoords = {}
-local groundZ = {}
 local pool = {}
 local kinds = {}
 local npcIds = {}
@@ -48,14 +47,12 @@ function TriggerServerEvent(...) sent = { ... } end
 function PlayerPedId() return 1 end
 function DoesEntityExist(entity) return entity == 1 or pool[entity] ~= nil end
 function GetEntityCoords(entity) return coords[entity] or { x = 0, y = 0, z = 0 } end
-function GetSafeCoordForPed(x, y, z)
+local safeFlags = {}
+function GetSafeCoordForPed(x, y, z, onlyOnPavement, flags)
+    safeFlags[#safeFlags + 1] = { onlyOnPavement, flags }
     local safe = safeCoords[x]
     if safe then return true, safe end
     return false, nil
-end
-function GetGroundZFor_3dCoord(x)
-    if groundZ[x] then return true, groundZ[x] end
-    return false, 0
 end
 function IsSphereVisible(x) return visible[x] == true end
 function GetGamePool()
@@ -153,30 +150,37 @@ local point = HumalikeNpcPopulationClient.SelectSpawnPoint(candidates)
 assert(point.x == 202 and point.y == 1 and point.z == 11 and point.heading == 180,
     'visible and near candidates are rejected')
 
+for _, call in ipairs(safeFlags) do
+    assert(call[1] == true and call[2] == 14,
+        'pavement, connected, outdoors, dry: flags 2|4|8')
+end
+
 safeCoords[200] = nil
 visible[200] = true
-groundZ[300] = 12.5
+safeCoords[300] = { x = 301, y = 2, z = 12.5 }
 point = HumalikeNpcPopulationClient.SelectSpawnPoint(candidates)
-assert(point.x == 300 and point.z == 12.5 and point.heading == 0.0,
-    'ground z fallback applies when no safe coordinate exists')
+assert(point.x == 301 and point.z == 12.5 and point.heading == 0.0,
+    'a candidate with no pavement is skipped')
 
-groundZ[300] = nil
-point = HumalikeNpcPopulationClient.SelectSpawnPoint(candidates)
-assert(point.x == 300 and point.z == 10, 'raw candidate z is the last fallback')
+safeCoords[300] = nil
+assert(HumalikeNpcPopulationClient.SelectSpawnPoint(candidates) == nil,
+    'no pavement anywhere means no spawn point')
 
-visible[300] = true
-assert(HumalikeNpcPopulationClient.SelectSpawnPoint(candidates) == nil)
+safeCoords[300] = { x = 301, y = 2, z = 12.5 }
+visible[301] = true
+assert(HumalikeNpcPopulationClient.SelectSpawnPoint(candidates) == nil,
+    'a pavement point in the player\'s sight is rejected')
 assert(HumalikeNpcPopulationClient.SelectSpawnPoint({ { x = 'a', y = 0, z = 0 } }) == nil)
 assert(HumalikeNpcPopulationClient.SelectSpawnPoint(nil) == nil)
 
-visible[300] = nil
+visible[301] = nil
 handlers['humalike:npc:populationSpawnPoint']('req-1', candidates)
 assert(sent[1] == 'humalike:npc:populationSpawnPointResult')
-assert(sent[2] == 'req-1' and sent[3].x == 300)
+assert(sent[2] == 'req-1' and sent[3].x == 301, 'the pavement point, not the road node')
 sent = nil
 handlers['humalike:npc:populationSpawnPoint'](7, candidates)
 assert(sent == nil, 'a non-string request id is ignored')
-visible[300] = true
+visible[301] = true
 handlers['humalike:npc:populationSpawnPoint']('req-2', candidates)
 assert(sent[2] == 'req-2' and sent[3] == nil, 'no acceptable point replies nil')
 

@@ -8,8 +8,8 @@ providers.
 ## What it includes
 
 - Persistent and ambient AI NPCs synchronized through OneSync.
-- HumaLike-owned street population: player contact (a bump, a knock-down)
-  reaches the AI as a world event.
+- HumaLike-owned street population: planned bodies spawn on pavement and
+  player contact (a bump, a knock-down) reaches the AI as a world event.
 - Proximity voice with direct NPC targeting and in-vehicle routing.
 - World-state collection, NPC actions, injuries and interactions.
 - Standalone operation with optional ESX, QBCore, Qbox, inventory and target

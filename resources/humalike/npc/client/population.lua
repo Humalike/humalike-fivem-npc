@@ -16,12 +16,15 @@ local function config()
     return Config.Population
 end
 
-local function groundPoint(candidate)
-    local found, safe = GetSafeCoordForPed(candidate.x, candidate.y, candidate.z, true, 16)
+-- GetSafeCoordForPed: 2 not isolated, 4 not interior, 8 not water.
+-- onlyOnPavement = true already sets flag 1.
+local PAVEMENT_FLAGS = 2 | 4 | 8
+
+local function pavementPoint(candidate)
+    local found, safe = GetSafeCoordForPed(candidate.x, candidate.y, candidate.z, true,
+        PAVEMENT_FLAGS)
     if found and safe then return safe.x, safe.y, safe.z end
-    local grounded, groundZ = GetGroundZFor_3dCoord(candidate.x, candidate.y,
-        candidate.z + 1.0, false)
-    return candidate.x, candidate.y, grounded and groundZ or candidate.z
+    return nil
 end
 
 local function acceptable(x, y, z)
@@ -38,8 +41,8 @@ function HumalikeNpcPopulationClient.SelectSpawnPoint(candidates)
     for _, candidate in ipairs(type(candidates) == 'table' and candidates or {}) do
         if type(candidate) == 'table' and HumalikeValidCoordinate(candidate.x)
             and HumalikeValidCoordinate(candidate.y) and HumalikeValidCoordinate(candidate.z) then
-            local x, y, z = groundPoint(candidate)
-            if acceptable(x, y, z) then
+            local x, y, z = pavementPoint(candidate)
+            if x and acceptable(x, y, z) then
                 return { x = x, y = y, z = z, heading = tonumber(candidate.heading) or 0.0 }
             end
         end

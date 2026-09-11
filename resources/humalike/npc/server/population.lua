@@ -114,6 +114,8 @@ local function spawnPointClient(record)
     return best
 end
 
+-- Only a client sees the navmesh; nil fails the spawn. The raw first candidate
+-- is used only when no player in the bucket can be asked.
 local function resolveSpawnPoint(record)
     local playerId = spawnPointClient(record)
     if not playerId then return record.candidates[1] end
@@ -125,7 +127,7 @@ local function resolveSpawnPoint(record)
     local deadline = GetGameTimer() + config().SpawnPointTimeoutMs
     while not request.done and GetGameTimer() < deadline do Wait(50) end
     spawnPointRequests[requestId] = nil
-    return request.point or record.candidates[1]
+    return request.point
 end
 
 local function discard(record)
@@ -275,6 +277,11 @@ function HumalikeNpcPopulation.Spawn(wanted)
         if bodies[record.body_id] ~= record then return end
         if record.release_requested then
             retire(record, record.release_requested)
+            return
+        end
+        if not point then
+            HumalikeDebug('population body %s has no pavement near any candidate', record.body_id)
+            spawnFailed(record)
             return
         end
         local ped = CreatePed(4, GetHashKey(record.model), point.x, point.y, point.z,
