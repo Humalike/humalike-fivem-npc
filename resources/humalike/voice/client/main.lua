@@ -231,18 +231,20 @@ local keyPttActive = false
 local pmaStarted = type(GetResourceState) == 'function'
     and GetResourceState('pma-voice') == 'started' or false
 
-local function refreshCallActive()
-    local nextCallActive = HumalikeVoicePtt.CallActive(
-        LocalPlayer.state.callChannel, pmaStarted)
+local function refreshCallActive(callChannel)
+    if callChannel == nil then callChannel = LocalPlayer.state.callChannel end
+    local nextCallActive = HumalikeVoicePtt.CallActive(callChannel, pmaStarted)
     if nextCallActive == callActive then return end
     callActive = nextCallActive
     if callActive then cancelPtt() end
 end
 
 if type(AddStateBagChangeHandler) == 'function' then
-    AddStateBagChangeHandler('callChannel', nil, function(bagName)
+    -- Change handlers run before the bag is written, so LocalPlayer.state
+    -- still holds the previous channel here; the new one is the argument.
+    AddStateBagChangeHandler('callChannel', nil, function(bagName, _, value)
         if GetPlayerFromStateBagName(bagName) ~= PlayerId() then return end
-        refreshCallActive()
+        refreshCallActive(tonumber(value) or 0)
     end)
 end
 
