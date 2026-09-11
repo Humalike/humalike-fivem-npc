@@ -34,9 +34,11 @@ ensure humalike
 The license is server-only and must use `set`, never `setr`. HumaLike exchanges
 it for short-lived runtime credentials; service URLs and voice secrets do not
 need to be configured manually. The resource becomes ready only when the
-control plane assigns both an edge node and a voice node with positive integer
-assignment generations. Missing or malformed assignments are rejected and the
-resource remains unavailable while it requests a fresh bootstrap.
+control plane returns complete edge and voice assignments. Each assignment
+must include its assignment ID, node ID, node boot ID and positive integer
+generation. A malformed successful bootstrap response stops a newly started
+resource, so a strict release cannot run against an older control-plane
+contract.
 
 Detailed installation and configuration documentation is available at
 [docs.humalike.com/ai-npc](https://docs.humalike.com/ai-npc).

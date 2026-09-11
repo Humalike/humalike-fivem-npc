@@ -7,16 +7,31 @@ local bootstrapInFlight = false
 local bootstrapScheduled = false
 local stopping = false
 local invalidatedAssignment = nil
+local runtimeActivated = false
+
+local function stopFailedStartup(detail)
+    if runtimeActivated or stopping or type(StopResource) ~= 'function' then return false end
+    stopping = true
+    generation = generation + 1
+    HumaLike.ClearRuntimeCredentials()
+    HumaLike.SetStatus('stopped', detail)
+    StopResource(GetCurrentResourceName())
+    return true
+end
 
 local function invalidateRuntime()
     local current = HumaLike.RuntimeCredentials()
     if current then
         invalidatedAssignment = {
             edgeUrl = current.edgeUrl,
+            edgeAssignmentId = current.edgeAssignmentId,
             edgeNodeId = current.edgeNodeId,
+            edgeBootId = current.edgeBootId,
             edgeGeneration = current.edgeGeneration,
             voiceUrl = current.voiceUrl,
+            voiceAssignmentId = current.voiceAssignmentId,
             voiceNodeId = current.voiceNodeId,
+            voiceBootId = current.voiceBootId,
             voiceGeneration = current.voiceGeneration,
         }
     end
@@ -38,14 +53,18 @@ end
 local function sameEdgeAssignment(left, right)
     return left and right
         and left.edgeUrl == right.edgeUrl
+        and left.edgeAssignmentId == right.edgeAssignmentId
         and left.edgeNodeId == right.edgeNodeId
+        and left.edgeBootId == right.edgeBootId
         and left.edgeGeneration == right.edgeGeneration
 end
 
 local function sameVoiceAssignment(left, right)
     return left and right
         and left.voiceUrl == right.voiceUrl
+        and left.voiceAssignmentId == right.voiceAssignmentId
         and left.voiceNodeId == right.voiceNodeId
+        and left.voiceBootId == right.voiceBootId
         and left.voiceGeneration == right.voiceGeneration
 end
 
@@ -86,6 +105,7 @@ local function installRuntime(payload, reason)
     if not ok then return false, validationError end
     local current = HumaLike.RuntimeCredentials()
     invalidatedAssignment = nil
+    runtimeActivated = true
     generation = generation + 1
     bootstrapInFlight = false
     bootstrapScheduled = false
@@ -192,6 +212,9 @@ function HumaLike.RequestBootstrap(reason, attempt, immediate)
                     return
                 end
                 invalidateRuntime()
+                if stopFailedStartup('control-plane credentials failed startup gate') then
+                    return
+                end
                 HumaLike.SetStatus('degraded', validationError)
             elseif status == 401 or status == 403 then
                 invalidateRuntime()

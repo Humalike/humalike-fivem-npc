@@ -1,6 +1,12 @@
 local handlers, timers, requests, statuses = {}, {}, {}, {}
 local readyEvents, edgeEvents, voiceEvents, refreshEvents = {}, {}, {}, {}
 local persistedLease = nil
+local output = {}
+local consolePrint = print
+
+print = function(message)
+    output[#output + 1] = tostring(message)
+end
 
 GetConvar = function(name)
     if name == 'humalike_license_key' then return 'ak_' .. string.rep('x', 40) end
@@ -67,10 +73,14 @@ local function credentials(bootId)
         voice_access_token = string.rep('v', 64),
         access_tokens_expire_at = '2030-01-01T00:00:00Z',
         edge_url = 'https://edge-a.example',
+        edge_assignment_id = '11111111-1111-4111-8111-111111111111',
         edge_node_id = 'edge-a',
+        edge_boot_id = '22222222-2222-4222-8222-222222222222',
         edge_generation = 7,
         voice_url = 'https://voice.example',
+        voice_assignment_id = '33333333-3333-4333-8333-333333333333',
         voice_node_id = 'voice-a',
+        voice_boot_id = '44444444-4444-4444-8444-444444444444',
         voice_generation = 4,
         callback_current = {
             token = string.rep('c', 64), valid_from_unix = 50, valid_until_unix = 200,
@@ -79,6 +89,22 @@ local function credentials(bootId)
             token = string.rep('n', 64), valid_from_unix = 200, valid_until_unix = 800,
         },
     }
+end
+
+for _, field in ipairs({
+    'edge_assignment_id',
+    'edge_node_id',
+    'edge_boot_id',
+    'edge_generation',
+    'voice_assignment_id',
+    'voice_node_id',
+    'voice_boot_id',
+    'voice_generation',
+}) do
+    local incomplete = credentials('boot-1')
+    incomplete[field] = nil
+    assert(HumaLike.ReplaceRuntimeCredentials(incomplete, 'boot-1') == false,
+        ('runtime credentials without %s must fail closed'):format(field))
 end
 
 local malformed = credentials('boot-1')
@@ -104,6 +130,12 @@ assert(HumaLike.ReplaceRuntimeCredentials(malformedEdgeNode, 'boot-1') == false)
 local malformedVoiceGeneration = credentials('boot-1')
 malformedVoiceGeneration.voice_generation = 4.5
 assert(HumaLike.ReplaceRuntimeCredentials(malformedVoiceGeneration, 'boot-1') == false)
+local malformedAssignmentId = credentials('boot-1')
+malformedAssignmentId.edge_assignment_id = 'not-a-uuid'
+assert(HumaLike.ReplaceRuntimeCredentials(malformedAssignmentId, 'boot-1') == false)
+local malformedNodeBootId = credentials('boot-1')
+malformedNodeBootId.voice_boot_id = 'not-a-uuid'
+assert(HumaLike.ReplaceRuntimeCredentials(malformedNodeBootId, 'boot-1') == false)
 
 TriggerEvent('onResourceStart', 'humalike')
 assert(#timers == 1 and timers[1].delay == 0)
@@ -130,16 +162,17 @@ timers[4].callback()
 assert(#requests == 4)
 
 local bootId = requests[4].payload.boot_id
-local unassigned = credentials(bootId)
-unassigned.edge_node_id = nil
-unassigned.edge_generation = nil
-unassigned.voice_node_id = nil
-unassigned.voice_generation = nil
-requests[4].callback(200, unassigned)
+local incompleteBootstrap = credentials(bootId)
+local rejectedSecret = 'sensitive-' .. string.rep('z', 64)
+incompleteBootstrap.edge_access_token = rejectedSecret
+incompleteBootstrap.edge_assignment_id = nil
+requests[4].callback(200, incompleteBootstrap)
 assert(statuses[#statuses].phase == 'degraded')
 assert(statuses[#statuses].detail == 'bootstrap returned malformed credentials')
 assert(HumaLike.RuntimeCredentials() == nil)
 assert(#readyEvents == 0)
+assert(not table.concat(output, '\n'):find(rejectedSecret, 1, true),
+    'a rejected control-plane response must not expose credentials in logs')
 assert(#timers == 5 and timers[5].delay >= 1600 and timers[5].delay <= 2400)
 timers[5].callback()
 assert(#requests == 5)
@@ -149,9 +182,17 @@ assert(statuses[#statuses].phase == 'ready')
 assert(HumaLike.RuntimeCredentials().bootId == bootId)
 assert(persistedLease == 'lease-1')
 assert(HumaLike.RuntimeCredentials().edgeUrl == 'https://edge-a.example')
+assert(HumaLike.RuntimeCredentials().edgeAssignmentId ==
+    '11111111-1111-4111-8111-111111111111')
 assert(HumaLike.RuntimeCredentials().edgeNodeId == 'edge-a')
+assert(HumaLike.RuntimeCredentials().edgeBootId ==
+    '22222222-2222-4222-8222-222222222222')
 assert(HumaLike.RuntimeCredentials().edgeGeneration == 7)
+assert(HumaLike.RuntimeCredentials().voiceAssignmentId ==
+    '33333333-3333-4333-8333-333333333333')
 assert(HumaLike.RuntimeCredentials().voiceNodeId == 'voice-a')
+assert(HumaLike.RuntimeCredentials().voiceBootId ==
+    '44444444-4444-4444-8444-444444444444')
 assert(HumaLike.RuntimeCredentials().voiceGeneration == 4)
 assert(#timers == 6 and timers[6].delay >= 8000 and timers[6].delay <= 12000)
 assert(#readyEvents == 1)
@@ -170,7 +211,9 @@ assert(#edgeEvents == 0 and #voiceEvents == 0,
 timers[7].callback()
 local moved = credentials(bootId)
 moved.edge_url = 'https://edge-b.example'
+moved.edge_assignment_id = '55555555-5555-4555-8555-555555555555'
 moved.edge_node_id = 'edge-b'
+moved.edge_boot_id = '66666666-6666-4666-8666-666666666666'
 moved.edge_generation = 8
 requests[7].callback(200, moved)
 assert(#readyEvents == 1 and #edgeEvents == 1 and #voiceEvents == 0)
@@ -180,7 +223,9 @@ assert(HumaLike.RuntimeCredentials().edgeGeneration == 8)
 timers[8].callback()
 local voiceMoved = moved
 voiceMoved.voice_url = 'https://voice-b.example'
+voiceMoved.voice_assignment_id = '77777777-7777-4777-8777-777777777777'
 voiceMoved.voice_node_id = 'voice-b'
+voiceMoved.voice_boot_id = '88888888-8888-4888-8888-888888888888'
 voiceMoved.voice_generation = 5
 requests[8].callback(200, voiceMoved)
 assert(#edgeEvents == 1 and #voiceEvents == 1)
@@ -218,10 +263,14 @@ assert(#requests == requestCount, 'invalidation must fence the previous renewal 
 timers[13].callback()
 local reassigned = credentials(bootId)
 reassigned.edge_url = 'https://edge-c.example'
+reassigned.edge_assignment_id = '99999999-9999-4999-8999-999999999999'
 reassigned.edge_node_id = 'edge-c'
+reassigned.edge_boot_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 reassigned.edge_generation = 9
 reassigned.voice_url = 'https://voice-c.example'
+reassigned.voice_assignment_id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
 reassigned.voice_node_id = 'voice-c'
+reassigned.voice_boot_id = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
 reassigned.voice_generation = 6
 requests[12].callback(200, reassigned)
 assert(#edgeEvents == 2 and edgeEvents[2].nodeId == 'edge-c')
@@ -270,4 +319,4 @@ TriggerEvent('onResourceStop', 'humalike')
 assert(credentialsVisibleDuringStop)
 assert(HumaLike.RuntimeCredentials() == nil)
 
-print('core_runtime: ok')
+consolePrint('core_runtime: ok')
