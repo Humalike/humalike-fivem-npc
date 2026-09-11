@@ -5,6 +5,7 @@ HumaLike = HumaLike or {}
 local controlPlaneUrl = GetConvar(
     'humalike_control_plane_url', 'https://api.humalike.com')
 local rejectedVoiceToken = nil
+local rejectedVoiceAssignment = nil
 local voiceRetryAfter = 0
 local voiceRetryCooldownSeconds = 30
 local function encodeObject(payload)
@@ -106,16 +107,23 @@ function HumaLike.PostVoice(path, payload, callback)
         return
     end
     local requestToken = credentials.voiceToken
+    local requestUrl = credentials.voiceUrl
+    local requestAssignment = HumaLike.VoiceAssignmentKey()
     local now = os.time()
-    if rejectedVoiceToken == requestToken and now < voiceRetryAfter then
+    if rejectedVoiceToken == requestToken
+        and rejectedVoiceAssignment == requestAssignment
+        and now < voiceRetryAfter then
         if callback then callback(401, nil) end
         return
     end
-    PerformHttpRequest(credentials.voiceUrl .. path, function(status, body)
+    PerformHttpRequest(requestUrl .. path, function(status, body)
         local decoded = nil
         if type(body) == 'string' and body ~= '' then
             local ok, result = pcall(json.decode, body)
             if ok then decoded = result end
+        end
+        if not HumaLike.IsCurrentVoiceAssignment(requestAssignment) then
+            return
         end
         if status == 401 or status == 403 then
             local current = HumaLike.RuntimeCredentials()
@@ -125,10 +133,14 @@ function HumaLike.PostVoice(path, payload, callback)
                     HumaLike.SetStatus('degraded', 'voice runtime rejected; edge runtime retained')
                 end
                 rejectedVoiceToken = requestToken
+                rejectedVoiceAssignment = requestAssignment
                 voiceRetryAfter = os.time() + voiceRetryCooldownSeconds
             end
-        elseif status >= 200 and status < 300 and rejectedVoiceToken == requestToken then
+        elseif status >= 200 and status < 300
+            and rejectedVoiceToken == requestToken
+            and rejectedVoiceAssignment == requestAssignment then
             rejectedVoiceToken = nil
+            rejectedVoiceAssignment = nil
             voiceRetryAfter = 0
         end
         if callback then callback(status, decoded) end

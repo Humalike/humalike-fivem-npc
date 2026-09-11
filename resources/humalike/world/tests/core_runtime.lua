@@ -197,6 +197,9 @@ assert(HumaLike.RuntimeCredentials().voiceNodeId == 'voice-a')
 assert(HumaLike.RuntimeCredentials().voiceBootId ==
     '44444444-4444-4444-8444-444444444444')
 assert(HumaLike.RuntimeCredentials().voiceGeneration == 4)
+local initialVoiceKey = HumaLike.VoiceAssignmentKey()
+assert(type(initialVoiceKey) == 'string' and initialVoiceKey ~= '')
+assert(HumaLike.IsCurrentVoiceAssignment(initialVoiceKey))
 assert(#timers == 6 and timers[6].delay >= 8000 and timers[6].delay <= 12000)
 assert(#readyEvents == 1)
 
@@ -236,6 +239,8 @@ voiceMoved.voice_boot_id = '88888888-8888-4888-8888-888888888888'
 voiceMoved.voice_generation = 5
 requests[8].callback(200, voiceMoved)
 assert(#edgeEvents == 1 and #voiceEvents == 1)
+assert(not HumaLike.IsCurrentVoiceAssignment(initialVoiceKey),
+    'voice assignment identity must change with its generation')
 assert(#refreshEvents == 0, 'periodic assignment changes are plane-specific')
 
 timers[9].callback()

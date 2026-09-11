@@ -125,6 +125,21 @@ function HumaLike.IsCurrentEdgeAssignment(expected)
     return expected ~= nil and expected == HumaLike.EdgeAssignmentKey()
 end
 
+function HumaLike.VoiceAssignmentKey()
+    if not runtime then return nil end
+    return table.concat({
+        runtime.voiceAssignmentId,
+        runtime.voiceNodeId,
+        runtime.voiceBootId,
+        tostring(runtime.voiceGeneration),
+        runtime.voiceUrl,
+    }, '\31')
+end
+
+function HumaLike.IsCurrentVoiceAssignment(expected)
+    return expected ~= nil and expected == HumaLike.VoiceAssignmentKey()
+end
+
 function HumaLike.ClearRuntimeCredentials()
     runtime = nil
 end

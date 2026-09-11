@@ -3,6 +3,7 @@ local responseStatus, responseBody = 200, '{}'
 local runtimeAvailable = true
 local bootstrapRequests = 0
 local currentAssignment = 'edge-a:7'
+local currentVoiceAssignment = 'voice-a:4'
 local deferredHttp
 
 GetConvar = function(name)
@@ -45,6 +46,10 @@ HumaLike = {
     RequestBootstrap = function() bootstrapRequests = bootstrapRequests + 1 end,
     EdgeAssignmentKey = function() return currentAssignment end,
     IsCurrentEdgeAssignment = function(expected) return expected == currentAssignment end,
+    VoiceAssignmentKey = function() return currentVoiceAssignment end,
+    IsCurrentVoiceAssignment = function(expected)
+        return expected == currentVoiceAssignment
+    end,
 }
 
 dofile('../server/core/http.lua')
@@ -114,6 +119,57 @@ oldResponse(200, '{}', {})
 assert(staleResult.ok == false and staleResult.status == 409)
 assert(HumaLike.ErrorCode(staleResult.body) == 'EDGE_ASSIGNMENT_CHANGED',
     'an old edge response must be rejected before reaching domain state')
+
+deferredHttp = false
+local staleVoiceResult
+HumaLike.PostVoice('/v1/fivem/state', {}, function(status, body)
+    staleVoiceResult = { status = status, body = body }
+end)
+local oldVoiceResponse = deferredHttp
+currentVoiceAssignment = 'voice-b:5'
+deferredHttp = nil
+oldVoiceResponse(204, '', {})
+assert(staleVoiceResult == nil,
+    'an old voice response must not reach domain state')
+
+deferredHttp = false
+local staleVoiceRejection
+HumaLike.PostVoice('/v1/fivem/sessions', {}, function(status)
+    staleVoiceRejection = status
+end)
+local oldVoiceRejection = deferredHttp
+currentVoiceAssignment = 'voice-c:6'
+deferredHttp = nil
+oldVoiceRejection(401, '{"error":{"code":"UNAUTHORIZED"}}', {})
+assert(staleVoiceRejection == nil,
+    'an old voice rejection must not reach domain state')
+local requestsBeforeCurrentVoice = #requests
+local currentVoiceStatus
+responseStatus = 204
+responseBody = ''
+HumaLike.PostVoice('/v1/fivem/sessions', {}, function(status)
+    currentVoiceStatus = status
+end)
+assert(#requests == requestsBeforeCurrentVoice + 1 and currentVoiceStatus == 204,
+    'an old voice rejection must not throttle the current assignment')
+
+responseStatus = 401
+responseBody = '{"error":{"code":"UNAUTHORIZED"}}'
+local rejectedCurrentStatus
+HumaLike.PostVoice('/v1/fivem/sessions', {}, function(status)
+    rejectedCurrentStatus = status
+end)
+assert(rejectedCurrentStatus == 401)
+currentVoiceAssignment = 'voice-d:7'
+responseStatus = 204
+responseBody = ''
+local requestsBeforeReassignedVoice = #requests
+local reassignedVoiceStatus
+HumaLike.PostVoice('/v1/fivem/sessions', {}, function(status)
+    reassignedVoiceStatus = status
+end)
+assert(#requests == requestsBeforeReassignedVoice + 1 and reassignedVoiceStatus == 204,
+    'a new voice assignment must not inherit the old assignment cooldown')
 
 HumaLike.EdgeRequest('bootstrap_fivem_runtime', 'license', {}, function() end)
 assert(requests[#requests].url ==
