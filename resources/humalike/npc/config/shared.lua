@@ -31,6 +31,7 @@ Config.AmbientControl = {
 Config.Population = {
     SpawnPointTimeoutMs = 2000,
     SpawnPointTolerance = 60.0,
+    SpawnPointClientRange = 250.0, -- metres a client may be from the first candidate to be asked
     SpawnTimeoutMs = 30000,
     MinPlayerDistance = 40.0,
     ReconcileTickMs = 2000,

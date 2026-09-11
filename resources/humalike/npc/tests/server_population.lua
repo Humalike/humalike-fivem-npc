@@ -33,6 +33,7 @@ local pendingReport
 local releaseOk = true
 local noCredentials = false
 local trace = {}
+local playerCoords = { x = 0, y = 0, z = 0 }
 source = 7
 
 function RegisterNetEvent() end
@@ -54,7 +55,7 @@ function GetPlayerRoutingBucket(playerId) return playerId == 8 and 1 or 2 end
 function GetPlayerPed(playerId) return playerId == 7 and 700 or 0 end
 function DoesEntityExist(entity) return existing[entity] == true end
 function GetEntityCoords(entity)
-    if entity == 700 then return { x = 0, y = 0, z = 0 } end
+    if entity == 700 then return playerCoords end
     return created[entity] and { x = created[entity].x, y = created[entity].y, z = created[entity].z }
         or { x = 0, y = 0, z = 0 }
 end
@@ -785,17 +786,35 @@ HumalikeNpcPopulation.Reconcile()
 assert(#stateEvents() == stateCount + 2 and HumalikeNpcPopulation.Enabled() == true,
     'answered heartbeat reports keep the street alive')
 
+local function spawnFails(revision, body)
+    local pedCount, eventCount = nextPed, #clientEvents
+    assert(HumalikeNpcPopulation.ApplyPlan({ revision = revision, enabled = true,
+        wanted = { planned('body-40', 7), body }, released = {} }))
+    for index = eventCount + 1, #clientEvents do
+        assert(clientEvents[index].name ~= 'humalike:npc:populationSpawnPoint', 'no client is asked')
+    end
+    assert(nextPed == pedCount and bodyIds()[body.body_id] == nil, 'and there is no CreatePed')
+    assert(lastAction('release_npc_body').payload.body_id == body.body_id)
+    assert(lastAction('release_npc_body').payload.cause == 'spawn_failed')
+end
 local lonely = planned('body-50', nil)
 lonely.routing_bucket = 5
-local eventCount = #clientEvents
-assert(HumalikeNpcPopulation.ApplyPlan({ revision = 40, enabled = true,
-    wanted = { planned('body-40', 7), lonely }, released = {} }))
-local lonelyPed = bodyIds()['body-50'].handle
-assert(lonelyPed and created[lonelyPed].x == 10 and created[lonelyPed].y == 0
-    and created[lonelyPed].bucket == 5, 'with no player in the bucket the first candidate is used as is')
-for index = eventCount + 1, #clientEvents do
-    assert(clientEvents[index].name ~= 'humalike:npc:populationSpawnPoint', 'and no client is asked')
-end
+spawnFails(40, lonely)
+playerCoords = { x = 10 + Config.Population.SpawnPointClientRange + 1, y = 0, z = 30 }
+spawnFails(40.2, planned('body-51', 7))
+spawnFails(40.4, planned('body-52', 9))
+playerCoords = { x = 10 + Config.Population.SpawnPointClientRange, y = 0, z = 30 }
+assert(HumalikeNpcPopulation.ApplyPlan({ revision = 40.6, enabled = true,
+    wanted = { planned('body-40', 7), planned('body-53', 7) }, released = {} }))
+assert(clientEvents[#clientEvents].name == 'humalike:npc:populationSpawnPoint'
+    and clientEvents[#clientEvents].player_id == 7, 'an anchor within range is asked')
+assert(bodyIds()['body-53'].status == 'bound')
+assert(HumalikeNpcPopulation.ApplyPlan({ revision = 40.8, enabled = true,
+    wanted = { planned('body-40', 7), planned('body-53', 7), planned('body-54', 9) }, released = {} }))
+assert(clientEvents[#clientEvents].name == 'humalike:npc:populationSpawnPoint'
+    and clientEvents[#clientEvents].player_id == 7, 'without an anchor the nearest in range is asked')
+assert(bodyIds()['body-54'].status == 'bound')
+playerCoords = { x = 0, y = 0, z = 0 }
 
 holdReport = true
 reportCount = #actionsNamed('report_npc_bodies')

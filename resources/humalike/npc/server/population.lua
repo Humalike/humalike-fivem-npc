@@ -98,27 +98,27 @@ local function playerPed(playerId, bucket)
 end
 
 local function spawnPointClient(record)
-    if playerPed(record.anchor_session_id, record.routing_bucket) then
+    local origin = record.candidates[1]
+    local best, bestDistance = nil, config().SpawnPointClientRange ^ 2
+    local anchor = playerPed(record.anchor_session_id, record.routing_bucket)
+    if anchor and HumalikeDistanceSquared(GetEntityCoords(anchor), origin) <= bestDistance then
         return record.anchor_session_id
     end
-    local origin = record.candidates[1]
-    local best, bestDistance
     for _, playerId in ipairs(GetPlayers()) do
         local id = tonumber(playerId)
         local ped = playerPed(id, record.routing_bucket)
         if ped then
             local distance = HumalikeDistanceSquared(GetEntityCoords(ped), origin)
-            if not bestDistance or distance < bestDistance then best, bestDistance = id, distance end
+            if distance <= bestDistance then best, bestDistance = id, distance end
         end
     end
     return best
 end
 
--- Only a client sees the navmesh; nil fails the spawn. The raw first candidate
--- is used only when no player in the bucket can be asked.
+-- Only a nearby client sees the navmesh; nil fails the spawn.
 local function resolveSpawnPoint(record)
     local playerId = spawnPointClient(record)
-    if not playerId then return record.candidates[1] end
+    if not playerId then return nil end
     requestSequence = requestSequence + 1
     local requestId = ('%s:%d'):format(record.body_id, requestSequence)
     local request = { player_id = playerId, candidates = record.candidates }
