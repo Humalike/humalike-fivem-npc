@@ -94,6 +94,13 @@ HumalikeNpcStyle = {
 function NetworkHasControlOfEntity(ped) return owned[ped] == true end
 function IsEntityDead(ped) return dead[ped] == true end
 function IsPedRagdoll() return false end
+local blockingCalls = {}
+function SetBlockingOfNonTemporaryEvents(ped, blocked)
+    blockingCalls[#blockingCalls + 1] = { ped, 'ped', blocked }
+end
+function TaskSetBlockingOfNonTemporaryEvents(ped, blocked)
+    blockingCalls[#blockingCalls + 1] = { ped, 'task', blocked }
+end
 function IsPedInAnyVehicle(ped) return inVehicle[ped] == true end
 function IsPedUsingAnyScenario(ped) return scenario[ped] == true end
 function IsPedStopped(ped) return stopped[ped] == true end
@@ -115,6 +122,8 @@ function HumalikeAmbientControlHeldPed(ped) return heldPeds[ped] == true end
 function DownedNpcOf(ped) return downedPeds[ped] end
 function GetCurrentResourceName() return 'humalike' end
 function GetGameTimer() return nowMs end
+local fleeing = {}
+function IsPedFleeing(ped) return fleeing[ped] == true end
 function GetPedType(ped) return pedTypes[ped] or 4 end
 function GetActivePlayers() return activePlayers end
 function GetPlayerPed(playerId) return playerPeds[playerId] or 0 end
@@ -126,6 +135,7 @@ HumalikeNpcRuntimeControl = {
     end,
 }
 
+dofile('client/reactions.lua')
 dofile('client/population.lua')
 assert(#threads == 2, 'one density thread and one pool walk')
 
@@ -178,10 +188,34 @@ actionControlled[22] = true
 heldPeds[23] = true
 downedPeds[24] = 'wounded'
 walkRates[20] = 0.75
+bodyKinds = { [20] = 'persona', [21] = 'persona', [22] = 'persona', [23] = 'persona',
+    [24] = 'persona', [26] = 'persona' }
 
 HumalikeNpcPopulationClient.Tick(1000, false)
 assert(#wanderCalls == 2 and wanderCalls[1] == 20 and wanderCalls[2] == 26,
     'first ownership sends unmanaged wander bodies wandering at once')
+local function blockingCounts(from)
+    local flags, tasks = {}, {}
+    for index = from or 1, #blockingCalls do
+        local call = blockingCalls[index]
+        assert(call[3] == true, 'reactions are blocked, never released')
+        local bucket = call[2] == 'ped' and flags or tasks
+        bucket[call[1]] = (bucket[call[1]] or 0) + 1
+    end
+    return flags, tasks
+end
+local flags, tasks = blockingCounts()
+for _, ped in ipairs({ 20, 22, 23, 24, 26 }) do
+    assert(flags[ped] == 1, 'every owned persona body has its reactions flagged off')
+end
+assert(tasks[20] == 1 and tasks[26] == 1, 'the blocking task is issued once on first ownership')
+assert(tasks[22] == nil and tasks[23] == nil and tasks[24] == nil,
+    'never on a ped an action, hold or wound is driving')
+assert(flags[25] == nil and tasks[25] == nil, 'a persistent ped is not ours')
+assert(HumalikeNpcPopulationClient.OwnsReactions(20) == true)
+assert(HumalikeNpcPopulationClient.OwnsReactions(25) == false,
+    'a persistent ped is not ours to own here')
+assert(HumalikeNpcPopulationClient.OwnsReactions(99) == false, 'a missing entity owns nothing')
 assert(#blendCalls == 7, 'only unmanaged bodies get the walk cap')
 assert(blendCalls[1][1] == 20 and blendCalls[1][2] == 'min' and blendCalls[1][3] == 0.0)
 assert(blendCalls[2][1] == 20 and blendCalls[2][2] == 'max' and blendCalls[2][3] == 0.75)
@@ -191,6 +225,11 @@ assert(blendCalls[3][1] == 22 and blendCalls[3][3] == 3.0 and blendCalls[4][1] =
 assert(blendCalls[7][1] == 26 and blendCalls[7][3] == 1.0, 'walk_rate defaults to 1.0')
 HumalikeNpcPopulationClient.Tick(3000, false)
 assert(#wanderCalls == 2 and #blendCalls == 7, 'a stopped ped is not re-tasked before the idle window')
+flags, tasks = blockingCounts(8)
+assert(#blockingCalls == 12 and next(tasks) == nil, 'the flag is re-asserted on every owned tick')
+for _, ped in ipairs({ 20, 22, 23, 24, 26 }) do
+    assert(flags[ped] == 1, 'never the task again')
+end
 HumalikeNpcPopulationClient.Tick(6000, false)
 assert(#wanderCalls == 4 and wanderCalls[3] == 20 and wanderCalls[4] == 26,
     'only owned, idle, unmanaged population peds wander again')
@@ -230,11 +269,18 @@ assert(#wanderCalls == before + 1, 'idle clocks restart after a resource stop')
 
 pool = { [30] = true, [31] = true, [32] = true }
 kinds = { [30] = 'population', [31] = 'population', [32] = 'population' }
-bodyKinds = { [30] = 'extra', [31] = 'extra' }
+bodyKinds = { [30] = 'extra', [31] = 'extra', [32] = 'persona' }
 seeds = { [30] = 4242 }
 owned = { [30] = true, [31] = true, [32] = true }
 stopped = {}
+local blockedBefore = #blockingCalls
 HumalikeNpcPopulationClient.Tick(50000, false)
+local blockedPeds = {}
+for index = blockedBefore + 1, #blockingCalls do blockedPeds[blockingCalls[index][1]] = true end
+assert(blockedPeds[32] and not blockedPeds[30] and not blockedPeds[31],
+    'only persona bodies are blocked; extras keep GTA reactions')
+assert(HumalikeNpcPopulationClient.OwnsReactions(32) == true)
+assert(HumalikeNpcPopulationClient.OwnsReactions(30) == false, 'an extra is not ours to own')
 assert(#applied == 2 and applied[1][1] == 30 and applied[1][2] == 4242,
     'extras are dressed from their seed; persona bodies are not')
 assert(applied[2][1] == 31 and applied[2][2] == nil)
@@ -248,10 +294,24 @@ HumalikeNpcPopulationClient.Tick(53000, false)
 assert(#applied == 6 and applied[5][1] == 30 and applied[5][2] == 4242,
     'an extra is dressed again once ownership returns')
 assert(applied[6][1] == 31)
+pool[33] = true
+kinds[33] = 'population'
+owned[33] = true
+blockedBefore = #blockingCalls
+local wanderBefore = #wanderCalls
+HumalikeNpcPopulationClient.Tick(54000, false)
+assert(#blockingCalls == blockedBefore + 1 and blockingCalls[#blockingCalls][1] == 32
+    and #wanderCalls == wanderBefore, 'a body whose kind has not replicated is not ready: skipped')
+assert(HumalikeNpcPopulationClient.OwnsReactions(33) == false)
+bodyKinds[33] = 'persona'
+HumalikeNpcPopulationClient.Tick(55000, false)
+assert(#wanderCalls == wanderBefore + 1 and wanderCalls[#wanderCalls] == 33,
+    'and configured as soon as the bag says persona')
+pool[33], kinds[33], owned[33], bodyKinds[33] = nil, nil, nil, nil
 
 pool = { [40] = true, [41] = true, [42] = true, [43] = true }
 kinds = { [40] = 'population', [41] = 'population', [42] = 'population', [43] = 'population' }
-bodyKinds = {}
+bodyKinds = { [40] = 'persona', [41] = 'persona', [42] = 'persona', [43] = 'persona' }
 owned = { [40] = true, [41] = true, [42] = true, [43] = true }
 behaviours = { [40] = 'stand', [41] = 'scenario', [42] = 'wander', [43] = 'scenario' }
 scenarios = { [41] = 'WORLD_HUMAN_SMOKING', [43] = 'WORLD_HUMAN_DRINKING' }
@@ -404,6 +464,7 @@ assert(HumalikeNpcPopulationClient.Tick(nowMs, true) == 2 and deleted[10] == 65 
 
 pool = { [70] = true, [71] = true, [72] = true }
 kinds = { [70] = 'population', [71] = 'population', [72] = 'population' }
+bodyKinds = { [70] = 'persona', [71] = 'persona', [72] = 'persona' }
 owned = { [70] = true, [71] = true, [72] = true }
 walkRates = { [70] = 0.6, [71] = 0.9 }
 npcIds = { [71] = 'npc-71' }
@@ -481,6 +542,22 @@ assert(#blendCalls == 5 and blendCalls[5][1] == 72 and blendCalls[5][3] == 3.0,
     'regained mid-action: the old local cap is lifted for the action')
 actionControlled[72] = nil
 HumalikeNpcPopulationClient.RestorePace(72)
+
+fleeing[72] = true
+wanderCalls, clearCalls = {}, {}
+HumalikeNpcPopulationClient.Tick(203000, false)
+assert(#clearCalls == 1 and clearCalls[1] == 72 and #wanderCalls == 1 and wanderCalls[1] == 72,
+    'a fleeing persona body is re-tasked with its planned behaviour')
+fleeing[72] = nil
+HumalikeNpcPopulationClient.Tick(204000, false)
+assert(#clearCalls == 1, 'only while it flees')
+bodyKinds[72] = 'extra'
+fleeing[72] = true
+HumalikeNpcPopulationClient.Tick(205000, false)
+assert(#clearCalls == 1, 'an extra keeps GTA brain, its flee is its own')
+bodyKinds[72] = 'persona'
+fleeing[72] = nil
+clearCalls = {}
 
 behaviours[71] = 'scenario'
 scenarios[71] = 'WORLD_HUMAN_SMOKING'

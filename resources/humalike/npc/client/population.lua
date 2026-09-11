@@ -184,9 +184,27 @@ local function applyBehaviour(ped, state, now)
     TaskStartScenarioInPlace(ped, scenarioOf(state), 0, true)
 end
 
+local function hasMind(state)
+    return state.humalike_body_kind == 'persona'
+end
+
+-- Extras keep GTA's reactions; a persona body's mind decides for it.
+local function ownReactions(ped, state, withTask)
+    if not hasMind(state) then return end
+    HumalikeNpcReactions.Own(ped, withTask)
+end
+
+function HumalikeNpcPopulationClient.OwnsReactions(ped)
+    if not DoesEntityExist(ped) then return false end
+    local state = Entity(ped).state
+    return state.humalike_npc_kind == 'population' and hasMind(state)
+end
+
 local function configure(ped, state, now)
     configured[ped] = state.humalike_body_id or true
-    if managed(ped) then
+    local isManaged = managed(ped)
+    ownReactions(ped, state, not isManaged)
+    if isManaged then
         HumalikeNpcPopulationClient.OwnPace(ped)
         return
     end
@@ -195,11 +213,19 @@ local function configure(ped, state, now)
 end
 
 local function refresh(ped, state, now)
+    -- A release or a migration may have handed the reactions back to GTA.
+    ownReactions(ped, state, false)
     if managed(ped) then
         if paced[ped] then HumalikeNpcPopulationClient.OwnPace(ped) end
         return
     end
     if not paced[ped] then capPace(ped, state) end
+    -- A flee GTA started before the flag came back is replaced by the plan.
+    if hasMind(state) and IsPedFleeing(ped) then
+        ClearPedTasks(ped)
+        applyBehaviour(ped, state, now)
+        return
+    end
     local idle
     if behaviourOf(state) == 'wander' then
         idle = wanderIdle(ped, now)
@@ -273,7 +299,9 @@ function HumalikeNpcPopulationClient.Tick(now, sweep)
     for _, ped in ipairs(GetGamePool('CPed')) do
         if DoesEntityExist(ped) and not IsPedAPlayer(ped) and NetworkHasControlOfEntity(ped) then
             local state = Entity(ped).state
-            if state.humalike_npc_kind == 'population' then
+            if state.humalike_npc_kind == 'population' and state.humalike_body_kind == nil then
+                seen[ped] = true -- kind not replicated yet; leave it alone this tick
+            elseif state.humalike_npc_kind == 'population' then
                 seen[ped] = true
                 dress(ped, state)
                 if configured[ped] == (state.humalike_body_id or true) then

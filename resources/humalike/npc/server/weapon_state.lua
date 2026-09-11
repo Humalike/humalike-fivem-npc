@@ -43,13 +43,40 @@ local function post(observation, delay, attempt)
     end)
 end
 
-local function validTarget(playerId, npcId, entityId)
+local function staticEntity(npcId)
+    local external = HumalikeNpcEntityOwnership
+        and HumalikeNpcEntityOwnership.ExternalEntity(npcId) or nil
+    local entity = external or (PersistentNpcEntities and PersistentNpcEntities[npcId]) or nil
+    if entity and entity > 0 and DoesEntityExist(entity) then return entity end
+    return nil
+end
+
+-- Contact events schedule a spoken reaction, so the player must be within reach.
+-- A static definition without an entity stands in bucket 0 (persistent.lua).
+local function withinReach(playerId, entity, fallback, maxDistance)
+    local playerPed = GetPlayerPed(playerId)
+    if not playerPed or playerPed <= 0 or not DoesEntityExist(playerPed) then return false end
+    local bucket = entity and GetEntityRoutingBucket(entity) or 0
+    if bucket ~= GetPlayerRoutingBucket(playerId) then return false end
+    local target = entity and GetEntityCoords(entity) or fallback
+    if type(target) ~= 'table' or type(target.x) ~= 'number' then return false end
+    return HumalikeDistanceSquared(GetEntityCoords(playerPed), target) <= maxDistance * maxDistance
+end
+
+local function validTarget(playerId, npcId, entityId, maxDistance)
     if type(npcId) ~= 'string' then return false end
-    if NpcRegistry[npcId] then return entityId == nil, nil end
+    local definition = NpcRegistry[npcId]
+    if definition then
+        if entityId ~= nil then return false end
+        if not maxDistance then return true, nil end
+        local entity = staticEntity(npcId)
+        return withinReach(playerId, entity, not entity and definition or nil, maxDistance), nil
+    end
     local lease, entity = ambientLease(entityId)
     local valid = type(entityId) == 'number' and entityId > 0 and entityId % 1 == 0
         and entity and GetEntityRoutingBucket(entity) == GetPlayerRoutingBucket(playerId)
         and lease and lease.npc_id == npcId and type(lease.lease_token) == 'string'
+    if valid and maxDistance then valid = withinReach(playerId, entity, nil, maxDistance) end
     return valid, valid and lease.lease_token or nil
 end
 
@@ -140,14 +167,8 @@ AddEventHandler('humalike:npc:npcAttacked', function(npcId, entityId, weaponHash
         weaponName)
     local playerId = source
     local validPlayer = type(playerId) == 'number' and playerId > 0 and playerId % 1 == 0
-    local staticNpc = type(npcId) == 'string' and NpcRegistry[npcId] ~= nil
-    local lease, entity = ambientLease(entityId)
-    local ambientNpc = validPlayer and type(entityId) == 'number' and entityId > 0
-        and entityId % 1 == 0 and entity
-        and GetEntityRoutingBucket(entity) == GetPlayerRoutingBucket(playerId)
-        and lease and lease.npc_id == npcId and type(lease.lease_token) == 'string'
     if not validPlayer
-        or type(npcId) ~= 'string' or not staticNpc and not ambientNpc
+        or type(npcId) ~= 'string'
         or not HumalikePlayer.IsCharacterLoaded(playerId)
         or not validHash(weaponHash)
         or type(damage) ~= 'number' or damage < 0
@@ -160,6 +181,11 @@ AddEventHandler('humalike:npc:npcAttacked', function(npcId, entityId, weaponHash
     if not playerPed or playerPed == 0 or not DoesEntityExist(playerPed)
         or normalize(GetSelectedPedWeapon(playerPed)) ~= normalizedHash then return end
     if not validName(normalizedHash, weaponName) then return end
+    local combat = Config.Combat
+    local reach = combat.MeleeWeapons[weaponName] and combat.MeleeReportDistance
+        or combat.MaxReportDistance
+    local valid, leaseToken = validTarget(playerId, npcId, entityId, reach)
+    if not valid then return end
 
     post({
         fivem_session_id = playerId,
@@ -168,9 +194,53 @@ AddEventHandler('humalike:npc:npcAttacked', function(npcId, entityId, weaponHash
         event = {
             type = 'attacked_npc',
             npc_id = npcId,
-            lease_token = ambientNpc and lease.lease_token or nil,
+            lease_token = leaseToken,
             weapon = weaponName,
             damage = damage,
+        },
+    }, 1000)
+end)
+local shoveIntensities = { bump = true, knocked_down = true }
+local shoveReports = {} -- playerId -> { byNpc = { npcId -> ms }, recent = { ms } }
+
+local function shoveAllowed(reports, npcId, now)
+    local shove = Config.Shove
+    reports.byNpc = reports.byNpc or {}
+    local last = reports.byNpc[npcId]
+    if last and now - last < shove.ServerGapMs then return false end
+    local recent = {}
+    for _, at in ipairs(reports.recent or {}) do
+        if now - at < shove.ReportWindowMs then recent[#recent + 1] = at end
+    end
+    if #recent >= shove.MaxReportsPerWindow then return false end
+    recent[#recent + 1] = now
+    reports.recent = recent
+    reports.byNpc[npcId] = now
+    return true
+end
+
+RegisterNetEvent('humalike:npc:npcShoved')
+AddEventHandler('humalike:npc:npcShoved', function(npcId, entityId, intensity)
+    local playerId = tonumber(source)
+    if not playerId or playerId <= 0 or playerId % 1 ~= 0
+        or type(npcId) ~= 'string' or not shoveIntensities[intensity]
+        or not HumalikePlayer.IsCharacterLoaded(playerId) then return end
+    local valid, leaseToken = validTarget(playerId, npcId, entityId, Config.Shove.MaxDistance)
+    if not valid then return end
+
+    local reports = shoveReports[playerId] or {}
+    shoveReports[playerId] = reports
+    if not shoveAllowed(reports, npcId, GetGameTimer()) then return end
+
+    post({
+        fivem_session_id = playerId,
+        source_event_id = HumalikeHttp.NextSourceEventId(playerId),
+        occurred_at = os.date('!%Y-%m-%dT%H:%M:%SZ'),
+        event = {
+            type = 'shoved_npc',
+            npc_id = npcId,
+            lease_token = leaseToken,
+            intensity = intensity,
         },
     }, 1000)
 end)
@@ -299,6 +369,7 @@ end)
 AddEventHandler('playerDropped', function()
     lastGunshotAt[source] = nil
     local playerId = tonumber(source)
+    shoveReports[playerId] = nil
     local aiming = aimingStates[playerId]
     if aiming then aiming.generation = aiming.generation + 1 end
     aimingStates[playerId] = nil
