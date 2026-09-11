@@ -47,6 +47,7 @@ function Entity(ped)
     return { state = { set = function(_self, key, value) bags[key] = value end } }
 end
 
+dofile('client/reactions.lua')
 dofile('client/actions/state.lua')
 dofile('client/actions/walk_away.lua')
 NpcActions['walk_away'](npcPed, { player_id = 7 })

@@ -8,6 +8,8 @@ providers.
 ## What it includes
 
 - Persistent and ambient AI NPCs synchronized through OneSync.
+- HumaLike-owned street population: player contact (a bump, a knock-down)
+  reaches the AI as a world event.
 - Proximity voice with direct NPC targeting and in-vehicle routing.
 - World-state collection, NPC actions, injuries and interactions.
 - Standalone operation with optional ESX, QBCore, Qbox, inventory and target
@@ -33,7 +35,8 @@ ensure humalike
 
 The license is server-only and must use `set`, never `setr`. HumaLike exchanges
 it for short-lived runtime credentials; service URLs and voice secrets do not
-need to be configured manually.
+need to be configured manually. Updating an installed resource follows the
+Update section of the archive's `INSTALL.md` (`refresh`, then `restart humalike`).
 
 Detailed installation and configuration documentation is available at
 [docs.humalike.com/ai-npc](https://docs.humalike.com/ai-npc).

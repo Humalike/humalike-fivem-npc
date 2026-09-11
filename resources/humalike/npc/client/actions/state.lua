@@ -44,7 +44,7 @@ function MarkActionControl(ped, actionKey, params)
         else
             Entity(ped).state:set('humalike_action', nil, true)
         end
-        SetBlockingOfNonTemporaryEvents(ped, true)
+        HumalikeNpcReactions.Own(ped)
         SetPedKeepTask(ped, true)
         if HumalikeNpcPopulationClient then HumalikeNpcPopulationClient.OwnPace(ped) end
     end
@@ -56,7 +56,7 @@ function ReleaseActionControl(ped)
     if DoesEntityExist(ped) then
         Entity(ped).state:set('humalike_action', nil, true)
         SetPedKeepTask(ped, false)
-        SetBlockingOfNonTemporaryEvents(ped, false)
+        HumalikeNpcReactions.Release(ped)
         if HumalikeNpcPopulationClient then HumalikeNpcPopulationClient.RestorePace(ped) end
     end
 end
@@ -72,7 +72,7 @@ AddStateBagChangeHandler('humalike_action', nil, function(bagName, _key, value)
             ActionControlledPeds[ped] = nil
             ActionParams[ped] = nil
             SetPedKeepTask(ped, false)
-            SetBlockingOfNonTemporaryEvents(ped, false)
+            HumalikeNpcReactions.Release(ped)
             if HumalikeNpcPopulationClient then HumalikeNpcPopulationClient.RestorePace(ped) end
         end
     end
@@ -98,7 +98,7 @@ CreateThread(function()
                 ReleaseActionControl(ped)
             elseif NetworkHasControlOfEntity(ped)
                 and not IsEntityDead(ped) and not IsPedRagdoll(ped) then
-                SetBlockingOfNonTemporaryEvents(ped, true)
+                HumalikeNpcReactions.Own(ped)
                 SetPedKeepTask(ped, true)
                 local sustain = NpcActionSustain[actionKey]
                 if sustain then sustain(ped) end

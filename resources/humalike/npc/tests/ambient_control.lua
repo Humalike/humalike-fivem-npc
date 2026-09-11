@@ -52,7 +52,8 @@ function TriggerServerEvent(...)
     triggered = { ... }
 end
 function NetworkHasControlOfEntity() return hasControl end
-function SetBlockingOfNonTemporaryEvents() end
+local blocking = {}
+function SetBlockingOfNonTemporaryEvents(ped, blocked) blocking[ped] = blocked end
 function TaskSetBlockingOfNonTemporaryEvents() end
 function ClearPedTasksImmediately() end
 function ClearPedTasks() taskClears = taskClears + 1 end
@@ -68,6 +69,7 @@ function Entity(ped) return { state = { humalike_npc_kind = pedKinds[ped] } } en
 local reapplied = {}
 HumalikeNpcPopulationClient = {
     Reapply = function(ped) reapplied[#reapplied + 1] = ped return true end,
+    OwnsReactions = function(ped) return pedKinds[ped] == 'population' end,
 }
 
 AmbientInteractionAdapters.custom = {
@@ -80,6 +82,7 @@ AmbientInteractionAdapters.custom = {
     Remove = function() currentOptions = nil end,
 }
 dofile('../integration/client/interactions.lua')
+dofile('client/reactions.lua')
 dofile('client/ambient_control.lua')
 
 local entry = {
@@ -164,11 +167,13 @@ dead = false
 handlers['humalike:npc:ambientControlChanged']('42', nil)
 assert(taskClears == 3 and wanderCalls == 1 and #reapplied == 0,
     'a released GTA ped is handed the generic wander')
+assert(blocking[42] == false, 'and GTA gets its brain back')
 handlers['humalike:npc:ambientControlChanged']('42', { mode = 'held', controller_source = 7 })
 pedKinds[42] = 'population'
 handlers['humalike:npc:ambientControlChanged']('42', nil)
 assert(taskClears == 3 and wanderCalls == 1 and #reapplied == 1 and reapplied[1] == 42,
     'a released population body gets its planned behaviour back')
+assert(blocking[42] == true, 'and never its GTA brain')
 handlers['humalike:npc:ambientControlChanged']('42', { mode = 'held', controller_source = 7 })
 handlers['humalike:npc:ambientControlSnapshot']({})
 assert(#reapplied == 2, 'a snapshot that drops the hold re-applies too')

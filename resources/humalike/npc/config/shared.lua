@@ -49,6 +49,30 @@ Config.Population = {
     GtaPopulationTypes = { [4] = true, [5] = true },
     CopPedTypes = { [6] = true, [27] = true }, -- GetPedType cop, swat
 }
+Config.Shove = {
+    TickMs = 100,
+    MinSpeed = 0.5,
+    KnockdownWindowMs = 600,
+    ReportGapMs = 3000,
+    ServerGapMs = 2000, -- must stay below ReportGapMs
+    ForgetAfterMs = 10000,
+    MeleeIgnoreMs = 1000,
+    MaxDistance = 6.0,
+    MaxReportsPerWindow = 4,
+    ReportWindowMs = 2000,
+}
+Config.Combat = {
+    MeleeReportDistance = 6.0,
+    MaxReportDistance = 150.0,
+    MeleeWeapons = {
+        WEAPON_UNARMED = true, WEAPON_KNIFE = true, WEAPON_NIGHTSTICK = true,
+        WEAPON_HAMMER = true, WEAPON_BAT = true, WEAPON_GOLFCLUB = true,
+        WEAPON_CROWBAR = true, WEAPON_BOTTLE = true, WEAPON_DAGGER = true,
+        WEAPON_HATCHET = true, WEAPON_KNUCKLE = true, WEAPON_MACHETE = true,
+        WEAPON_FLASHLIGHT = true, WEAPON_SWITCHBLADE = true, WEAPON_POOLCUE = true,
+        WEAPON_WRENCH = true, WEAPON_BATTLEAXE = true, WEAPON_STONE_HATCHET = true,
+    },
+}
 function HumalikeUnsignedHash(value)
     return value < 0 and value + 4294967296 or value
 end

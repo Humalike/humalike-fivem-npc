@@ -11,8 +11,7 @@ local function configurePersistentPed(ped, entry)
     SetEntityHealth(ped, GetEntityMaxHealth(ped))
     SetPedSuffersCriticalHits(ped, false)
     SetPedDiesWhenInjured(ped, false)
-    SetBlockingOfNonTemporaryEvents(ped, true)
-    TaskSetBlockingOfNonTemporaryEvents(ped, true)
+    HumalikeNpcReactions.Own(ped, true)
 end
 
 CreateThread(function()
@@ -34,7 +33,7 @@ CreateThread(function()
                             configuredPeds[ped] = signature
                         else
                             FreezeEntityPosition(ped, true)
-                            SetBlockingOfNonTemporaryEvents(ped, true)
+                            HumalikeNpcReactions.Own(ped)
                             if IsPedFleeing(ped)
                                 and not (IsActionControlled and IsActionControlled(ped)) then
                                 ClearPedTasks(ped)

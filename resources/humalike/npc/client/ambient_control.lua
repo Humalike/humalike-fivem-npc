@@ -25,8 +25,11 @@ end
 
 local function setHeldReactionsBlocked(ped, blocked)
     if not ped or not DoesEntityExist(ped) or not NetworkHasControlOfEntity(ped) then return end
-    SetBlockingOfNonTemporaryEvents(ped, blocked)
-    TaskSetBlockingOfNonTemporaryEvents(ped, blocked)
+    if blocked then
+        HumalikeNpcReactions.Own(ped, true)
+    else
+        HumalikeNpcReactions.Release(ped, true)
+    end
 end
 
 function HumalikeAmbientControlHeldPed(ped)
