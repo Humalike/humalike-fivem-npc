@@ -41,6 +41,7 @@ Config.Population = {
     RetryBackoffCapMs = 30000,
     ReleaseMaxAttempts = 8,
     WanderTickMs = 1000,
+    MoveRate = 0.82, -- fraction of the walk animation rate; 1.0 is the CreatePed default
     WanderIdleMs = 5000,
     ScenarioIdleMs = 10000,
     SweepTickMs = 2000,
@@ -152,6 +153,7 @@ Config.SupportedActions = {
     'enter_vehicle',
     'exit_vehicle',
     'walk_away',
+    'run_away',
 }
 Config.ActionSustainTickMs = 250
 Config.PoseAbandonMs = tonumber(GetConvar('humalike_npc_pose_abandon_ms', '120000')) or 120000
@@ -191,6 +193,13 @@ Config.WalkAway = {
     Distance = 30.0,
     ArriveRange = 3.0,
     TimeoutMs = 60000,
+    TargetRadius = 25.0,
+}
+Config.RunAway = {
+    Distance = 60.0,
+    DurationMs = 12000, -- most runs end here and settle into a wander
+    ArriveRange = 5.0,
+    MoveBlend = 2.1, -- 1 walk, 2 run, 3 sprint
 }
 Config.Wave = {
     DurationMs = 3000,

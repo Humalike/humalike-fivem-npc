@@ -4,6 +4,7 @@ local scenarioIdleSince = {}
 local configured = {}
 local dressed = {}
 local paced = {}
+local ownedBodies = {}
 local enabled = false
 local copsAllowed = false
 local copsDisabled = false
@@ -321,8 +322,28 @@ function HumalikeNpcPopulationClient.Tick(now, sweep)
     forgetUnseen(configured, seen)
     forgetUnseen(dressed, seen)
     forgetUnseen(paced, seen)
+    ownedBodies = seen
     return removed
 end
+
+-- SetPedMoveRateOverride lasts one frame; managed() is checked per frame so a
+-- hold or lease that starts mid-tick stops the override at once.
+function HumalikeNpcPopulationClient.PaceTick()
+    local rate = config().MoveRate
+    if rate == 1.0 then return end
+    for ped in pairs(ownedBodies) do
+        if DoesEntityExist(ped) and NetworkHasControlOfEntity(ped) and not managed(ped) then
+            SetPedMoveRateOverride(ped, rate)
+        end
+    end
+end
+
+CreateThread(function()
+    while true do
+        Wait(0)
+        HumalikeNpcPopulationClient.PaceTick()
+    end
+end)
 
 CreateThread(function()
     while true do

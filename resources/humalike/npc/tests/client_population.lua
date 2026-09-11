@@ -118,6 +118,8 @@ function DeleteEntity(ped)
     pool[ped] = nil
 end
 function IsActionControlled(ped) return actionControlled[ped] == true end
+local paceCalls = {}
+function SetPedMoveRateOverride(ped, rate) paceCalls[#paceCalls + 1] = { ped, rate } end
 function HumalikeAmbientControlHeldPed(ped) return heldPeds[ped] == true end
 function DownedNpcOf(ped) return downedPeds[ped] end
 function GetCurrentResourceName() return 'humalike' end
@@ -137,7 +139,7 @@ HumalikeNpcRuntimeControl = {
 
 dofile('client/reactions.lua')
 dofile('client/population.lua')
-assert(#threads == 2, 'one density thread and one pool walk')
+assert(#threads == 3, 'density, per-frame pace and one pool walk')
 
 local candidates = {
     { x = 100, y = 0, z = 10, heading = 90 },
@@ -192,6 +194,28 @@ bodyKinds = { [20] = 'persona', [21] = 'persona', [22] = 'persona', [23] = 'pers
     [24] = 'persona', [26] = 'persona' }
 
 HumalikeNpcPopulationClient.Tick(1000, false)
+HumalikeNpcPopulationClient.PaceTick()
+assert(#paceCalls == 2, 'only the bodies nobody else drives amble')
+for _, call in ipairs(paceCalls) do
+    assert(call[2] == 0.82 and (call[1] == 20 or call[1] == 26),
+        'the ambling rate, never on a managed body')
+end
+paceCalls = {}
+heldPeds[20] = true
+HumalikeNpcPopulationClient.PaceTick()
+assert(#paceCalls == 1 and paceCalls[1][1] == 26, 'a hold that began after the last tick stops the override')
+heldPeds[20] = nil
+npcIds[26] = 'npc-26'
+controlled['npc-26'] = { movement = true }
+HumalikeNpcPopulationClient.PaceTick()
+assert(#paceCalls == 2 and paceCalls[2][1] == 20, 'so does a runtime-control movement lease')
+controlled['npc-26'] = nil
+npcIds[26] = nil
+owned[26] = false
+HumalikeNpcPopulationClient.PaceTick()
+assert(#paceCalls == 3 and paceCalls[3][1] == 20, 'and a body no longer under this client\'s control')
+owned[26] = true
+paceCalls = {}
 assert(#wanderCalls == 2 and wanderCalls[1] == 20 and wanderCalls[2] == 26,
     'first ownership sends unmanaged wander bodies wandering at once')
 local function blockingCounts(from)
