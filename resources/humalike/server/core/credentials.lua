@@ -26,8 +26,8 @@ local function validCallbackCredential(value)
 end
 
 local function validAssignment(nodeId, generation)
-    if nodeId == nil and generation == nil then return true end
     return validIdentifier(nodeId)
+        and nodeId:match('^%S+$') ~= nil
         and type(generation) == 'number'
         and generation >= 1
         and generation % 1 == 0

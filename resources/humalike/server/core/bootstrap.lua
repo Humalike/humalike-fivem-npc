@@ -6,6 +6,23 @@ local generation = 0
 local bootstrapInFlight = false
 local bootstrapScheduled = false
 local stopping = false
+local invalidatedAssignment = nil
+
+local function invalidateRuntime()
+    local current = HumaLike.RuntimeCredentials()
+    if current then
+        invalidatedAssignment = {
+            edgeUrl = current.edgeUrl,
+            edgeNodeId = current.edgeNodeId,
+            edgeGeneration = current.edgeGeneration,
+            voiceUrl = current.voiceUrl,
+            voiceNodeId = current.voiceNodeId,
+            voiceGeneration = current.voiceGeneration,
+        }
+    end
+    generation = generation + 1
+    HumaLike.ClearRuntimeCredentials()
+end
 
 local function sameEdgeAssignment(left, right)
     return left and right
@@ -21,14 +38,10 @@ local function sameVoiceAssignment(left, right)
         and left.voiceGeneration == right.voiceGeneration
 end
 
-local function assignmentLabel(credentials, plane)
-    return credentials[plane .. 'NodeId'] or 'legacy',
-        credentials[plane .. 'Generation'] or 0,
-        credentials[plane .. 'Url']
-end
-
 local function announceAssignment(plane, credentials, reason)
-    local nodeId, assignmentGeneration, url = assignmentLabel(credentials, plane)
+    local nodeId = credentials[plane .. 'NodeId']
+    local assignmentGeneration = credentials[plane .. 'Generation']
+    local url = credentials[plane .. 'Url']
     print(('[humalike] runtime_assignment_changed plane=%s node_id=%s generation=%s url=%s reason=%s')
         :format(plane, nodeId, assignmentGeneration, url, reason))
     TriggerEvent(('humalike:runtime:%sChanged'):format(plane), {
@@ -57,10 +70,11 @@ local function uuid4()
 end
 
 local function installRuntime(payload, reason)
-    local previous = HumaLike.RuntimeCredentials()
+    local previous = HumaLike.RuntimeCredentials() or invalidatedAssignment
     local ok, validationError = HumaLike.ReplaceRuntimeCredentials(payload, bootId)
     if not ok then return false, validationError end
     local current = HumaLike.RuntimeCredentials()
+    invalidatedAssignment = nil
     generation = generation + 1
     bootstrapInFlight = false
     bootstrapScheduled = false
@@ -95,7 +109,7 @@ local function scheduleRenewal(expectedGeneration, attempt)
             if stopping or generation ~= expectedGeneration then return end
             if status == 200 then
                 local previous = HumaLike.RuntimeCredentials()
-                local ok, validationError = HumaLike.ReplaceRuntimeCredentials(payload, bootId)
+                local ok = HumaLike.ReplaceRuntimeCredentials(payload, bootId)
                 if ok then
                     local current = HumaLike.RuntimeCredentials()
                     local edgeChanged = not sameEdgeAssignment(previous, current)
@@ -116,7 +130,11 @@ local function scheduleRenewal(expectedGeneration, attempt)
                     end
                     return
                 end
-                HumaLike.SetStatus('degraded', validationError)
+                invalidateRuntime()
+                HumaLike.SetStatus('bootstrapping',
+                    'renewal returned malformed credentials')
+                HumaLike.RequestBootstrap('renewal credentials malformed', 1, true)
+                return
             elseif status == 401 or status == 403 then
                 HumaLike.ClearRuntimeCredentials()
                 HumaLike.SetStatus('bootstrapping',
@@ -161,6 +179,7 @@ function HumaLike.RequestBootstrap(reason, attempt, immediate)
                     scheduleRenewal(generation, 1)
                     return
                 end
+                invalidateRuntime()
                 HumaLike.SetStatus('degraded', validationError)
             elseif status == 401 or status == 403 then
                 if HumaLike.ErrorCode(payload) ~= 'RUNTIME_LEASE_UNKNOWN' then
@@ -195,5 +214,6 @@ AddEventHandler('onResourceStop', function(resource)
     stopping = true
     TriggerEvent('humalike:core:stopping')
     generation = generation + 1
+    invalidatedAssignment = nil
     HumaLike.ClearRuntimeCredentials()
 end)
