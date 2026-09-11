@@ -18,14 +18,6 @@ Config.AppearancePollIntervalMs = 1000
 Config.AppearanceUpsertDebounceMs = 750
 Config.AppearancePropIds = { 0, 1, 2, 6, 7 }
 Config.AppearanceMaxDrawableId = 65535
-Config.AmbientScanIntervalMs = 3000
-Config.AmbientScanBatchSize = 32
-Config.AmbientTransientRejectedCacheMs = 3000
-Config.AmbientStableRejectedCacheMs = 20000
-Config.AmbientBootstrapRadius = 150.0
-Config.AmbientMaxCandidatesPerReport = 64
-Config.AmbientReportMinIntervalMs = 1000
-Config.AmbientCoordinateTolerance = 5.0
 Config.AmbientLeaseScopeDistance = 200.0
 Config.AmbientLeaseScopeTickMs = 2000
 Config.AmbientControl = {
@@ -36,6 +28,37 @@ Config.AmbientControl = {
     StandTaskDurationMs = 2000,
     StandTaskRefreshMs = 500,
 }
+Config.Population = {
+    SpawnPointTimeoutMs = 2000,
+    SpawnPointTolerance = 60.0,
+    SpawnTimeoutMs = 30000,
+    MinPlayerDistance = 40.0,
+    ReconcileTickMs = 2000,
+    LeaseGraceMs = 30000,
+    HeartbeatMs = 30000,
+    EdgeLostHeartbeats = 3, -- silent heartbeats before the street goes back to GTA
+    RetryBackoffMs = 500,
+    RetryBackoffCapMs = 30000,
+    ReleaseMaxAttempts = 8,
+    WanderTickMs = 1000,
+    WanderIdleMs = 5000,
+    ScenarioIdleMs = 10000,
+    SweepTickMs = 2000,
+    SweepMinPlayerDistance = 15.0,
+    SweepMaxPerTick = 5,
+    GtaPopulationTypes = { [4] = true, [5] = true },
+    CopPedTypes = { [6] = true, [27] = true }, -- GetPedType cop, swat
+}
+function HumalikeUnsignedHash(value)
+    return value < 0 and value + 4294967296 or value
+end
+function HumalikeValidCoordinate(value)
+    return type(value) == 'number' and value == value and math.abs(value) <= 10000
+end
+function HumalikeDistanceSquared(left, right)
+    local dx, dy, dz = left.x - right.x, left.y - right.y, left.z - right.z
+    return dx * dx + dy * dy + dz * dz
+end
 function HumalikeJobList(value)
     local names = {}
     for name in tostring(value or ''):gmatch('[^,]+') do

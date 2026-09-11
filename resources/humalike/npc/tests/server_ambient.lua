@@ -1,7 +1,4 @@
 Config = {
-    AmbientBootstrapRadius = 150,
-    AmbientMaxCandidatesPerReport = 64,
-    AmbientCoordinateTolerance = 5,
     AmbientLeaseScopeDistance = 200,
     AmbientLeaseScopeTickMs = 2000,
     AmbientControl = {
@@ -64,7 +61,6 @@ function GetEntityHealth(entity) return entity == 103 and 0 or 100 end
 function GetVehiclePedIsIn(entity) return (entity == 102 or entity == 105) and 200 or 0 end
 function GetPlayers() return { '7' } end
 function GetPlayerName(playerId) return tonumber(playerId) == 7 and 'Tester' or nil end
-function vector3(x, y, z) return { x = x, y = y, z = z } end
 function Entity(entity)
     entityState[entity] = entityState[entity] or {}
     return { state = setmetatable({
@@ -110,20 +106,6 @@ NpcRegistry = {
 
 dofile('server/pose_ledger.lua') -- loaded before ambient.lua by the manifest
 dofile('server/ambient.lua')
-
-local result = HumalikeValidateAmbientCandidates({
-    request_id = 'request-1',
-    reporter_session_id = 7,
-    candidates = {
-        { network_id = 53, model_hash = 123, x = 1, y = 2, z = 3, zone_code = 'DOWNT' },
-        { network_id = 54, model_hash = 123, x = 1, y = 2, z = 3, zone_code = 'DOWNT' },
-        { network_id = 55, model_hash = 123, x = 1, y = 2, z = 3, zone_code = 'DOWNT' },
-    },
-})
-assert(result.request_id == 'request-1')
-assert(#result.validated == 1 and result.validated[1].entity_id == 53)
-assert(#result.rejected_network_ids == 2)
-
 assert(HumalikeApplyAmbientLeaseSnapshot({
     revision = 1,
     enabled = true,
@@ -150,6 +132,8 @@ assert(HumalikeApplyAmbientLeaseSnapshot({
     },
 }))
 assert(clientPayload and #clientPayload.leases == 2)
+assert(clientPayload.discovery_radius == nil and clientPayload.lease_ttl_seconds == nil,
+    'the client payload carries no discovery fields')
 assert(clientPayload.leases[1].network_id == 53)
 assert(clientPayload.leases[1].entity_id == 53)
 assert(clientPayload.leases[1].language == 'en')

@@ -29,6 +29,13 @@ local function setHeldReactionsBlocked(ped, blocked)
     TaskSetBlockingOfNonTemporaryEvents(ped, blocked)
 end
 
+function HumalikeAmbientControlHeldPed(ped)
+    local npcId = DoesEntityExist(ped) and Entity(ped).state.humalike_npc_id or nil
+    local entry = npcId and AmbientNpcEntries and AmbientNpcEntries[npcId] or nil
+    local control = entry and controls[controlKey(entry)] or nil
+    return control ~= nil and control.mode == 'held'
+end
+
 local function removeInteraction(npcId)
     local id = interactionIds[npcId]
     local currentAdapter = adapter()
@@ -113,8 +120,13 @@ local function resumePedForKey(key)
             if ped and DoesEntityExist(ped) and NetworkHasControlOfEntity(ped)
                 and not IsActionControlled(ped) and not isDowned(npcId) then
                 setHeldReactionsBlocked(ped, false)
-                ClearPedTasks(ped)
-                TaskWanderStandard(ped, 10.0, 10)
+                if Entity(ped).state.humalike_npc_kind == 'population'
+                    and HumalikeNpcPopulationClient then
+                    HumalikeNpcPopulationClient.Reapply(ped)
+                else
+                    ClearPedTasks(ped)
+                    TaskWanderStandard(ped, 10.0, 10)
+                end
             end
         end
     end

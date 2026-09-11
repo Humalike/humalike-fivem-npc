@@ -49,12 +49,26 @@ AddEventHandler('humalike:npc:requestRoster', function()
     TriggerClientEvent('humalike:npc:rosterSnapshot', source, snapshot)
 end)
 
+local function populationSummary()
+    local rows = HumalikeNpcPopulation and HumalikeNpcPopulation.Bodies() or {}
+    if #rows == 0 then return 'none' end
+    local parts = {}
+    for _, row in ipairs(rows) do
+        parts[#parts + 1] = ('%s:%s%s'):format(row.body_id, row.status,
+            row.kept and ('(' .. row.kept .. ')') or '')
+    end
+    return ('%d [%s]'):format(#rows, table.concat(parts, ' '))
+end
+
 RegisterCommand('humalikenpc:status', function(source)
     local count = 0
     for _ in pairs(NpcRegistry) do count = count + 1 end
     local lines = {
         ('player provider: %s'):format(HumalikePlayer.Name() or 'none'),
         ('npcs in roster: %d'):format(count),
+        ('population: enabled=%s bodies=%s'):format(
+            tostring(HumalikeNpcPopulation and HumalikeNpcPopulation.Enabled() or false),
+            populationSummary()),
         ('last roster sync: %s (%s)'):format(
             HumalikeStatus.lastRosterSyncAt and os.date('%Y-%m-%d %H:%M:%S', HumalikeStatus.lastRosterSyncAt) or 'never',
             HumalikeStatus.lastRosterSyncOk and 'ok' or ('failed: ' .. tostring(HumalikeStatus.lastRosterError))

@@ -70,6 +70,9 @@ Verbose runtime logging is disabled by default and can be enabled temporarily:
 setr humalike_debug 1
 ```
 
+While HumaLike owns the street population, GTA's random police stay off unless
+`set humalike_population_cops true` is set; the convar is read every few seconds.
+
 ## Development
 
 ```sh

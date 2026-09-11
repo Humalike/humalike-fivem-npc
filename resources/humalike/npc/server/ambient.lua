@@ -1,4 +1,3 @@
-local discoveryRadius = Config.AmbientBootstrapRadius
 local activeLeases = {}
 local controls = {}
 local lastControlRequestBySource = {}
@@ -8,8 +7,6 @@ local lastLeaseSnapshotRequestBySource = {}
 local lastLeaseDigestBySource = {}
 local latestLeaseSnapshot = {
     enabled = false,
-    discovery_radius = Config.AmbientBootstrapRadius,
-    lease_ttl_seconds = 0,
     leases = {},
 }
 local voiceMuteRevision = -1
@@ -52,6 +49,11 @@ local function broadcastControl(key, control, routingBucket)
             TriggerClientEvent('humalike:npc:ambientControlChanged', playerId, key, public)
         end
     end
+end
+
+function HumalikeAmbientControlHeld(entityId)
+    local control = controls[ambientKey(entityId)]
+    return control ~= nil and control.mode == 'held'
 end
 
 local function controlSnapshot(routingBucket)
@@ -123,9 +125,7 @@ local function leaseDigest(body, leases)
             tostring(lease.voice_muted))
     end
     table.sort(parts)
-    return ('%s;%s;%s;%s'):format(tostring(body.enabled == true),
-        tostring(body.discovery_radius), tostring(body.lease_ttl_seconds),
-        table.concat(parts, ';'))
+    return ('%s;%s'):format(tostring(body.enabled == true), table.concat(parts, ';'))
 end
 local function sendAmbientLeases(playerId, body, force)
     local leases = playerLeaseSlice(playerId, body)
@@ -134,8 +134,6 @@ local function sendAmbientLeases(playerId, body, force)
     lastLeaseDigestBySource[playerId] = digest
     TriggerClientEvent('humalike:npc:ambientLeases', playerId, {
         enabled = body.enabled == true,
-        discovery_radius = body.discovery_radius,
-        lease_ttl_seconds = body.lease_ttl_seconds,
         leases = leases,
     })
     return true
@@ -312,92 +310,11 @@ function SendAmbientActionToOwner(target, entity, actionKey, params)
     return true
 end
 
-local function observedAt()
-    local nowMs = os.time() * 1000 + (GetGameTimer() % 1000)
-    local seconds = math.floor(nowMs / 1000)
-    return os.date('!%Y-%m-%dT%H:%M:%S', seconds)
-        .. string.format('.%03dZ', nowMs % 1000)
-end
-
-local function validZoneCode(value)
-    return value == nil or (type(value) == 'string' and #value >= 1 and #value <= 32
-        and value:match('^[A-Z0-9_]+$') ~= nil)
-end
-
-local function validCoordinate(value)
-    return type(value) == 'number' and value == value and math.abs(value) <= 10000
-end
-
-local function validateCandidate(playerCoords, playerBucket, candidate)
-    if type(candidate) ~= 'table' or type(candidate.network_id) ~= 'number'
-        or candidate.network_id % 1 ~= 0 or candidate.network_id <= 0
-        or not validCoordinate(candidate.x) or not validCoordinate(candidate.y)
-        or not validCoordinate(candidate.z)
-        or type(candidate.model_hash) ~= 'number' or candidate.model_hash % 1 ~= 0
-        or not validZoneCode(candidate.zone_code) then return nil end
-
-    if NetworkDoesEntityExistWithNetworkId
-        and not NetworkDoesEntityExistWithNetworkId(candidate.network_id) then return nil end
-    local entity = NetworkGetEntityFromNetworkId(candidate.network_id)
-    if not entity or entity <= 0 or not DoesEntityExist(entity)
-        or GetEntityType(entity) ~= 1 or IsPedAPlayer(entity)
-        or GetEntityHealth(entity) <= 0 or GetVehiclePedIsIn(entity, false) ~= 0
-        or GetEntityRoutingBucket(entity) ~= playerBucket then return nil end
-
-    local entityCoords = GetEntityCoords(entity)
-    if distanceSquared(playerCoords, entityCoords) > discoveryRadius * discoveryRadius then return nil end
-
-    local reportedCoords = vector3(candidate.x, candidate.y, candidate.z)
-    local tolerance = Config.AmbientCoordinateTolerance
-    if distanceSquared(reportedCoords, entityCoords) > tolerance * tolerance then return nil end
-    local modelHash = unsignedHash(GetEntityModel(entity))
-    if modelHash ~= candidate.model_hash then return nil end
-
-    return {
-        entity_id = candidate.network_id,
-        model_hash = modelHash,
-        x = entityCoords.x,
-        y = entityCoords.y,
-        z = entityCoords.z,
-        heading = GetEntityHeading(entity),
-        zone_code = candidate.zone_code,
-        routing_bucket = playerBucket,
-        observed_at = observedAt(),
-    }
-end
-
-function HumalikeValidateAmbientCandidates(body)
-    local playerId = tonumber(body.reporter_session_id)
-    if not playerId or not HumalikePlayer.IsCharacterLoaded(playerId) then
-        return { validated = {}, rejected_network_ids = {} }
-    end
-    local ped = GetPlayerPed(playerId)
-    if not ped or ped <= 0 or not DoesEntityExist(ped) then
-        return { validated = {}, rejected_network_ids = {} }
-    end
-    local validated, rejected, seen = {}, {}, {}
-    for index, candidate in ipairs(body.candidates or {}) do
-        if index > Config.AmbientMaxCandidatesPerReport then break end
-        local observation = validateCandidate(GetEntityCoords(ped),
-            GetPlayerRoutingBucket(playerId), candidate)
-        if observation and not seen[observation.entity_id] then
-            seen[observation.entity_id] = true
-            validated[#validated + 1] = observation
-        else
-            rejected[#rejected + 1] = candidate.network_id
-        end
-    end
-    return { request_id = body.request_id, validated = validated,
-        rejected_network_ids = rejected }
-end
-
 local leaseRevision = -1
 function HumalikeApplyAmbientLeaseSnapshot(body)
     local nextRevision = tonumber(body.revision)
     if not nextRevision or nextRevision <= leaseRevision then return false end
     leaseRevision = nextRevision
-    body.discovery_radius = body.discovery_radius or discoveryRadius
-    body.lease_ttl_seconds = body.lease_ttl_seconds or 15
     local freshLeases = applyLeaseSnapshot(body)
     latestLeaseSnapshot = body
     broadcastAmbientLeases(body)
@@ -464,8 +381,6 @@ function HumalikeClearAmbientLeases()
     local body = {
         revision = leaseRevision,
         enabled = false,
-        discovery_radius = discoveryRadius,
-        lease_ttl_seconds = 15,
         leases = {},
     }
     applyLeaseSnapshot(body)
@@ -751,6 +666,7 @@ AddEventHandler('humalike:npc:requestAmbientLeaseSnapshot', function()
     lastLeaseSnapshotRequestBySource[playerId] = now
     if GetPlayerName(playerId) then
         sendAmbientLeases(playerId, latestLeaseSnapshot, true)
+        if HumalikeNpcPopulation then HumalikeNpcPopulation.SendState(playerId) end
     end
 end)
 
