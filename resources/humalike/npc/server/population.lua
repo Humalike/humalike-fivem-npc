@@ -98,25 +98,27 @@ local function playerPed(playerId, bucket)
 end
 
 local function spawnPointClient(record)
-    if playerPed(record.anchor_session_id, record.routing_bucket) then
+    local origin = record.candidates[1]
+    local best, bestDistance = nil, config().SpawnPointClientRange ^ 2
+    local anchor = playerPed(record.anchor_session_id, record.routing_bucket)
+    if anchor and HumalikeDistanceSquared(GetEntityCoords(anchor), origin) <= bestDistance then
         return record.anchor_session_id
     end
-    local origin = record.candidates[1]
-    local best, bestDistance
     for _, playerId in ipairs(GetPlayers()) do
         local id = tonumber(playerId)
         local ped = playerPed(id, record.routing_bucket)
         if ped then
             local distance = HumalikeDistanceSquared(GetEntityCoords(ped), origin)
-            if not bestDistance or distance < bestDistance then best, bestDistance = id, distance end
+            if distance <= bestDistance then best, bestDistance = id, distance end
         end
     end
     return best
 end
 
+-- Only a nearby client sees the navmesh; nil fails the spawn.
 local function resolveSpawnPoint(record)
     local playerId = spawnPointClient(record)
-    if not playerId then return record.candidates[1] end
+    if not playerId then return nil end
     requestSequence = requestSequence + 1
     local requestId = ('%s:%d'):format(record.body_id, requestSequence)
     local request = { player_id = playerId, candidates = record.candidates }
@@ -125,7 +127,7 @@ local function resolveSpawnPoint(record)
     local deadline = GetGameTimer() + config().SpawnPointTimeoutMs
     while not request.done and GetGameTimer() < deadline do Wait(50) end
     spawnPointRequests[requestId] = nil
-    return request.point or record.candidates[1]
+    return request.point
 end
 
 local function discard(record)
@@ -193,10 +195,14 @@ local function keepReason(record)
     return nil
 end
 
+local function noteFailed(bodyId)
+    if #failedBodies < 512 then failedBodies[#failedBodies + 1] = bodyId end
+end
+
 local function spawnFailed(record)
     deletePed(record)
     if record.status == 'released' then return end
-    failedBodies[#failedBodies + 1] = record.body_id
+    noteFailed(record.body_id)
     reportDirty = true
     if bodies[record.body_id] == record then retire(record, 'spawn_failed') end
 end
@@ -275,6 +281,11 @@ function HumalikeNpcPopulation.Spawn(wanted)
         if bodies[record.body_id] ~= record then return end
         if record.release_requested then
             retire(record, record.release_requested)
+            return
+        end
+        if not point then
+            HumalikeDebug('population body %s has no pavement near any candidate', record.body_id)
+            spawnFailed(record)
             return
         end
         local ped = CreatePed(4, GetHashKey(record.model), point.x, point.y, point.z,
@@ -362,9 +373,7 @@ function HumalikeNpcPopulation.Report()
             end
             return
         end
-        for _, bodyId in ipairs(failed) do
-            if #failedBodies < 512 then failedBodies[#failedBodies + 1] = bodyId end
-        end
+        for _, bodyId in ipairs(failed) do noteFailed(bodyId) end
         reportRetryAt = GetGameTimer() + backoff(reportFailures)
         reportFailures = reportFailures + 1
         reportDirty = true
@@ -389,9 +398,7 @@ function HumalikeNpcPopulation.ApplyPlan(body)
             else
                 local bodyId = type(planned) == 'table' and planned.body_id or nil
                 HumalikeDebug('population body rejected: %s', tostring(bodyId))
-                if type(bodyId) == 'string' and #failedBodies < 512 then
-                    failedBodies[#failedBodies + 1] = bodyId
-                end
+                if type(bodyId) == 'string' then noteFailed(bodyId) end
             end
         end
     end
