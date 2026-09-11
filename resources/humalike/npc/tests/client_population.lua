@@ -144,11 +144,15 @@ local candidates = {
     { x = 200, y = 0, z = 10, heading = 180 },
     { x = 300, y = 0, z = 10 },
 }
+safeCoords[100] = { x = 100, y = 0, z = 10 }
 visible[100] = true
+safeCoords[10] = { x = 10, y = 0, z = 10 }
 safeCoords[200] = { x = 202, y = 1, z = 11 }
 local point = HumalikeNpcPopulationClient.SelectSpawnPoint(candidates)
 assert(point.x == 202 and point.y == 1 and point.z == 11 and point.heading == 180,
     'visible and near candidates are rejected')
+safeCoords[100] = nil
+safeCoords[10] = nil
 
 for _, call in ipairs(safeFlags) do
     assert(call[1] == true and call[2] == 14,

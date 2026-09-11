@@ -604,7 +604,7 @@ deferSpawn = true
 assert(HumalikeNpcPopulation.ApplyPlan({ revision = 27, enabled = true,
     wanted = { planned('body-23', 7), planned('body-24', 7) }, released = {} }))
 assert(#deferred == 1 and bodyIds()['body-24'].status == 'spawning')
-assert(bodyIds()['body-24'].entity_id == nil, 'the body is still waiting for its spawn point')
+assert(bodyIds()['body-24'].network_id == nil, 'the body is still waiting for its spawn point')
 assert(HumalikeNpcPopulation.ApplyPlan({ revision = 28, enabled = true,
     wanted = { planned('body-23', 7) }, released = { 'body-24' } }))
 assert(bodyIds()['body-24'].status == 'spawning', 'the plan alone leaves the pending spawn to the tick')
@@ -803,6 +803,11 @@ spawnFails(40, lonely)
 playerCoords = { x = 10 + Config.Population.SpawnPointClientRange + 1, y = 0, z = 30 }
 spawnFails(40.2, planned('body-51', 7))
 spawnFails(40.4, planned('body-52', 9))
+local flood = { planned('body-40', 7) }
+for index = 1, 513 do flood[#flood + 1] = planned(('flood-%d'):format(index), 9) end
+assert(HumalikeNpcPopulation.ApplyPlan({ revision = 40.5, enabled = true, wanted = flood, released = {} }))
+HumalikeNpcPopulation.Reconcile()
+assert(failedIn(lastAction('report_npc_bodies')) == 512, 'failed bodies are capped at 512')
 playerCoords = { x = 10 + Config.Population.SpawnPointClientRange, y = 0, z = 30 }
 assert(HumalikeNpcPopulation.ApplyPlan({ revision = 40.6, enabled = true,
     wanted = { planned('body-40', 7), planned('body-53', 7) }, released = {} }))

@@ -195,10 +195,14 @@ local function keepReason(record)
     return nil
 end
 
+local function noteFailed(bodyId)
+    if #failedBodies < 512 then failedBodies[#failedBodies + 1] = bodyId end
+end
+
 local function spawnFailed(record)
     deletePed(record)
     if record.status == 'released' then return end
-    failedBodies[#failedBodies + 1] = record.body_id
+    noteFailed(record.body_id)
     reportDirty = true
     if bodies[record.body_id] == record then retire(record, 'spawn_failed') end
 end
@@ -369,9 +373,7 @@ function HumalikeNpcPopulation.Report()
             end
             return
         end
-        for _, bodyId in ipairs(failed) do
-            if #failedBodies < 512 then failedBodies[#failedBodies + 1] = bodyId end
-        end
+        for _, bodyId in ipairs(failed) do noteFailed(bodyId) end
         reportRetryAt = GetGameTimer() + backoff(reportFailures)
         reportFailures = reportFailures + 1
         reportDirty = true
@@ -396,9 +398,7 @@ function HumalikeNpcPopulation.ApplyPlan(body)
             else
                 local bodyId = type(planned) == 'table' and planned.body_id or nil
                 HumalikeDebug('population body rejected: %s', tostring(bodyId))
-                if type(bodyId) == 'string' and #failedBodies < 512 then
-                    failedBodies[#failedBodies + 1] = bodyId
-                end
+                if type(bodyId) == 'string' then noteFailed(bodyId) end
             end
         end
     end
