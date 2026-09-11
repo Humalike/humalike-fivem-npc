@@ -63,6 +63,12 @@ function HumaLike.IsEdgeAssignmentError(status, body)
         or code == 'EDGE_ASSIGNMENT_STALE'
 end
 
+function HumaLike.IsVoiceAssignmentError(status, body)
+    if status ~= 409 then return false end
+    local code = HumaLike.ErrorCode(body)
+    return code == 'assignment_not_ready' or code == 'assignment_stale'
+end
+
 function HumaLike.PostEdgeAction(action, payload, callback)
     local credentials = HumaLike.RuntimeCredentials()
     if not credentials then
@@ -125,7 +131,7 @@ function HumaLike.PostVoice(path, payload, callback)
         if not HumaLike.IsCurrentVoiceAssignment(requestAssignment) then
             return
         end
-        if status == 401 or status == 403 then
+        if status == 401 or status == 403 or HumaLike.IsVoiceAssignmentError(status, decoded) then
             local current = HumaLike.RuntimeCredentials()
             -- Voice rejection must not invalidate healthy edge credentials.
             if current and current.voiceToken == requestToken then
@@ -135,6 +141,9 @@ function HumaLike.PostVoice(path, payload, callback)
                 rejectedVoiceToken = requestToken
                 rejectedVoiceAssignment = requestAssignment
                 voiceRetryAfter = os.time() + voiceRetryCooldownSeconds
+                if HumaLike.IsVoiceAssignmentError(status, decoded) then
+                    HumaLike.RequestBootstrap('voice assignment rejected', 1, true)
+                end
             end
         elseif status >= 200 and status < 300
             and rejectedVoiceToken == requestToken

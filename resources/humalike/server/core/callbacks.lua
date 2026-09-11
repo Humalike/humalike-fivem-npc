@@ -66,6 +66,11 @@ SetHttpHandler(function(request, response)
     end
 
     request.setDataHandler(function(rawBody)
+        if not callbackAuthorized(authorization) then
+            response.writeHead(401)
+            response.send()
+            return
+        end
         local decoded, payload = pcall(json.decode, rawBody or '')
         if not decoded or type(payload) ~= 'table' or type(payload.request_id) ~= 'string'
             or payload.request_id == '' then
@@ -91,4 +96,3 @@ SetHttpHandler(function(request, response)
         sendJson(response, status, body)
     end)
 end)
-

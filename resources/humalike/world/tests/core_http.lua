@@ -103,6 +103,11 @@ for _, code in ipairs({
 end
 assert(not HumaLike.IsEdgeAssignmentError(403,
     { error = { code = 'EDGE_WRONG_OWNER' } }))
+for _, code in ipairs({ 'assignment_not_ready', 'assignment_stale' }) do
+    assert(HumaLike.IsVoiceAssignmentError(409, { error = { code = code } }))
+end
+assert(not HumaLike.IsVoiceAssignmentError(401,
+    { error = { code = 'assignment_stale' } }))
 
 runtimeAvailable = true
 responseStatus = 200
@@ -170,6 +175,16 @@ HumaLike.PostVoice('/v1/fivem/sessions', {}, function(status)
 end)
 assert(#requests == requestsBeforeReassignedVoice + 1 and reassignedVoiceStatus == 204,
     'a new voice assignment must not inherit the old assignment cooldown')
+
+responseStatus = 409
+responseBody = '{"error":{"code":"assignment_stale"}}'
+json.decode = function()
+    return { error = { code = 'assignment_stale' } }
+end
+local bootstrapBeforeStaleVoice = bootstrapRequests
+HumaLike.PostVoice('/v1/fivem/state', {})
+assert(bootstrapRequests == bootstrapBeforeStaleVoice + 1,
+    'a stale voice assignment must request fresh runtime credentials')
 
 HumaLike.EdgeRequest('bootstrap_fivem_runtime', 'license', {}, function() end)
 assert(requests[#requests].url ==
