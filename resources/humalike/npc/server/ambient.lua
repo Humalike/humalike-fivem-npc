@@ -157,6 +157,7 @@ local MOVEMENT_RELEASE_ACTIONS = {
     release_movement = true,
     enter_vehicle = true,
     walk_away = true,
+    run_away = true,
 }
 function HumalikeApplyAmbientMovementAction(target, lease, entity, actionKey, params)
     local key = ambientKey(target.entity_id)
