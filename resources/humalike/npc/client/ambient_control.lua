@@ -32,6 +32,21 @@ local function setHeldReactionsBlocked(ped, blocked)
     end
 end
 
+-- Returns true while a turn is in progress, so no stand-still is stamped over it.
+local function faceController(ped, control)
+    local player = GetPlayerFromServerId(control.controller_source or -1)
+    local target = player ~= -1 and GetPlayerPed(player) or 0
+    if target <= 0 or not DoesEntityExist(target) then return false end
+    local duration = Config.AmbientControl.StandTaskDurationMs
+    TaskLookAtEntity(ped, target, duration, 2048, 3)
+    local toTarget = GetEntityCoords(target) - GetEntityCoords(ped)
+    local desired = GetHeadingFromVector_2d(toTarget.x, toTarget.y)
+    local delta = (desired - GetEntityHeading(ped) + 540.0) % 360.0 - 180.0
+    if math.abs(delta) <= Config.AmbientControl.FaceToleranceDeg then return false end
+    TaskTurnPedToFaceEntity(ped, target, duration)
+    return true
+end
+
 function HumalikeAmbientControlHeldPed(ped)
     local npcId = DoesEntityExist(ped) and Entity(ped).state.humalike_npc_id or nil
     local entry = npcId and AmbientNpcEntries and AmbientNpcEntries[npcId] or nil
@@ -275,7 +290,9 @@ CreateThread(function()
                             ClearPedTasks(ped)
                             initializedHoldByPed[ped] = key
                         end
-                        TaskStandStill(ped, Config.AmbientControl.StandTaskDurationMs)
+                        if not faceController(ped, control) then
+                            TaskStandStill(ped, Config.AmbientControl.StandTaskDurationMs)
+                        end
                     end
                     applied = true
                 elseif not locallyOwned then

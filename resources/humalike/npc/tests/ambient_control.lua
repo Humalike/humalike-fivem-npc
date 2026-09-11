@@ -5,6 +5,7 @@ Config = {
         RequestCooldownMs = 750,
         StandTaskDurationMs = 2000,
         StandTaskRefreshMs = 500,
+        FaceToleranceDeg = 25.0,
     },
     AmbientRevive = { InteractionDistance = 3.0, DurationMs = 5000 },
 }
@@ -41,7 +42,7 @@ function GetInvokingResource() return 'custom-integration' end
 function exports() end
 function AddEventHandler(name, handler) handlers[name] = handler end
 function CreateThread(callback) holdThread = callback end
-function DoesEntityExist(entity) return entity == 42 end
+function DoesEntityExist(entity) return entity == 42 or entity == 99 end
 function IsEntityDead() return dead end
 function IsPedDeadOrDying() return dead end
 function StopPedSpeaking() end
@@ -61,6 +62,18 @@ function TaskWanderStandard() wanderCalls = wanderCalls + 1 end
 function TaskStandStill(_, duration)
     assert(duration == Config.AmbientControl.StandTaskDurationMs)
     standCalls = standCalls + 1
+end
+local pedHeading = 0.0
+local turnCalls, lookCalls = 0, 0
+function GetPlayerFromServerId(serverId) return serverId == 7 and 1 or -1 end
+function GetPlayerPed(player) return player == 1 and 99 or 0 end
+function GetEntityCoords(entity) return entity == 99 and vector3(0, 5, 0) or vector3(0, 0, 0) end
+function GetEntityHeading() return pedHeading end
+function GetHeadingFromVector_2d(x, y) return (math.deg(math.atan(-x, y)) + 360.0) % 360.0 end
+function TaskLookAtEntity(_, target) assert(target == 99) lookCalls = lookCalls + 1 end
+function TaskTurnPedToFaceEntity(_, target, duration)
+    assert(target == 99 and duration == Config.AmbientControl.StandTaskDurationMs)
+    turnCalls = turnCalls + 1
 end
 local actionControlled = false
 function IsActionControlled() return actionControlled end
@@ -148,20 +161,28 @@ end
 
 runHoldIteration()
 assert(taskClears == 1 and standCalls == 1)
+assert(lookCalls == 1 and turnCalls == 0)
 runHoldIteration()
 assert(taskClears == 1 and standCalls == 2)
+pedHeading = 180.0
+runHoldIteration()
+assert(standCalls == 2 and turnCalls == 1 and lookCalls == 3)
+pedHeading = 350.0
+runHoldIteration()
+assert(standCalls == 3 and turnCalls == 1)
+pedHeading = 0.0
 
 hasControl = false
 runHoldIteration()
 hasControl = true
 runHoldIteration()
-assert(taskClears == 2 and standCalls == 3)
+assert(taskClears == 2 and standCalls == 4)
 actionControlled = true
 runHoldIteration()
-assert(taskClears == 2 and standCalls == 3)
+assert(taskClears == 2 and standCalls == 4)
 actionControlled = false
 runHoldIteration()
-assert(taskClears == 2 and standCalls == 4)
+assert(taskClears == 2 and standCalls == 5)
 
 dead = false
 handlers['humalike:npc:ambientControlChanged']('42', nil)
