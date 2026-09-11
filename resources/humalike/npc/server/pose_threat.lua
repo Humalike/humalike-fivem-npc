@@ -30,10 +30,7 @@ local function playerSamples()
     return samples
 end
 
--- A body that complied out of fear is kept by whoever is still standing over
--- it, weapon or not: the threat is present while anyone is within the radius.
--- The reporter is the nearest loaded player at any distance, so the all-clear
--- can be attributed once everyone has walked off.
+-- Present while anyone is within the radius; the reporter is the nearest player at any distance.
 local function scanScene(coords, radius, players)
     local present = false
     local radiusSquared = radius * radius
