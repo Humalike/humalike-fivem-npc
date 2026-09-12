@@ -33,7 +33,20 @@ ensure humalike
 
 The license is server-only and must use `set`, never `setr`. HumaLike exchanges
 it for short-lived runtime credentials; service URLs and voice secrets do not
-need to be configured manually.
+need to be configured manually. The resource becomes ready only when the
+control plane returns complete edge and voice assignments. Each assignment
+must include its assignment ID, node ID, node boot ID and positive integer
+generation. A malformed successful bootstrap response stops a newly started
+resource, so a strict release cannot run against an older control-plane
+contract.
+
+For the first cutover of an existing server, keep the assignment-capable
+transition control plane running while healthy edge and voice nodes start.
+Enable both sharding planes and verify complete active assignments, then deploy
+the strict control plane and this resource. The transition release is not part
+of the final architecture. There is no static runtime fallback after cutover;
+reversing this order intentionally leaves the resource stopped instead of
+issuing or accepting assignment-unbound credentials.
 
 Detailed installation and configuration documentation is available at
 [docs.humalike.com/ai-npc](https://docs.humalike.com/ai-npc).

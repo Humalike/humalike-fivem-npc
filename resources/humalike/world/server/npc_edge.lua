@@ -23,8 +23,9 @@ local function sessionProjection(playerId, state)
     }
 end
 
-local function finishSessionRequests(playerId, ok, state)
-    local callbacks = sessionRequests[playerId] and sessionRequests[playerId].callbacks or {}
+local function finishSessionRequests(playerId, request, ok, state)
+    if sessionRequests[playerId] ~= request then return end
+    local callbacks = request.callbacks
     sessionRequests[playerId] = nil
     for _, callback in ipairs(callbacks) do callback(ok, state) end
 end
@@ -39,20 +40,29 @@ local function ensureSession(playerId, callback)
         pending.callbacks[#pending.callbacks + 1] = callback
         return
     end
-    sessionRequests[playerId] = { callbacks = { callback } }
+    local request = {
+        callbacks = { callback },
+        assignment = HumaLike.EdgeAssignmentKey(),
+    }
+    sessionRequests[playerId] = request
     postAction('upsert_player_session', sessionProjection(playerId, state), function(ok)
+        if sessionRequests[playerId] ~= request then return end
+        if not HumaLike.IsCurrentEdgeAssignment(request.assignment) then
+            finishSessionRequests(playerId, request, false, nil)
+            return
+        end
         local current = HumalikeWorldAuthority.players[playerId]
-        if not current then finishSessionRequests(playerId, false, nil) return end
+        if not current then finishSessionRequests(playerId, request, false, nil) return end
         local currentEncoded = json.encode(sessionProjection(playerId, current))
         if ok and currentEncoded == encoded then
             confirmedSessions[playerId] = encoded
-            finishSessionRequests(playerId, true, current)
+            finishSessionRequests(playerId, request, true, current)
         elseif ok then
-            local callbacks = sessionRequests[playerId].callbacks
+            local callbacks = request.callbacks
             sessionRequests[playerId] = nil
             for _, waiting in ipairs(callbacks) do ensureSession(playerId, waiting) end
         else
-            finishSessionRequests(playerId, false, current)
+            finishSessionRequests(playerId, request, false, current)
         end
     end)
 end
@@ -71,11 +81,13 @@ local function syncAll()
         return
     end
     syncRevision = syncRevision + 1
+    local assignment = HumaLike.EdgeAssignmentKey()
     postAction('sync_player_sessions', {
         resource_instance_id = HumalikeWorldAuthority.epoch,
         revision = syncRevision,
         players = players,
     }, function(ok, status)
+        if not HumaLike.IsCurrentEdgeAssignment(assignment) then return end
         if ok then
             for playerId, encoded in pairs(sentEncodings) do
                 local current = HumalikeWorldAuthority.players[playerId]
@@ -90,8 +102,8 @@ local function syncAll()
 end
 
 local function resetEdgeBindings()
-    for playerId in pairs(sessionRequests) do
-        finishSessionRequests(playerId, false, HumalikeWorldAuthority.players[playerId])
+    for playerId, request in pairs(sessionRequests) do
+        finishSessionRequests(playerId, request, false, HumalikeWorldAuthority.players[playerId])
     end
     confirmedSessions = {}
     sessionRequests = {}
@@ -99,9 +111,14 @@ local function resetEdgeBindings()
     syncAll()
 end
 
-local function issueTicket(playerId, clientBootId, requestKey, repaired)
+local function issueTicket(playerId, clientBootId, requestKey, request, repaired)
+    local assignment = request.assignment
     ensureSession(playerId, function(ready, confirmed)
-        if not pendingTickets[requestKey] then return end
+        if pendingTickets[requestKey] ~= request then return end
+        if not HumaLike.IsCurrentEdgeAssignment(assignment) then
+            pendingTickets[requestKey] = nil
+            return
+        end
         local current = HumalikeWorldAuthority.players[playerId]
         if not ready or not confirmed or not current
             or current.characterId ~= confirmed.characterId then
@@ -113,11 +130,15 @@ local function issueTicket(playerId, clientBootId, requestKey, repaired)
             character_id = confirmed.characterId,
             client_boot_id = clientBootId,
         }, function(ok, status, body)
-            if not pendingTickets[requestKey] then return end
+            if pendingTickets[requestKey] ~= request then return end
+            if not HumaLike.IsCurrentEdgeAssignment(assignment) then
+                pendingTickets[requestKey] = nil
+                return
+            end
             if not ok and not repaired and status == 409
                 and HumaLike.ErrorCode(body) == 'PLAYER_SESSION_UNKNOWN' then
                 confirmedSessions[playerId] = nil
-                issueTicket(playerId, clientBootId, requestKey, true)
+                issueTicket(playerId, clientBootId, requestKey, request, true)
                 return
             end
             pendingTickets[requestKey] = nil
@@ -139,8 +160,9 @@ RegisterNetEvent('humalike:world:requestNpcEdgeTicket', function(clientBootId)
     if not authority or type(clientBootId) ~= 'string' or #clientBootId > 64 then return end
     local requestKey = tostring(playerId) .. ':' .. clientBootId
     if pendingTickets[requestKey] then return end
-    pendingTickets[requestKey] = true
-    issueTicket(playerId, clientBootId, requestKey, false)
+    local request = { assignment = HumaLike.EdgeAssignmentKey() }
+    pendingTickets[requestKey] = request
+    issueTicket(playerId, clientBootId, requestKey, request, false)
 end)
 
 AddEventHandler('humalike:world:authorityChanged', function(delta)
@@ -165,6 +187,10 @@ AddEventHandler('humalike:runtime:edgeChanged', function()
     for playerId in pairs(HumalikeWorldAuthority.players) do
         TriggerClientEvent('humalike:world:npcEdgeReconnect', playerId)
     end
+end)
+
+AddEventHandler('humalike:runtime:refreshed', function(runtime)
+    if not runtime or runtime.edgeChanged ~= true then resetEdgeBindings() end
 end)
 
 AddEventHandler('playerDropped', function()

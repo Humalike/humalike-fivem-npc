@@ -8,6 +8,7 @@ end
 local pendingAuthority = {}
 local voiceRevision = 0
 local authorityRequestInFlight = false
+local authorityRequestSequence = 0
 local voiceRequestSequence = 0
 local pendingVoiceRequests = {}
 local assignmentRefreshPlayers = {}
@@ -82,11 +83,17 @@ local function fullSnapshot()
             }
         end
     end
-    authorityRequestInFlight = true
-    publish('snapshot', players, function() authorityRequestInFlight = false end)
+    authorityRequestSequence = authorityRequestSequence + 1
+    local requestSequence = authorityRequestSequence
+    authorityRequestInFlight = requestSequence
+    publish('snapshot', players, function()
+        if authorityRequestInFlight == requestSequence then
+            authorityRequestInFlight = false
+        end
+    end)
 end
 
-AddEventHandler('humalike:core:ready', function()
+local function recoverVoiceState()
     authorityRequestInFlight = false
     for playerId in pairs(pendingVoiceRequests) do
         pendingVoiceRequests[playerId] = nil
@@ -94,10 +101,16 @@ AddEventHandler('humalike:core:ready', function()
     end
     fullSnapshot()
     retryAssignmentRefreshes()
+end
+
+AddEventHandler('humalike:core:ready', function()
+    recoverVoiceState()
 end)
 
-
-AddEventHandler('humalike:runtime:refreshed', retryAssignmentRefreshes)
+AddEventHandler('humalike:runtime:refreshed', function(change)
+    if change and change.voiceChanged then return end
+    recoverVoiceState()
+end)
 
 AddEventHandler('humalike:runtime:voiceChanged', function()
     authorityRequestInFlight = false
@@ -110,6 +123,7 @@ AddEventHandler('humalike:runtime:voiceChanged', function()
         assignmentRefreshPlayers[playerId] = nil
         TriggerClientEvent('humalike:world:voiceReconnect', playerId)
     end
+    fullSnapshot()
 end)
 
 requestVoiceSession = function(rawPlayerId)
@@ -195,8 +209,11 @@ CreateThread(function()
             local batch, players = pendingAuthority, {}
             pendingAuthority = {}
             for _, player in pairs(batch) do players[#players + 1] = player end
-            authorityRequestInFlight = true
+            authorityRequestSequence = authorityRequestSequence + 1
+            local requestSequence = authorityRequestSequence
+            authorityRequestInFlight = requestSequence
             publish('delta', players, function(ok)
+                if authorityRequestInFlight ~= requestSequence then return end
                 authorityRequestInFlight = false
                 if not ok then
                     for playerId, player in pairs(batch) do

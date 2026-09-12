@@ -102,10 +102,26 @@ HumalikeWorldAuthority.players[7] = nil
 droppedPlayerRequest.callback(200, 'ready')
 assert(#clientEvents == 3)
 
+source = 8
+handlers['humalike:world:requestVoiceSession']()
+local abandonedSameAssignmentRequest = requests[#requests]
+local beforeSameAssignmentRecovery = #requests
+handlers['humalike:runtime:refreshed']({ voiceChanged = false })
+assert(#requests == beforeSameAssignmentRecovery + 2,
+    'same-assignment credential recovery must replay state and pending sessions')
+abandonedSameAssignmentRequest.callback(200, 'ready')
+assert(#clientEvents == 3,
+    'a callback abandoned during credential recovery must remain fenced')
+
+local beforeVoiceMove = #requests
 handlers['humalike:runtime:voiceChanged']()
 assert(clientEvents[#clientEvents].name == 'humalike:world:voiceReconnect'
     and clientEvents[#clientEvents].target == 8,
     'voice assignment change must reconnect connected players')
+assert(#requests == beforeVoiceMove + 1
+    and requests[#requests].url:match('/v1/fivem/state$')
+    and requests[#requests].body.mode == 'snapshot',
+    'voice assignment change must replay authoritative state to the new node')
 
 source = 8
 handlers['humalike:world:requestVoiceSession']()
