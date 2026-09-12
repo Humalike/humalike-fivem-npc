@@ -30,22 +30,21 @@ local function playerSamples()
     return samples
 end
 
+-- Present while anyone is within the radius; the reporter is the nearest player at any distance.
 local function scanScene(coords, radius, players)
-    local armed = false
+    local present = false
     local radiusSquared = radius * radius
-    local reporter, reporterDistanceSquared = nil, radiusSquared
+    local reporter, reporterDistanceSquared = nil, math.huge
     for _, player in ipairs(players) do
         local dx, dy, dz = player.coords.x - coords.x, player.coords.y - coords.y,
             player.coords.z - coords.z
         local distanceSquared = dx * dx + dy * dy + dz * dz
-        if distanceSquared <= radiusSquared then
-            if player.armed then armed = true end
-            if distanceSquared <= reporterDistanceSquared and player.loaded then
-                reporter, reporterDistanceSquared = player.id, distanceSquared
-            end
+        if distanceSquared <= radiusSquared then present = true end
+        if distanceSquared < reporterDistanceSquared and player.loaded then
+            reporter, reporterDistanceSquared = player.id, distanceSquared
         end
     end
-    return armed, reporter
+    return present, reporter
 end
 
 local function post(observation, delay, attempt)
@@ -76,7 +75,7 @@ function HumalikePoseThreatSweep()
     if config().Enabled == false then return end
     local now = GetGameTimer()
     local radius = tonumber(config().Radius) or 30.0
-    local clearAfter = tonumber(config().ClearMs) or 60000
+    local clearAfter = tonumber(config().ClearMs) or 10000
     local players
     for npcId in pairs(watch) do
         if not THREAT_POSES[NpcPoses[npcId]] then watch[npcId] = nil end
@@ -88,13 +87,13 @@ function HumalikePoseThreatSweep()
                 watch[npcId] = nil
             else
                 players = players or playerSamples()
-                local entry = watch[npcId] or { armedLastAt = now }
+                local entry = watch[npcId] or { presentLastAt = now }
                 watch[npcId] = entry
-                local armed, reporter = scanScene(GetEntityCoords(entity), radius, players)
-                if armed then
-                    entry.armedLastAt = now
+                local present, reporter = scanScene(GetEntityCoords(entity), radius, players)
+                if present then
+                    entry.presentLastAt = now
                     entry.notified = nil
-                elseif now - entry.armedLastAt >= clearAfter and not entry.notified then
+                elseif now - entry.presentLastAt >= clearAfter and not entry.notified then
                     if reporter then
                         entry.notified = true
                         notifyThreatSubsided(npcId, entity, reporter)

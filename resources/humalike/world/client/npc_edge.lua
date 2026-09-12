@@ -215,15 +215,3 @@ function HumalikeWorldNpcEdge.Start()
         end
     end)
 end
-
-function HumalikeWorldNpcEdge.ReportAmbientCandidates(candidates)
-    if not WorldConfig.npcEdge.enabled or not HumalikeWorldNpcEdge.connected
-        or type(candidates) ~= 'table' then return false end
-    local bounded = {}
-    for index = 1, math.min(#candidates, 64) do bounded[index] = candidates[index] end
-    SendNUIMessage({
-        type = 'npc_edge_frame',
-        frame = { type = 'ambient_candidates', candidates = bounded },
-    })
-    return true
-end

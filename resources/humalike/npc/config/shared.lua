@@ -18,14 +18,6 @@ Config.AppearancePollIntervalMs = 1000
 Config.AppearanceUpsertDebounceMs = 750
 Config.AppearancePropIds = { 0, 1, 2, 6, 7 }
 Config.AppearanceMaxDrawableId = 65535
-Config.AmbientScanIntervalMs = 3000
-Config.AmbientScanBatchSize = 32
-Config.AmbientTransientRejectedCacheMs = 3000
-Config.AmbientStableRejectedCacheMs = 20000
-Config.AmbientBootstrapRadius = 150.0
-Config.AmbientMaxCandidatesPerReport = 64
-Config.AmbientReportMinIntervalMs = 1000
-Config.AmbientCoordinateTolerance = 5.0
 Config.AmbientLeaseScopeDistance = 200.0
 Config.AmbientLeaseScopeTickMs = 2000
 Config.AmbientControl = {
@@ -35,7 +27,65 @@ Config.AmbientControl = {
     RequestCooldownMs = 750,
     StandTaskDurationMs = 2000,
     StandTaskRefreshMs = 500,
+    FaceToleranceDeg = 25.0,
 }
+Config.Population = {
+    SpawnPointTimeoutMs = 2000,
+    SpawnPointTolerance = 60.0,
+    SpawnPointClientRange = 250.0, -- metres a client may be from the first candidate to be asked
+    SpawnTimeoutMs = 30000,
+    MinPlayerDistance = 40.0,
+    ReconcileTickMs = 2000,
+    LeaseGraceMs = 30000,
+    HeartbeatMs = 30000,
+    EdgeLostHeartbeats = 3, -- silent heartbeats before the street goes back to GTA
+    RetryBackoffMs = 500,
+    RetryBackoffCapMs = 30000,
+    ReleaseMaxAttempts = 8,
+    WanderTickMs = 1000,
+    MoveRate = 0.82, -- fraction of the walk animation rate; 1.0 is the CreatePed default
+    WanderIdleMs = 5000,
+    ScenarioIdleMs = 10000,
+    SweepTickMs = 2000,
+    SweepMinPlayerDistance = 15.0,
+    SweepMaxPerTick = 5,
+    GtaPopulationTypes = { [4] = true, [5] = true },
+    CopPedTypes = { [6] = true, [27] = true }, -- GetPedType cop, swat
+}
+Config.Shove = {
+    TickMs = 100,
+    MinSpeed = 0.5,
+    KnockdownWindowMs = 600,
+    ReportGapMs = 3000,
+    ServerGapMs = 2000, -- must stay below ReportGapMs
+    ForgetAfterMs = 10000,
+    MeleeIgnoreMs = 1000,
+    MaxDistance = 6.0,
+    MaxReportsPerWindow = 4,
+    ReportWindowMs = 2000,
+}
+Config.Combat = {
+    MeleeReportDistance = 6.0,
+    MaxReportDistance = 150.0,
+    MeleeWeapons = {
+        WEAPON_UNARMED = true, WEAPON_KNIFE = true, WEAPON_NIGHTSTICK = true,
+        WEAPON_HAMMER = true, WEAPON_BAT = true, WEAPON_GOLFCLUB = true,
+        WEAPON_CROWBAR = true, WEAPON_BOTTLE = true, WEAPON_DAGGER = true,
+        WEAPON_HATCHET = true, WEAPON_KNUCKLE = true, WEAPON_MACHETE = true,
+        WEAPON_FLASHLIGHT = true, WEAPON_SWITCHBLADE = true, WEAPON_POOLCUE = true,
+        WEAPON_WRENCH = true, WEAPON_BATTLEAXE = true, WEAPON_STONE_HATCHET = true,
+    },
+}
+function HumalikeUnsignedHash(value)
+    return value < 0 and value + 4294967296 or value
+end
+function HumalikeValidCoordinate(value)
+    return type(value) == 'number' and value == value and math.abs(value) <= 10000
+end
+function HumalikeDistanceSquared(left, right)
+    local dx, dy, dz = left.x - right.x, left.y - right.y, left.z - right.z
+    return dx * dx + dy * dy + dz * dz
+end
 function HumalikeJobList(value)
     local names = {}
     for name in tostring(value or ''):gmatch('[^,]+') do
@@ -105,6 +155,7 @@ Config.SupportedActions = {
     'enter_vehicle',
     'exit_vehicle',
     'walk_away',
+    'run_away',
 }
 Config.ActionSustainTickMs = 250
 Config.PoseAbandonMs = tonumber(GetConvar('humalike_npc_pose_abandon_ms', '120000')) or 120000
@@ -113,7 +164,7 @@ Config.PoseAbandonTickMs = 5000
 Config.PoseThreat = {
     Enabled = GetConvar('humalike_npc_pose_threat_watch', 'true') == 'true',
     Radius = tonumber(GetConvar('humalike_npc_pose_threat_radius', '30')) or 30.0,
-    ClearMs = tonumber(GetConvar('humalike_npc_pose_threat_clear_ms', '60000')) or 60000,
+    ClearMs = tonumber(GetConvar('humalike_npc_pose_threat_clear_ms', '10000')) or 10000,
 }
 Config.PoseThreatTickMs = 2500
 Config.Follow = {
@@ -144,6 +195,13 @@ Config.WalkAway = {
     Distance = 30.0,
     ArriveRange = 3.0,
     TimeoutMs = 60000,
+    TargetRadius = 25.0,
+}
+Config.RunAway = {
+    Distance = 60.0,
+    DurationMs = 12000, -- most runs end here and settle into a wander
+    ArriveRange = 5.0,
+    MoveBlend = 2.1, -- 1 walk, 2 run, 3 sprint
 }
 Config.Wave = {
     DurationMs = 3000,

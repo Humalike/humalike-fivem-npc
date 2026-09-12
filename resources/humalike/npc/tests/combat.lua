@@ -59,10 +59,14 @@ assert(#sent == 2 and sent[1][1] == 'humalike:npc:gunshotFired'
     'automatic fire reports once per burst and rearms after 500 ms silence')
 table.remove(sent, 2) -- preserve the existing event index assertions below
 
+local damageNotes = {}
+HumalikeNpcShove = { NoteDamage = function(ped, at) damageNotes[#damageNotes + 1] = { ped, at } end }
 stateNpcId = 'static-1'
 LoadedPeds['static-1'] = 100
 handlers.entityDamaged(100, 42, 0, 6)
 assert(healthRestores == 3)
+assert(#damageNotes == 1 and damageNotes[1][1] == 100 and damageNotes[1][2] == GetGameTimer(),
+    'every hit the player lands is stamped for the shove detector')
 assert(sent[2][1] == 'humalike:npc:npcDamaged')
 assert(sent[2][2] == 'static-1' and sent[2][3] == -1)
 assert(sent[3][1] == 'humalike:npc:npcAttacked')

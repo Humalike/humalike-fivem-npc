@@ -8,6 +8,8 @@ providers.
 ## What it includes
 
 - Persistent and ambient AI NPCs synchronized through OneSync.
+- HumaLike-owned street population: planned bodies spawn on pavement and
+  player contact (a bump, a knock-down) reaches the AI as a world event.
 - Proximity voice with direct NPC targeting and in-vehicle routing.
 - World-state collection, NPC actions, injuries and interactions.
 - Standalone operation with optional ESX, QBCore, Qbox, inventory and target
@@ -38,7 +40,8 @@ control plane returns complete edge and voice assignments. Each assignment
 must include its assignment ID, node ID, node boot ID and positive integer
 generation. A malformed successful bootstrap response stops a newly started
 resource, so a strict release cannot run against an older control-plane
-contract.
+contract. Updating an installed resource follows the Update section of the
+archive's `INSTALL.md` (`refresh`, then `restart humalike`).
 
 For the first cutover of an existing server, keep the assignment-capable
 transition control plane running while healthy edge and voice nodes start.
@@ -82,6 +85,9 @@ Verbose runtime logging is disabled by default and can be enabled temporarily:
 ```cfg
 setr humalike_debug 1
 ```
+
+While HumaLike owns the street population, GTA's random police stay off unless
+`set humalike_population_cops true` is set; the convar is read every few seconds.
 
 ## Development
 

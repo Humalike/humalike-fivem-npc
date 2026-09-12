@@ -102,6 +102,7 @@ Config = {
 LoadedPeds = { ['npc-1'] = 42 }
 AmbientPeds = {}
 
+dofile('client/reactions.lua')
 dofile('client/wounded.lua')
 assert(#threads >= 2, 'a preload thread and the pose watchdog')
 threads[1]()
@@ -236,5 +237,30 @@ calls = {}
 for _, thread in ipairs(threads) do runThread(thread, 1) end
 assert(indexOf('TriggerServerEvent:humalike:npc:requestDownedStates'),
     'the downed snapshot is requested at startup: ' .. names())
+
+dead = false
+AmbientPeds['npc-1'] = 42
+activePlayers = {}
+local reapplyResult = true
+local reapplied = {}
+HumalikeNpcPopulationClient = {
+    Reapply = function(ped) reapplied[#reapplied + 1] = ped return reapplyResult end,
+}
+calls = {}
+handlers['humalike:npc:npcDownedState']('npc-1', { state = 'revived', linger_ms = 0 })
+local linger = threads[#threads]
+calls = {}
+runThread(linger, 1)
+assert(#reapplied == 1 and reapplied[1] == 42, 'the released body is handed to Reapply: ' .. names())
+assert(not indexOf('TaskWanderStandard'), 'and not sent wandering when Reapply took it')
+reapplyResult = false
+calls = {}
+handlers['humalike:npc:npcDownedState']('npc-1', { state = 'revived', linger_ms = 0 })
+linger = threads[#threads]
+calls = {}
+runThread(linger, 1)
+assert(#reapplied == 2 and indexOf('TaskWanderStandard'),
+    'anything Reapply declines wanders generically: ' .. names())
+HumalikeNpcPopulationClient = nil
 
 print('wounded_client: ok')

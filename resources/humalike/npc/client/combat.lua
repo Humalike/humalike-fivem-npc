@@ -5,6 +5,7 @@ AddEventHandler('entityDamaged', function(victim, culprit, weapon, baseDamage)
     if culprit ~= PlayerPedId() then return end
     local npcId = Entity(victim).state.humalike_npc_id
     if not npcId then return end
+    if HumalikeNpcShove then HumalikeNpcShove.NoteDamage(victim, GetGameTimer()) end
     if LoadedPeds and LoadedPeds[npcId] == victim then
         SetEntityHealth(victim, GetEntityMaxHealth(victim))
     end

@@ -72,15 +72,7 @@ assert(velocityCalls[10] == 1 and velocityCalls[20] == 1,
     'sort/priority must use cached velocity')
 assert(frame.npcs[1].npc_id == 'npc-b', 'talking NPC must remain urgent')
 
-local candidates = {}
-for index = 1, 80 do candidates[index] = { network_id = index } end
 HumalikeWorldNpcEdge.connected = true
-assert(HumalikeWorldNpcEdge.ReportAmbientCandidates(candidates))
-local discovery = nuiMessages[#nuiMessages].frame
-assert(discovery.type == 'ambient_candidates' and #discovery.candidates == 64,
-    'world bridge must preserve the complete 64-candidate discovery sample')
-assert(discovery.candidates[64].network_id == 64)
-
 HumalikeWorldNpcEdge.ticketPending = true
 handlers['humalike:world:npcEdgeReconnect']()
 assert(not HumalikeWorldNpcEdge.connected and HumalikeWorldNpcEdge.ticketPending,
@@ -89,5 +81,4 @@ assert(nuiMessages[#nuiMessages].type == 'npc_edge_disconnect',
     'edge reassignment must close only the edge NUI transport')
 assert(serverEvents[#serverEvents].name == 'humalike:world:requestNpcEdgeTicket',
     'edge reassignment must request a fresh ticket immediately')
-
 print('client_npc_edge: ok')

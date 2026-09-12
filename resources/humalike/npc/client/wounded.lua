@@ -82,7 +82,7 @@ local function holdDownedFlags(ped)
     SetPedRagdollOnCollision(ped, false)
     SetPedDiesInWater(ped, false)
     SetPedKeepTask(ped, false)
-    SetBlockingOfNonTemporaryEvents(ped, true)
+    HumalikeNpcReactions.Own(ped)
     FreezeEntityPosition(ped, true)
 end
 
@@ -105,7 +105,7 @@ local function clearDowned(ped)
     if not DoesEntityExist(ped) then return end
     releaseBody(ped)
     FreezeEntityPosition(ped, false)
-    SetBlockingOfNonTemporaryEvents(ped, false)
+    HumalikeNpcReactions.Release(ped)
     SetEntityInvincible(ped, false)
     SetEntityCanBeDamaged(ped, true)
     SetPedSuffersCriticalHits(ped, true)
@@ -117,13 +117,15 @@ end
 local function holdStanding(npcId, ped)
     if downed[npcId] then return end
     if not NetworkHasControlOfEntity(ped) then return end
-    SetBlockingOfNonTemporaryEvents(ped, true)
+    HumalikeNpcReactions.Own(ped)
     TaskStandStill(ped, LINGER_STAND_TASK_MS)
 end
 local function releaseFromHold(npcId, ped)
     if downed[npcId] or not DoesEntityExist(ped) then return end
     if not NetworkHasControlOfEntity(ped) then return end
-    SetBlockingOfNonTemporaryEvents(ped, false)
+    HumalikeNpcReactions.Release(ped)
+    -- A population body gets its planned stand/scenario back; anyone else wanders.
+    if HumalikeNpcPopulationClient and HumalikeNpcPopulationClient.Reapply(ped) then return end
     ClearPedTasks(ped)
     TaskWanderStandard(ped, 10.0, 10)
 end

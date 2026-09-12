@@ -36,6 +36,7 @@ function SetPedDiesWhenInjured(ped) calls[#calls + 1] = { 'dies', ped } end
 function SetBlockingOfNonTemporaryEvents(ped) calls[#calls + 1] = { 'blocking', ped } end
 function TaskSetBlockingOfNonTemporaryEvents(ped) calls[#calls + 1] = { 'task-blocking', ped } end
 
+dofile('client/reactions.lua')
 dofile('client/persistent_control.lua')
 assert(#threads == 1)
 pcall(threads[1])

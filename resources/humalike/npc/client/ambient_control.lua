@@ -25,8 +25,33 @@ end
 
 local function setHeldReactionsBlocked(ped, blocked)
     if not ped or not DoesEntityExist(ped) or not NetworkHasControlOfEntity(ped) then return end
-    SetBlockingOfNonTemporaryEvents(ped, blocked)
-    TaskSetBlockingOfNonTemporaryEvents(ped, blocked)
+    if blocked then
+        HumalikeNpcReactions.Own(ped, true)
+    else
+        HumalikeNpcReactions.Release(ped, true)
+    end
+end
+
+-- Returns true while a turn is in progress, so no stand-still is stamped over it.
+local function faceController(ped, control)
+    local player = GetPlayerFromServerId(control.controller_source or -1)
+    local target = player ~= -1 and GetPlayerPed(player) or 0
+    if target <= 0 or not DoesEntityExist(target) then return false end
+    local duration = Config.AmbientControl.StandTaskDurationMs
+    TaskLookAtEntity(ped, target, duration, 2048, 3)
+    local toTarget = GetEntityCoords(target) - GetEntityCoords(ped)
+    local desired = GetHeadingFromVector_2d(toTarget.x, toTarget.y)
+    local delta = (desired - GetEntityHeading(ped) + 540.0) % 360.0 - 180.0
+    if math.abs(delta) <= Config.AmbientControl.FaceToleranceDeg then return false end
+    TaskTurnPedToFaceEntity(ped, target, duration)
+    return true
+end
+
+function HumalikeAmbientControlHeldPed(ped)
+    local npcId = DoesEntityExist(ped) and Entity(ped).state.humalike_npc_id or nil
+    local entry = npcId and AmbientNpcEntries and AmbientNpcEntries[npcId] or nil
+    local control = entry and controls[controlKey(entry)] or nil
+    return control ~= nil and control.mode == 'held'
 end
 
 local function removeInteraction(npcId)
@@ -113,8 +138,13 @@ local function resumePedForKey(key)
             if ped and DoesEntityExist(ped) and NetworkHasControlOfEntity(ped)
                 and not IsActionControlled(ped) and not isDowned(npcId) then
                 setHeldReactionsBlocked(ped, false)
-                ClearPedTasks(ped)
-                TaskWanderStandard(ped, 10.0, 10)
+                if Entity(ped).state.humalike_npc_kind == 'population'
+                    and HumalikeNpcPopulationClient then
+                    HumalikeNpcPopulationClient.Reapply(ped)
+                else
+                    ClearPedTasks(ped)
+                    TaskWanderStandard(ped, 10.0, 10)
+                end
             end
         end
     end
@@ -260,7 +290,9 @@ CreateThread(function()
                             ClearPedTasks(ped)
                             initializedHoldByPed[ped] = key
                         end
-                        TaskStandStill(ped, Config.AmbientControl.StandTaskDurationMs)
+                        if not faceController(ped, control) then
+                            TaskStandStill(ped, Config.AmbientControl.StandTaskDurationMs)
+                        end
                     end
                     applied = true
                 elseif not locallyOwned then
