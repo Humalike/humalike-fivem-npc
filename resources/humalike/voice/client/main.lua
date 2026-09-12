@@ -185,6 +185,11 @@ RegisterNetEvent('humalike:world:voiceSessionFailed', function(status)
     end)
 end)
 
+RegisterNetEvent('humalike:world:voiceReconnect', function()
+    sessionRetryGeneration = sessionRetryGeneration + 1
+    SendNUIMessage({ type = 'voice:reconnect' })
+end)
+
 RegisterNetEvent('humalike:world:cabinMembership', function(snapshot)
     if type(snapshot) ~= 'table' or type(snapshot.epoch) ~= 'string'
         or type(snapshot.revision) ~= 'number' then return end

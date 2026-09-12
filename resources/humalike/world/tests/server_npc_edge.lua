@@ -1,5 +1,6 @@
 local handlers, requests, clientEvents = {}, {}, {}
 local responses = {}
+local assignment = 'edge-a:7'
 
 WorldConfig = { npcEdge = { enabled = true } }
 HumalikeWorldAuthority = {
@@ -47,6 +48,8 @@ HumaLike = {
             end,
         }
     end,
+    EdgeAssignmentKey = function() return assignment end,
+    IsCurrentEdgeAssignment = function(expected) return expected == assignment end,
 }
 
 dofile('server/npc_edge.lua')
@@ -75,8 +78,69 @@ assert(#requests == 6 and requests[6].url:match('upsert_player_session$'))
 requests[6].callback(200, 'upserted')
 handlers['humalike:core:ready']()
 assert(#requests == 7 and requests[7].url:match('sync_player_sessions$'))
+handlers['humalike:runtime:edgeChanged']()
+assert(#requests == 8 and requests[8].url:match('sync_player_sessions$'))
+assert(clientEvents[#clientEvents].name == 'humalike:world:npcEdgeReconnect'
+    and clientEvents[#clientEvents].target == 7,
+    'edge assignment change must reconnect edge clients only')
+
+source = 7
+handlers['humalike:world:requestNpcEdgeTicket']('boot-stale')
+local staleSessionRequest = requests[#requests]
+assignment = 'edge-c:9'
+handlers['humalike:runtime:edgeChanged']()
+local currentSyncRequest = requests[#requests]
+handlers['humalike:world:requestNpcEdgeTicket']('boot-stale')
+local currentSessionRequest = requests[#requests]
+responses.stale = { ok = true }
+staleSessionRequest.callback(200, 'stale')
+assert(requests[#requests] == currentSessionRequest,
+    'an old assignment response must not advance a current ticket request')
+currentSyncRequest.callback(200, 'upserted')
+currentSessionRequest.callback(200, 'upserted')
+local staleTicketRequest = requests[#requests]
+local eventsBeforeStaleTicket = #clientEvents
+assignment = 'edge-d:10'
+handlers['humalike:runtime:edgeChanged']()
+handlers['humalike:world:requestNpcEdgeTicket']('boot-stale')
+local replacementSessionRequest = requests[#requests]
+replacementSessionRequest.callback(200, 'upserted')
+local replacementTicketRequest = requests[#requests]
+staleTicketRequest.callback(200, 'ticket')
+assert(#clientEvents == eventsBeforeStaleTicket + 1,
+    'an old ticket response must not be delivered after assignment change')
+replacementTicketRequest.callback(200, 'ticket')
+assert(#clientEvents == eventsBeforeStaleTicket + 2,
+    'the current assignment ticket must still be delivered')
+
+handlers['humalike:world:requestNpcEdgeTicket']('boot-recovered')
+local rejectedSessionRequest = requests[#requests]
+assignment = nil
+rejectedSessionRequest.callback(401, 'missing')
+assignment = 'edge-d:10'
+handlers['humalike:runtime:refreshed']()
+local requestsBeforeRecovery = #requests
+handlers['humalike:world:requestNpcEdgeTicket']('boot-recovered')
+assert(#requests == requestsBeforeRecovery + 1,
+    'same-assignment credential recovery must unblock a rejected ticket request')
+local recoveredSessionRequest = requests[#requests]
+recoveredSessionRequest.callback(200, 'upserted')
+local staleRecoveredTicket = requests[#requests]
+handlers['humalike:runtime:refreshed']({ edgeChanged = false })
+handlers['humalike:world:requestNpcEdgeTicket']('boot-recovered')
+local replacementRecoveredSession = requests[#requests]
+replacementRecoveredSession.callback(200, 'upserted')
+local currentRecoveredTicket = requests[#requests]
+local eventsBeforeRecoveredTicket = #clientEvents
+staleRecoveredTicket.callback(200, 'ticket')
+assert(#clientEvents == eventsBeforeRecoveredTicket,
+    'an old ticket callback must not match a replacement on the same assignment')
+currentRecoveredTicket.callback(200, 'ticket')
+assert(#clientEvents == eventsBeforeRecoveredTicket + 1)
+local requestsBeforeEmptySnapshot = #requests
 HumalikeWorldAuthority.players = {}
 handlers['humalike:world:authoritySnapshot']({})
-assert(#requests == 7, 'empty authority must not sync and evict live sessions')
+assert(#requests == requestsBeforeEmptySnapshot,
+    'empty authority must not sync and evict live sessions')
 
 print('server_npc_edge: ok')

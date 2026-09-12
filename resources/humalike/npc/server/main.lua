@@ -23,6 +23,16 @@ AddEventHandler('humalike:core:ready', function(runtime)
     reportCapabilities()
 end)
 
+local function replayEdgeState()
+    SyncNpcRoster(nil, true)
+    reportCapabilities()
+end
+
+AddEventHandler('humalike:runtime:edgeChanged', replayEdgeState)
+AddEventHandler('humalike:runtime:refreshed', function(runtime)
+    if not runtime or runtime.edgeChanged ~= true then replayEdgeState() end
+end)
+
 AddEventHandler('humalike:providers:changed', function(domain)
     if (domain == 'inventory' or domain == 'actions')
         and HumaLike.RuntimeCredentials() then reportCapabilities() end

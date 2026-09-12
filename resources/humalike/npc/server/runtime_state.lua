@@ -41,7 +41,12 @@ syncState = function()
     cancelRetry()
     syncInFlight, syncQueued = true, false
     local sentRevision = revision
+    local sentAssignment = HumaLike.EdgeAssignmentKey()
     HumalikeHttp.PostAction('sync_npc_runtime_state', snapshot(), function(ok)
+        if not HumaLike.IsCurrentEdgeAssignment(sentAssignment) then
+            ok = false
+            syncQueued = true
+        end
         syncInFlight = false
         if ok then
             retryAttempt = 0
@@ -67,3 +72,7 @@ function HumalikeNpcRuntimeState.Sync()
 end
 
 AddEventHandler('humalike:core:ready', syncState)
+AddEventHandler('humalike:runtime:edgeChanged', syncState)
+AddEventHandler('humalike:runtime:refreshed', function(runtime)
+    if not runtime or runtime.edgeChanged ~= true then syncState() end
+end)

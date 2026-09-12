@@ -46,3 +46,14 @@ assert(ready == nil)
 rosterCallback(true)
 assert(ready[1] == 'humalike:npc:ready')
 assert(ready[2].apiVersion == 1 and ready[2].generation == 3)
+
+handlers['humalike:runtime:edgeChanged']({ generation = 4 })
+assert(rosterCalls == 2, 'a new edge assignment must replay the roster')
+assert(capabilityCalls == 2, 'a new edge assignment must replay capabilities')
+
+handlers['humalike:runtime:refreshed']({ edgeChanged = true })
+assert(rosterCalls == 2 and capabilityCalls == 2,
+    'an edge change must not be replayed twice by the refresh event')
+handlers['humalike:runtime:refreshed']({ edgeChanged = false })
+assert(rosterCalls == 3 and capabilityCalls == 3,
+    'credential recovery must replay edge state even when the assignment is unchanged')
