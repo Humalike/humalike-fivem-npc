@@ -1,6 +1,7 @@
-local handlers, requests, clientEvents = {}, {}, {}
+local handlers, requests, clientEvents, timeouts = {}, {}, {}, {}
 local decoded = {}
 local bootstrapRequests = 0
+local bootstrapAccepted = true
 
 WorldConfig = {
     voice = {
@@ -33,6 +34,9 @@ TriggerClientEvent = function(name, target, payload)
 end
 CreateThread = function() end
 Wait = function() end
+SetTimeout = function(delay, callback)
+    timeouts[#timeouts + 1] = { delay = delay, callback = callback }
+end
 HumaLike = {
     RuntimeCredentials = function() return { serverId = 'server-1' } end,
     ErrorCode = function(body) return body and body.error and body.error.code or nil end,
@@ -40,7 +44,7 @@ HumaLike = {
         bootstrapRequests = bootstrapRequests + 1
         assert((reason == 'voice assignment_stale' or reason == 'voice assignment_not_ready')
             and attempt == 1 and immediate)
-        return true
+        return bootstrapAccepted
     end,
     PostVoice = function(path, body, callback)
         requests[#requests + 1] = { url = 'https://voice.example' .. path,
@@ -126,7 +130,15 @@ assert(#requests == beforeVoiceMove + 1
 source = 8
 handlers['humalike:world:requestVoiceSession']()
 decoded.notReady = { error = { code = 'assignment_not_ready' } }
+bootstrapAccepted = false
 requests[#requests].callback(409, 'notReady')
 assert(bootstrapRequests == 2, 'assignment_not_ready must refresh runtime immediately')
+assert(timeouts[#timeouts].delay == 15000,
+    'an assignment refresh must have a bounded wait')
+timeouts[#timeouts].callback()
+assert(clientEvents[#clientEvents].name == 'humalike:world:voiceSessionFailed'
+    and clientEvents[#clientEvents].target == 8
+    and clientEvents[#clientEvents].payload == 503,
+    'a rejected assignment refresh must release the waiting client')
 
 print('server_voice: ok')

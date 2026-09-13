@@ -14,6 +14,18 @@ local pendingVoiceRequests = {}
 local assignmentRefreshPlayers = {}
 local requestVoiceSession
 
+local function waitForAssignmentRefresh(playerId)
+    local wait = {}
+    assignmentRefreshPlayers[playerId] = wait
+    SetTimeout(15000, function()
+        if assignmentRefreshPlayers[playerId] ~= wait then return end
+        assignmentRefreshPlayers[playerId] = nil
+        if HumalikeWorldAuthority.players[playerId] then
+            TriggerClientEvent('humalike:world:voiceSessionFailed', playerId, 503)
+        end
+    end)
+end
+
 local function retryAssignmentRefreshes()
     for playerId in pairs(assignmentRefreshPlayers) do
         assignmentRefreshPlayers[playerId] = nil
@@ -160,7 +172,7 @@ requestVoiceSession = function(rawPlayerId)
         if status == 409 and (errorCode == 'assignment_stale'
             or errorCode == 'assignment_not_ready') then
             pendingVoiceRequests[playerId] = nil
-            assignmentRefreshPlayers[playerId] = true
+            waitForAssignmentRefresh(playerId)
             print(('[humalike] voice_assignment_refresh code=%s server_id=%s player_id=%d action=refresh_runtime')
                 :format(errorCode, serverId, playerId))
             HumaLike.RequestBootstrap(('voice %s'):format(errorCode), 1, true)
