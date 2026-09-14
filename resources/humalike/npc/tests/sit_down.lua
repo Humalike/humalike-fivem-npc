@@ -88,9 +88,15 @@ assert(ActionControlledPeds[npcPed] == 'sit_down')
 inVehicle = true
 usingScenario = false
 scenariosBefore = #scenarios
+local clearsBefore = #clears
 NpcActions['sit_down'](npcPed, {})
-NpcActionSustain['sit_down'](npcPed)
 assert(#scenarios == scenariosBefore, 'a passenger is already sitting')
+ActionControlledPeds[npcPed] = 'sit_down'
+ActionParams[npcPed] = { mode = 'ground' }
+NpcActionSustain['sit_down'](npcPed)
+assert(ActionControlledPeds[npcPed] == nil and #scenarios == scenariosBefore
+    and #clears == clearsBefore,
+    'a seated ped that ended up in a vehicle drops the seat without touching the ride')
 inVehicle = false
 
 ActionControlledPeds[npcPed] = 'sit_down'

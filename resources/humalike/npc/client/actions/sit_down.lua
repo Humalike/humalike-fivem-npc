@@ -71,7 +71,13 @@ end
 
 NpcActionSustain['sit_down'] = function(ped)
     forgetStale()
-    if NpcActionPedInVehicle(ped) then return end
+    -- A seat is over once the ped is in a vehicle; keeping the deed would
+    -- replay the old scenario the moment it steps out.
+    if NpcActionPedInVehicle(ped) then
+        settleUntil[ped] = nil
+        ReleaseActionControl(ped)
+        return
+    end
     local params = ActionParams[ped]
     if type(params) ~= 'table' or (params.mode ~= 'bench' and params.mode ~= 'ground') then
         stand(ped)
