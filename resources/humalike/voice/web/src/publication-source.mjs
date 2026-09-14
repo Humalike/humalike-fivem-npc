@@ -1,8 +1,12 @@
 const VALID_SERVER_ID = /^[A-Za-z0-9._-]{1,64}$/;
 
+// A sharded voice node names its LiveKit room "fivem:<server>:<boot>:<generation>[:<hash>]";
+// a legacy router names it "fivem:<server>". Both belong to this server.
 export function readyServerId(serverId, room) {
   if (typeof serverId !== "string" || !VALID_SERVER_ID.test(serverId)) return null;
-  if (room !== `fivem:${serverId}`) return null;
+  if (typeof room !== "string") return null;
+  const prefix = `fivem:${serverId}`;
+  if (room !== prefix && !room.startsWith(`${prefix}:`)) return null;
   return serverId;
 }
 
