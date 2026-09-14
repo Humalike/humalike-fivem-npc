@@ -5,7 +5,7 @@ lua54 'yes'
 name 'humalike'
 author 'HumaLike'
 description 'Unified HumaLike NPC, world-state and voice runtime'
-version '0.3.0'
+version '0.4.0'
 
 ui_page 'nui/host/dist/index.html'
 
