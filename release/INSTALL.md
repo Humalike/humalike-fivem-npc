@@ -6,6 +6,10 @@
 4. Keep the license behind `set`, never `setr`.
 5. Run `refresh`, then `ensure humalike`.
 
+`ensure humalike` fails closed when the control plane does not return complete
+edge and voice assignment identities. Check the startup log, fix the
+control-plane rollout, then run `ensure humalike` again.
+
 The resource works standalone. ESX, QBCore, Qbox, inventory and interaction
 providers are optional and selected independently. Keep custom adapters in a
 separate resource so updating HumaLike is always a complete directory

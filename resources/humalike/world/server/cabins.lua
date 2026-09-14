@@ -241,7 +241,21 @@ AddEventHandler('humalike:core:stopping', function()
     HumalikeWorldCabins.Publish(true, true)
 end)
 
-AddEventHandler('humalike:core:ready', function()
+local function replayCabins()
     HumalikeWorldCabins.inFlight = nil
+    HumalikeWorldCabins.publishedDigest = nil
     HumalikeWorldCabins.Publish(true, not WorldConfig.cabins.enabled)
+end
+
+AddEventHandler('humalike:core:ready', function()
+    replayCabins()
+end)
+
+AddEventHandler('humalike:runtime:voiceChanged', function()
+    replayCabins()
+end)
+
+AddEventHandler('humalike:runtime:refreshed', function(change)
+    if change and change.voiceChanged then return end
+    replayCabins()
 end)

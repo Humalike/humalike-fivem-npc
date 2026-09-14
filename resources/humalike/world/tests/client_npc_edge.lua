@@ -1,4 +1,4 @@
-local callbacks, threads, nuiMessages = {}, {}, {}
+local callbacks, handlers, threads, nuiMessages, serverEvents = {}, {}, {}, {}, {}
 local coordsCalls, velocityCalls = {}, {}
 
 WorldConfig = {
@@ -47,12 +47,14 @@ function Entity(entity)
     return { state = { humalike_npc_id = entity == 30 and 'npc-stale' or nil } }
 end
 function GetEntityModel() return 999 end
-function RegisterNetEvent() end
+function RegisterNetEvent(name, callback) handlers[name] = callback end
 function RegisterNUICallback(name, callback) callbacks[name] = callback end
 function AddEventHandler() end
 function CreateThread(callback) threads[#threads + 1] = callback end
 function SetTimeout() end
-function TriggerServerEvent() end
+function TriggerServerEvent(name, ...)
+    serverEvents[#serverEvents + 1] = { name = name, args = { ... } }
+end
 function TriggerEvent() end
 function SendNUIMessage(message) nuiMessages[#nuiMessages + 1] = message end
 function PlayerPedId() return 1 end
@@ -70,4 +72,13 @@ assert(velocityCalls[10] == 1 and velocityCalls[20] == 1,
     'sort/priority must use cached velocity')
 assert(frame.npcs[1].npc_id == 'npc-b', 'talking NPC must remain urgent')
 
+HumalikeWorldNpcEdge.connected = true
+HumalikeWorldNpcEdge.ticketPending = true
+handlers['humalike:world:npcEdgeReconnect']()
+assert(not HumalikeWorldNpcEdge.connected and HumalikeWorldNpcEdge.ticketPending,
+    'edge reassignment must invalidate the active client connection')
+assert(nuiMessages[#nuiMessages].type == 'npc_edge_disconnect',
+    'edge reassignment must close only the edge NUI transport')
+assert(serverEvents[#serverEvents].name == 'humalike:world:requestNpcEdgeTicket',
+    'edge reassignment must request a fresh ticket immediately')
 print('client_npc_edge: ok')

@@ -125,6 +125,14 @@ RegisterNetEvent('humalike:world:npcEdgeTicket', function(ticket, expectedBootId
     SendNUIMessage(ticket)
 end)
 
+RegisterNetEvent('humalike:world:npcEdgeReconnect', function()
+    HumalikeWorldNpcEdge.ticketGeneration = HumalikeWorldNpcEdge.ticketGeneration + 1
+    HumalikeWorldNpcEdge.ticketPending = false
+    HumalikeWorldNpcEdge.connected = false
+    SendNUIMessage({ type = 'npc_edge_disconnect' })
+    HumalikeWorldNpcEdge.RequestTicket()
+end)
+
 RegisterNUICallback('npcEdgeReady', function(_, callback)
     HumalikeWorldNpcEdge.connected = true
     HumalikeWorldNpcEdge.lastError = nil

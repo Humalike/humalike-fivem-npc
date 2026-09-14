@@ -102,6 +102,10 @@ local function bind(record)
         return
     end
     local coords = GetEntityCoords(ped)
+    local request = {
+        assignment = HumaLike.EdgeAssignmentKey(),
+    }
+    record.bindingRequest = request
     HumalikeHttp.PostAction('bind_ambient_debug_spawn', {
         debug_spawn_id = record.debug_spawn_id,
         npc_id = record.npc_id,
@@ -114,7 +118,10 @@ local function bind(record)
         routing_bucket = record.routing_bucket,
         ttl_seconds = ttlSeconds,
     }, function(ok, status, body)
-        if debugSpawns[record.npc_id] ~= record then return end
+        if debugSpawns[record.npc_id] ~= record
+            or record.bindingRequest ~= request then return end
+        record.bindingRequest = nil
+        if not HumaLike.IsCurrentEdgeAssignment(request.assignment) then return end
         if not ok or type(body) ~= 'table' or body.status ~= 'bound' then
             local reason = type(body) == 'table' and (body.reason or body.status) or status
             release(record, true, true)
@@ -276,6 +283,15 @@ end)
 
 AddEventHandler('humalike:core:ready', function()
     for _, record in pairs(debugSpawns) do bind(record) end
+end)
+
+local function replayBindings()
+    for _, record in pairs(debugSpawns) do bind(record) end
+end
+
+AddEventHandler('humalike:runtime:edgeChanged', replayBindings)
+AddEventHandler('humalike:runtime:refreshed', function(runtime)
+    if not runtime or runtime.edgeChanged ~= true then replayBindings() end
 end)
 
 AddEventHandler('onResourceStop', function(resourceName)

@@ -13,5 +13,5 @@ function HumaLike.RetryDelay(attempt, randomUnit)
 end
 
 function HumaLike.RenewalDelay(randomUnit)
-    return jitter(300000, randomUnit)
+    return jitter(10000, randomUnit)
 end

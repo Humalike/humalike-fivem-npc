@@ -110,6 +110,7 @@ window.addEventListener("message", (event: MessageEvent<unknown>) => {
   }
   else if (message.type === "voice:keybind") { proximityBinding = normalizeBinding(String(message.binding ?? "")); renderStatus(); }
   else if (message.type === "voice:bootstrap") signalReady();
+  else if (message.type === "voice:reconnect") requestSession();
   else if (message.type === "voice:session") {
     if (isSession(message.session)) void startSession(message.session);
     else { fail("Nieprawidłowa sesja voice"); scheduleReconnect(); }
