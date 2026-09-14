@@ -6,7 +6,8 @@ local VALID_DOMAINS = {
 local ACTION_DOMAINS = {
     follow_player = 'movement', stop_following = 'movement', hold_position = 'movement',
     release_movement = 'movement', enter_vehicle = 'movement', exit_vehicle = 'movement',
-    walk_away = 'movement', run_away = 'movement', wave = 'animation', start_dancing = 'animation',
+    walk_away = 'movement', run_away = 'movement', approach_player = 'movement',
+    sit_down = 'movement', wave = 'animation', start_dancing = 'animation',
     interrupt_animation = 'animation', kneel = 'animation', hands_up = 'animation',
     punch = 'animation', stand_up = 'animation', hand_over_money = 'animation',
 }

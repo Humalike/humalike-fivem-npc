@@ -172,6 +172,15 @@ assert(clientControl.control.controller_source == 7)
 assert(HumalikeApplyAmbientMovementAction({ entity_id = 53 }, lease, entity,
     'follow_player', { player_id = 7 }) == nil)
 assert(clientControl.control == nil, 'follow must release hold before it starts')
+entityState[101].humalike_action = { key = 'approach_player' }
+assert(HumalikeApplyAmbientMovementAction({ entity_id = 53 }, lease, entity,
+    'approach_player', { player_id = 7 }) == true)
+assert(clientControl.control and clientControl.control.mode == 'held'
+    and clientControl.control.controller_source == 7, 'approaching ends as a hold for the partner')
+assert(entityState[101].humalike_action ~= nil, 'without wiping the walk the owner sustains')
+assert(HumalikeApplyAmbientMovementAction({ entity_id = 53 }, lease, entity,
+    'release_movement', { player_id = 7 }) == true)
+assert(clientControl.control == nil)
 local invalidMovement, invalidMovementReason = HumalikeApplyAmbientMovementAction(
     { entity_id = 53 }, lease, entity, 'hold_position', { player_id = 8 })
 assert(invalidMovement == false and invalidMovementReason == 'invalid_action_player')

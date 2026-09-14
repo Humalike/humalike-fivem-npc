@@ -161,7 +161,8 @@ local MOVEMENT_RELEASE_ACTIONS = {
 }
 function HumalikeApplyAmbientMovementAction(target, lease, entity, actionKey, params)
     local key = ambientKey(target.entity_id)
-    if actionKey == 'hold_position' then
+    -- Approaching ends as a hold: the ped walks over, then stands with the partner.
+    if actionKey == 'hold_position' or actionKey == 'approach_player' then
         local playerId = params and params.player_id
         if type(playerId) ~= 'number' or playerId % 1 ~= 0 or playerId < 1
             or not GetPlayerName(playerId) then return false, 'invalid_action_player' end
@@ -177,9 +178,12 @@ function HumalikeApplyAmbientMovementAction(target, lease, entity, actionKey, pa
             lease_token = lease.lease_token,
             entity_handle = entity,
         }
-        Entity(entity).state:set('humalike_action', nil, true)
+        if actionKey == 'hold_position' then
+            Entity(entity).state:set('humalike_action', nil, true)
+        end
         broadcastControl(key, controls[key])
-        HumalikeDebug('ambient ped %s held by voice action from source %s', key, playerId)
+        HumalikeDebug('ambient ped %s held by voice action %s from source %s', key, actionKey,
+            playerId)
         return true
     end
 

@@ -105,6 +105,8 @@ client_scripts {
     'npc/client/actions/leave.lua',
     'npc/client/actions/walk_away.lua',
     'npc/client/actions/run_away.lua',
+    'npc/client/actions/approach_player.lua',
+    'npc/client/actions/sit_down.lua',
     'npc/client/actions/hold_position.lua',
     'npc/client/actions/release_movement.lua',
     'npc/client/actions/hand_over_money.lua',

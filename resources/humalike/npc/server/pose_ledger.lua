@@ -5,7 +5,7 @@ local MAX_TRACKED_POSES = 512
 local poseTargets = {}
 local aloneSince = {}
 
-local POSES = { kneel = true, hands_up = true, start_dancing = true }
+local POSES = { kneel = true, hands_up = true, start_dancing = true, sit_down = true }
 local CLEARS = {
     stand_up = true,
     interrupt_animation = true,
@@ -17,6 +17,7 @@ local CLEARS = {
     exit_vehicle = true,
     walk_away = true,
     run_away = true,
+    approach_player = true,
 }
 local REPLAY_INTERVAL_MS = 1500
 local REPLAY_MAX_ATTEMPTS = 10

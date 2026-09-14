@@ -156,6 +156,8 @@ Config.SupportedActions = {
     'exit_vehicle',
     'walk_away',
     'run_away',
+    'approach_player',
+    'sit_down',
 }
 Config.ActionSustainTickMs = 250
 Config.PoseAbandonMs = tonumber(GetConvar('humalike_npc_pose_abandon_ms', '120000')) or 120000
@@ -196,6 +198,20 @@ Config.WalkAway = {
     ArriveRange = 3.0,
     TimeoutMs = 60000,
     TargetRadius = 25.0,
+}
+Config.Approach = {
+    MaxDistance = 30.0,
+    StopRange = 1.5,
+    ArriveSlack = 0.75,
+    JogDistance = 10.0, -- further than this and the ped jogs over
+    TimeoutMs = 30000,
+    FaceMs = 2000,
+}
+Config.SitDown = {
+    BenchRadius = 8.0,
+    BenchScenarioRange = 3.0,
+    BenchSettleMs = 12000, -- walk to the bench and sit, or fall back to the ground
+    GroundSettleMs = 4000,
 }
 Config.RunAway = {
     Distance = 60.0,
