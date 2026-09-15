@@ -290,7 +290,9 @@ CreateThread(function()
                             ClearPedTasks(ped)
                             initializedHoldByPed[ped] = key
                         end
-                        if not faceController(ped, control) then
+                        -- A seated driver brakes instead of standing still.
+                        local braked = HumalikeNpcDriving ~= nil and HumalikeNpcDriving.Brake(ped)
+                        if not braked and not faceController(ped, control) then
                             TaskStandStill(ped, Config.AmbientControl.StandTaskDurationMs)
                         end
                     end

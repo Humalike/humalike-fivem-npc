@@ -34,10 +34,24 @@ local releaseOk = true
 local noCredentials = false
 local trace = {}
 local playerCoords = { x = 0, y = 0, z = 0 }
+local vehicles = {}
+local nextVehicle = 500
+local warps = {}
+local failVehicle = false
+local failPed = false
+local playerSeated = false
+local capabilityOk = true
+local credentials = true
 source = 7
 
 function RegisterNetEvent() end
-function AddEventHandler(name, handler) handlers[name] = handler end
+function AddEventHandler(name, handler)
+    handlers[name] = handlers[name] or {}
+    handlers[name][#handlers[name] + 1] = handler
+end
+local function fire(name, ...)
+    for _, handler in ipairs(handlers[name] or {}) do handler(...) end
+end
 function CreateThread(callback)
     if not loaded then
         threads[#threads + 1] = callback
@@ -60,8 +74,14 @@ function GetEntityCoords(entity)
         or { x = 0, y = 0, z = 0 }
 end
 function GetEntityHeading(entity) return created[entity] and created[entity].heading or 0 end
-function GetHashKey(model) return model == 'a_m_m_business_01' and -123 or 456 end
+function GetHashKey(model)
+    if model == 'a_m_m_business_01' then return -123 end
+    if model == 'schafter2' then return -777 end
+    if model == 'hexer' then return 888 end
+    return 456
+end
 function CreatePed(_, hash, x, y, z, heading)
+    if failPed then return 0 end
     nextPed = nextPed + 1
     created[nextPed] = { hash = hash, x = x, y = y, z = z, heading = heading }
     existing[nextPed] = true
@@ -71,16 +91,28 @@ function DeleteEntity(entity)
     deleted[#deleted + 1] = entity
     existing[entity] = nil
 end
-function SetEntityRoutingBucket(entity, bucket) created[entity].bucket = bucket end
-function SetEntityOrphanMode(entity, mode) created[entity].orphan = mode end
+function CreateVehicleServerSetter(hash, spawnType, x, y, z, heading)
+    if failVehicle then return 0 end
+    nextVehicle = nextVehicle + 1
+    vehicles[nextVehicle] = { hash = hash, spawn_type = spawnType, x = x, y = y, z = z, heading = heading }
+    existing[nextVehicle] = true
+    trace[#trace + 1] = { nextVehicle, 'vehicle' }
+    return nextVehicle
+end
+function TaskWarpPedIntoVehicle(ped, vehicle, seat) warps[#warps + 1] = { ped, vehicle, seat } end
+function GetPedInVehicleSeat(_, seat) return (playerSeated and seat == 0) and 700 or 0 end
+function IsPedAPlayer(ped) return ped == 700 end
+function SetEntityRoutingBucket(entity, bucket) (created[entity] or vehicles[entity]).bucket = bucket end
+function SetEntityOrphanMode(entity, mode) (created[entity] or vehicles[entity]).orphan = mode end
 function NetworkGetNetworkIdFromEntity(entity)
     trace[#trace + 1] = { entity, 'netid' }
-    if not created[entity] then return 0 end
-    if not created[entity].network_id then
+    local row = created[entity] or vehicles[entity]
+    if not row then return 0 end
+    if not row.network_id then
         nextNetworkId = nextNetworkId + 1
-        created[entity].network_id = nextNetworkId
+        row.network_id = nextNetworkId
     end
-    return created[entity].network_id
+    return row.network_id
 end
 function GetEntityModel(entity) return created[entity].hash end
 function GetCurrentResourceName() return 'humalike' end
@@ -94,18 +126,24 @@ function Entity(entity)
         end,
     }, { __index = entityState[entity] }) }
 end
-function TriggerClientEvent(name, playerId, requestId, candidates)
+function TriggerClientEvent(name, playerId, requestId, candidates, mode)
     clientEvents[#clientEvents + 1] = { name = name, player_id = playerId,
-        arg = requestId, candidates = candidates }
+        arg = requestId, candidates = candidates, mode = mode }
     if name == 'humalike:npc:populationSpawnPoint' and reply then
         source = replySource
-        handlers['humalike:npc:populationSpawnPointResult'](requestId, replyPoint)
+        fire('humalike:npc:populationSpawnPointResult', requestId, replyPoint)
         source = 7
     end
 end
 function HumalikeAmbientControlHeld() return held end
 function HumalikeWoundedStateOf() return wounded end
 function HumalikeFindAmbientLease() return lease end
+function TriggerEvent() end
+function SyncNpcRoster() end
+function GetSupportedActions() return { 'wave' } end
+function RegisterCommand() end
+function print() end
+HumaLike = { RuntimeCredentials = function() return credentials end }
 
 HumalikeHttp = {
     PostAction = function(name, payload, callback)
@@ -128,6 +166,8 @@ HumalikeHttp = {
             else
                 callback(false, 500, nil)
             end
+        elseif name == 'report_capabilities' then
+            callback(capabilityOk, capabilityOk and 200 or 500)
         end
     end,
 }
@@ -135,6 +175,7 @@ HumalikeHttp = {
 dofile('server/population.lua')
 loaded = true
 assert(#threads == 1)
+dofile('server/main.lua')
 
 local function actionsNamed(name)
     local rows = {}
@@ -155,12 +196,50 @@ local function bodyIds()
     return ids
 end
 
-handlers['humalike:core:ready']()
+capabilityOk = false
+fire('humalike:core:ready')
 local bootReport = lastAction('report_npc_bodies')
 assert(bootReport and bootReport.payload.revision == 0, 'the boot report carries revision 0')
 assert(#bootReport.payload.spawned == 0 and #bootReport.payload.failed == 0,
     'and tells the edge this runtime holds nothing')
-assert(#actions == 1)
+assert(#actions == 2)
+local capability = lastAction('report_capabilities')
+assert(capability.payload.supported_actions[1] == 'wave')
+assert(#capability.payload.features == 1 and capability.payload.features[1] == 'npc_vehicles',
+    'npc_vehicles is reported while humalike_npc_vehicles is on (the default)')
+-- A failed FIRST report is retried with the report backoff; a delivered one
+-- is not repeated; a convar flip after success re-posts.
+local capabilityCount = #actionsNamed('report_capabilities')
+HumalikeNpcPopulation.Reconcile()
+assert(#actionsNamed('report_capabilities') == capabilityCount, 'no retry before the backoff')
+now = now + 600
+HumalikeNpcPopulation.Reconcile()
+assert(#actionsNamed('report_capabilities') == capabilityCount + 1,
+    'the failed first report is retried after RetryBackoffMs')
+now = now + 600
+HumalikeNpcPopulation.Reconcile()
+assert(#actionsNamed('report_capabilities') == capabilityCount + 1, 'the second retry waits twice as long')
+now = now + 600
+capabilityOk = true
+HumalikeNpcPopulation.Reconcile()
+assert(#actionsNamed('report_capabilities') == capabilityCount + 2)
+HumalikeNpcPopulation.Reconcile()
+assert(#actionsNamed('report_capabilities') == capabilityCount + 2, 'delivered: no more posts')
+convars.humalike_npc_vehicles = 'false'
+HumalikeNpcPopulation.Reconcile()
+assert(#actionsNamed('report_capabilities') == capabilityCount + 3, 'a flip after success re-posts')
+assert(#lastAction('report_capabilities').payload.features == 0)
+assert(HumalikeNpcPopulation.Vehicles() == false)
+convars.humalike_npc_vehicles = nil
+credentials = false
+HumalikeNpcPopulation.Reconcile()
+assert(#actionsNamed('report_capabilities') == capabilityCount + 3, 'no re-post without credentials')
+credentials = true
+HumalikeNpcPopulation.Reconcile()
+assert(#actionsNamed('report_capabilities') == capabilityCount + 4)
+assert(lastAction('report_capabilities').payload.features[1] == 'npc_vehicles')
+assert(HumalikeNpcPopulation.Vehicles() == true)
+assert(#actionsNamed('report_npc_bodies') == 1, 'the capability retries post no body report')
 
 local npcId = '12345678-1234-1234-1234-123456789abc'
 local function planned(bodyId, anchor)
@@ -184,6 +263,7 @@ assert(HumalikeNpcPopulation.Enabled() == true)
 assert(clientEvents[2].name == 'humalike:npc:populationSpawnPoint')
 assert(clientEvents[2].player_id == 7)
 assert(#clientEvents[2].candidates == 2)
+assert(clientEvents[2].mode == 'foot', 'a body on foot asks for pavement')
 assert(created[101].x == 20 and created[101].y == 5 and created[101].z == 30)
 assert(created[101].heading == 45)
 assert(created[101].hash == -123)
@@ -362,12 +442,12 @@ assert(HumalikeNpcPopulation.ApplyPlan({ revision = 13, enabled = true,
     wanted = { planned('body-8', 7) }, released = {} }))
 resourceStopped = true
 actionCount = #deleted
-handlers['humalike:core:stopping']()
+fire('humalike:core:stopping')
 assert(deleted[#deleted] == 108 and #deleted == actionCount + 1,
     'the entity is deleted before the best-effort release')
 assert(lastAction('release_npc_body').payload.body_id == 'body-8')
 assert(lastAction('release_npc_body').payload.cause == 'resource_stop')
-handlers['onResourceStop']('humalike')
+fire('onResourceStop', 'humalike')
 assert(#deleted == actionCount + 1, 'nothing is left for onResourceStop')
 assert(bodyIds()['body-8'].status == 'released' and bodyIds()['body-8'].handle == nil,
     'an unanswered stop release keeps only a ped-less record')
@@ -844,12 +924,181 @@ local stopPeds = { bodyIds()['body-40'].handle, bodyIds()['body-41'].handle }
 assert(stopPeds[1] and stopPeds[2])
 noCredentials = true
 deletedCount = #deleted
-handlers['humalike:core:stopping']()
+fire('humalike:core:stopping')
 assert(#deleted == deletedCount + 2, 'both peds are deleted even though the release cannot be posted')
 assert(existing[stopPeds[1]] == nil and existing[stopPeds[2]] == nil)
 assert(bodyIds()['body-40'] == nil and bodyIds()['body-41'] == nil, 'the records are dropped at once')
-handlers['onResourceStop']('humalike')
+fire('onResourceStop', 'humalike')
 assert(#deleted == deletedCount + 2)
 noCredentials = false
 
-print('server_population: ok')
+-- Drivers: a persona body with a vehicle spawns the vehicle first, at a road
+-- node, then the ped seated in it.
+local function driver(bodyId, fields)
+    local body = planned(bodyId, 7)
+    body.behaviour = 'drive'
+    body.vehicle = { model = 'schafter2', model_hash = 4294966519, spawn_type = 'automobile' }
+    for key, value in pairs(fields or {}) do body[key] = value end
+    return body
+end
+local function spawnRequests()
+    local rows = {}
+    for _, event in ipairs(clientEvents) do
+        if event.name == 'humalike:npc:populationSpawnPoint' then rows[#rows + 1] = event end
+    end
+    return rows
+end
+lease = nil
+assert(HumalikeNpcPopulation.ApplyPlan({ revision = 50, enabled = true,
+    wanted = { driver('drv-1') }, released = {} }))
+local request = spawnRequests()[#spawnRequests()]
+assert(request.mode == 'vehicle' and request.arg:match('^drv%-1:'), 'a driver asks for a road node')
+local drv1 = bodyIds()['drv-1']
+assert(drv1.status == 'bound' and drv1.behaviour == 'drive' and drv1.vehicle == 501)
+local car = vehicles[501]
+assert(car.hash == -777 and car.spawn_type == 'automobile')
+assert(car.x == 20 and car.y == 5 and car.z == 30 and car.heading == 45, 'the vehicle takes the resolved point')
+assert(car.bucket == 2 and car.orphan == 2)
+assert(entityState[501].humalike_npc_kind == 'population_vehicle')
+assert(entityState[501].humalike_body_id == 'drv-1')
+assert(created[drv1.handle].x == 20 and created[drv1.handle].hash == -123, 'the ped is created at the vehicle')
+assert(traceIndex(501, 'netid') < traceIndex(drv1.handle, 'set:humalike_npc_kind'),
+    'the vehicle has its network id before the ped exists')
+assert(entityState[drv1.handle].humalike_body_behaviour == 'drive')
+assert(entityState[drv1.handle].humalike_vehicle_net == car.network_id, 'the ped names its vehicle')
+assert(#warps == 1 and warps[1][1] == drv1.handle and warps[1][2] == 501 and warps[1][3] == -1,
+    'the ped is warped into the driver seat')
+assert(traceIndex(drv1.handle, 'set:humalike_vehicle_net') < traceIndex(drv1.handle, 'netid'))
+bindAction = lastAction('bind_npc_body')
+assert(bindAction.payload.body_id == 'drv-1' and bindAction.payload.entity_id == drv1.network_id)
+assert(HumalikeNpcPopulation.Drivers() == 1)
+assert(lastAction('report_npc_bodies').payload.spawned[1] == 'drv-1')
+
+-- Any failure deletes both. A vehicle that never comes: no ped; a ped that
+-- never comes: the vehicle goes; a refused bind: both go.
+failVehicle = true
+local pedCount, vehicleCount = nextPed, nextVehicle
+assert(HumalikeNpcPopulation.ApplyPlan({ revision = 51, enabled = true,
+    wanted = { driver('drv-1'), driver('drv-2') }, released = {} }))
+assert(nextPed == pedCount and nextVehicle == vehicleCount, 'no vehicle: no ped')
+assert(bodyIds()['drv-2'] == nil and lastAction('release_npc_body').payload.body_id == 'drv-2')
+assert(lastAction('release_npc_body').payload.cause == 'spawn_failed')
+assert(lastAction('report_npc_bodies').payload.failed[1] == 'drv-2')
+failVehicle = false
+failPed = true
+deletedCount = #deleted
+assert(HumalikeNpcPopulation.ApplyPlan({ revision = 52, enabled = true,
+    wanted = { driver('drv-1'), driver('drv-3') }, released = {} }))
+assert(nextVehicle == vehicleCount + 1 and nextPed == pedCount, 'the vehicle came, the ped did not')
+assert(#deleted == deletedCount + 1 and deleted[#deleted] == vehicleCount + 1, 'so the vehicle is deleted')
+assert(existing[vehicleCount + 1] == nil and bodyIds()['drv-3'] == nil)
+assert(lastAction('release_npc_body').payload.body_id == 'drv-3')
+assert(lastAction('release_npc_body').payload.cause == 'spawn_failed')
+failPed = false
+bindResponse = { status = 'unavailable', reason = 'server_capacity_reached' }
+deletedCount = #deleted
+assert(HumalikeNpcPopulation.ApplyPlan({ revision = 53, enabled = true,
+    wanted = { driver('drv-1'), driver('drv-4') }, released = {} }))
+assert(#deleted == deletedCount + 2, 'a refused bind deletes the ped and the vehicle')
+assert(existing[nextPed] == nil and existing[nextVehicle] == nil)
+assert(bodyIds()['drv-4'] == nil and lastAction('release_npc_body').payload.body_id == 'drv-4')
+bindResponse = { status = 'bound' }
+
+-- A release deletes the vehicle with the ped unless a player sits inside;
+-- then the reconcile tick retries until the player leaves.
+deletedCount = #deleted
+assert(HumalikeNpcPopulation.ApplyPlan({ revision = 54, enabled = true,
+    wanted = {}, released = { 'drv-1' } }))
+assert(#deleted == deletedCount + 2 and existing[501] == nil and existing[drv1.handle] == nil,
+    'the ped and its vehicle go together')
+assert(lastAction('release_npc_body').payload.body_id == 'drv-1')
+assert(lastAction('release_npc_body').payload.cause == 'despawned')
+assert(HumalikeNpcPopulation.Drivers() == 0)
+assert(HumalikeNpcPopulation.ApplyPlan({ revision = 55, enabled = true,
+    wanted = { driver('drv-5') }, released = {} }))
+local drv5 = bodyIds()['drv-5']
+assert(drv5.status == 'bound' and existing[drv5.vehicle])
+playerSeated = true
+deletedCount = #deleted
+assert(HumalikeNpcPopulation.ApplyPlan({ revision = 56, enabled = true,
+    wanted = {}, released = { 'drv-5' } }))
+assert(#deleted == deletedCount + 1 and deleted[#deleted] == drv5.handle, 'only the ped is deleted')
+assert(existing[drv5.vehicle] == true and bodyIds()['drv-5'] == nil, 'the vehicle stays; the record is gone')
+HumalikeNpcPopulation.Reconcile()
+assert(existing[drv5.vehicle] == true, 'still occupied: kept')
+playerSeated = false
+HumalikeNpcPopulation.Reconcile()
+assert(existing[drv5.vehicle] == nil and deleted[#deleted] == drv5.vehicle,
+    'the player left: the reconcile tick deletes the vehicle')
+HumalikeNpcPopulation.Reconcile()
+
+-- The vehicle bag is the only claim: a recycled handle is left alone.
+assert(HumalikeNpcPopulation.ApplyPlan({ revision = 57, enabled = true,
+    wanted = { driver('drv-6') }, released = {} }))
+local drv6 = bodyIds()['drv-6']
+entityState[drv6.vehicle].humalike_body_id = 'someone-else'
+deletedCount = #deleted
+assert(HumalikeNpcPopulation.ApplyPlan({ revision = 58, enabled = true,
+    wanted = {}, released = { 'drv-6' } }))
+assert(#deleted == deletedCount + 1 and deleted[#deleted] == drv6.handle, 'the stranger keeps its vehicle')
+existing[drv6.vehicle] = nil
+
+-- Validation: vehicle iff drive, extras never drive, the hash must match the
+-- model, the spawn type is automobile or bike; with the convar off every
+-- drive body is rejected and reported failed.
+local walkerWithCar = planned('bad-walker', 7)
+walkerWithCar.vehicle = { model = 'schafter2', model_hash = 4294966519, spawn_type = 'automobile' }
+local badHash = driver('bad-hash')
+badHash.vehicle.model_hash = 1
+local badType = driver('bad-type')
+badType.vehicle.spawn_type = 'boat'
+local badModel = driver('bad-model')
+badModel.vehicle.model = ''
+local noVehicle = driver('bad-no-vehicle')
+noVehicle.vehicle = nil
+local drivingExtra = driver('bad-extra', { kind = 'extra' })
+drivingExtra.npc_id = nil
+local bike = driver('drv-bike')
+bike.vehicle = { model = 'hexer', model_hash = 888, spawn_type = 'bike' }
+assert(HumalikeNpcPopulation.ApplyPlan({ revision = 59, enabled = true, wanted = {
+    noVehicle, drivingExtra, walkerWithCar, badHash, badType, badModel, bike,
+}, released = {} }))
+rows = bodyIds()
+for _, bodyId in ipairs({ 'bad-no-vehicle', 'bad-extra', 'bad-walker', 'bad-hash', 'bad-type', 'bad-model' }) do
+    assert(rows[bodyId] == nil, bodyId .. ' must be rejected')
+end
+assert(rows['drv-bike'].status == 'bound' and vehicles[rows['drv-bike'].vehicle].spawn_type == 'bike')
+assert(vehicles[rows['drv-bike'].vehicle].hash == 888)
+report = lastAction('report_npc_bodies')
+assert(#report.payload.failed == 6, 'every rejected body is reported failed')
+convars.humalike_npc_vehicles = 'false'
+pedCount, vehicleCount = nextPed, nextVehicle
+assert(HumalikeNpcPopulation.ApplyPlan({ revision = 60, enabled = true,
+    wanted = { bike, driver('drv-off'), planned('walker-on', 7) }, released = {} }))
+rows = bodyIds()
+assert(rows['drv-off'] == nil and nextVehicle == vehicleCount, 'convar off: a stale drive plan spawns nothing')
+assert(rows['walker-on'].status == 'bound', 'bodies on foot are unaffected')
+assert(rows['drv-bike'].status == 'bound', 'a driver already on the road is left to the plan')
+report = lastAction('report_npc_bodies')
+assert(#report.payload.failed == 1 and report.payload.failed[1] == 'drv-off')
+convars.humalike_npc_vehicles = nil
+
+-- A resource stop takes every vehicle, a seated player or not.
+assert(HumalikeNpcPopulation.ApplyPlan({ revision = 61, enabled = true,
+    wanted = { bike, driver('drv-7') }, released = {} }))
+local drv7 = bodyIds()['drv-7']
+playerSeated = true
+deletedCount = #deleted
+assert(HumalikeNpcPopulation.ApplyPlan({ revision = 62, enabled = true,
+    wanted = { bike }, released = { 'drv-7' } }))
+assert(existing[drv7.vehicle] == true, 'stranded with the player inside')
+noCredentials = true
+fire('humalike:core:stopping')
+assert(existing[drv7.vehicle] == nil, 'the stranded vehicle is deleted on stop')
+assert(existing[rows['drv-bike'].vehicle] == nil and existing[rows['drv-bike'].handle] == nil,
+    'so are a live driver and its bike')
+fire('onResourceStop', 'humalike')
+playerSeated = false
+noCredentials = false
+
+io.write('server_population: ok\n')

@@ -120,6 +120,7 @@ client_scripts {
     'npc/client/world.lua',
     'npc/client/ambient_control.lua',
     'npc/client/ambient.lua',
+    'npc/client/driving.lua',
     'npc/client/population.lua',
     'npc/client/developer_tools.lua',
     'npc/client/runtime_control.lua',

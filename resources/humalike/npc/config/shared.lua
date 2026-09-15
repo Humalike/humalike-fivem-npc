@@ -52,6 +52,12 @@ Config.Population = {
     GtaPopulationTypes = { [4] = true, [5] = true },
     CopPedTypes = { [6] = true, [27] = true }, -- GetPedType cop, swat
 }
+Config.Vehicles = {
+    DriveSpeed = 12.0, -- m/s for cruising
+    DriveStyle = 786603, -- driving style flags: normal, obey traffic
+    EnterTimeoutMs = 15000, -- the enter-vehicle task timeout; also the gap between attempts
+    BrakeAction = 27, -- TaskVehicleTempAction: brake
+}
 Config.Shove = {
     TickMs = 100,
     MinSpeed = 0.5,
@@ -78,6 +84,17 @@ Config.Combat = {
 }
 function HumalikeUnsignedHash(value)
     return value < 0 and value + 4294967296 or value
+end
+function HumalikeValidId(value)
+    return type(value) == 'string' and value ~= '' and #value <= 64
+end
+-- Seats -1..7 cover every stock vehicle; both natives exist on client and server.
+function HumalikePlayerInVehicle(vehicle)
+    for seat = -1, 7 do
+        local occupant = GetPedInVehicleSeat(vehicle, seat)
+        if occupant and occupant > 0 and IsPedAPlayer(occupant) then return true end
+    end
+    return false
 end
 function HumalikeValidCoordinate(value)
     return type(value) == 'number' and value == value and math.abs(value) <= 10000

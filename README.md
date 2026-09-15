@@ -89,6 +89,10 @@ setr humalike_debug 1
 While HumaLike owns the street population, GTA's random police stay off unless
 `set humalike_population_cops true` is set; the convar is read every few seconds.
 
+Some persona NPCs spawn at the wheel of a car or motorbike and drive around like
+traffic; a player who talks to one makes it pull over. `set humalike_npc_vehicles
+false` keeps everyone on foot (read every few seconds).
+
 ## Development
 
 ```sh

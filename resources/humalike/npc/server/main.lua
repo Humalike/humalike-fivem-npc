@@ -1,12 +1,19 @@
 
-local function reportCapabilities()
-    HumalikeHttp.PostAction('report_capabilities', { supported_actions = GetSupportedActions() },
-        function(ok, status)
-            if not ok then
-                print(('[humalike-npc] report_capabilities failed (HTTP %s)'):format(tostring(status)))
-            end
-        end)
+function HumalikeNpcReportCapabilities()
+    local population = HumalikeNpcPopulation
+    local features = population and population.Features() or nil
+    if population then population.CapabilitiesPosted() end
+    HumalikeHttp.PostAction('report_capabilities', {
+        supported_actions = GetSupportedActions(),
+        features = features,
+    }, function(ok, status)
+        if population then population.CapabilitiesReported(features, ok) end
+        if not ok then
+            print(('[humalike-npc] report_capabilities failed (HTTP %s)'):format(tostring(status)))
+        end
+    end)
 end
+local reportCapabilities = HumalikeNpcReportCapabilities
 
 local pendingReadyGeneration
 
