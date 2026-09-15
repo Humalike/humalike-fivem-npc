@@ -38,7 +38,21 @@ function GetSelectedPedWeapon() return selectedWeapon end
 local playerBucket = 0
 function GetPlayerRoutingBucket() return playerBucket end
 function GetEntityHealth() return entityHealth end
-function GetEntityCoords(entity) return coords[entity] or { x = 0, y = 0, z = 0 } end
+-- Server-side GetEntityCoords returns a vector3 userdata, never a Lua table;
+-- model it with a non-table value so reach checks cannot rely on type()=='table'.
+local vectorMeta = { __index = function(self, key) return rawget(self, '_' .. key) end }
+local function vec3(c)
+    local v = setmetatable({}, vectorMeta)
+    rawset(v, '_x', c.x); rawset(v, '_y', c.y); rawset(v, '_z', c.z)
+    return v
+end
+-- and make type() report it the way FiveM does for vector3 values.
+local rawType = type
+type = function(value)
+    if getmetatable(value) == vectorMeta then return 'vector3' end
+    return rawType(value)
+end
+function GetEntityCoords(entity) return vec3(coords[entity] or { x = 0, y = 0, z = 0 }) end
 function DoesEntityExist(entity) return existing[entity] == true end
 function GetEntityRoutingBucket(entity) return buckets[entity] or 0 end
 function GetGameTimer() return gameTimer end

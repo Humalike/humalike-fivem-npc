@@ -59,7 +59,10 @@ local function withinReach(playerId, entity, fallback, maxDistance)
     local bucket = entity and GetEntityRoutingBucket(entity) or 0
     if bucket ~= GetPlayerRoutingBucket(playerId) then return false end
     local target = entity and GetEntityCoords(entity) or fallback
-    if type(target) ~= 'table' or type(target.x) ~= 'number' then return false end
+    -- GetEntityCoords returns a vector3 on the server (type 'vector3', not
+    -- 'table'); only the definition fallback is a plain table. Check the
+    -- fields, not the container, or every leased body is "out of reach".
+    if target == nil or type(target.x) ~= 'number' then return false end
     return HumalikeDistanceSquared(GetEntityCoords(playerPed), target) <= maxDistance * maxDistance
 end
 
