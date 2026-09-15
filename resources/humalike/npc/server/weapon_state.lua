@@ -329,8 +329,15 @@ AddEventHandler('humalike:npc:npcRevived', function(playerId, npcId, entityId, l
         return
     end
     if entityId == nil then
-        if not (NpcRegistry and NpcRegistry[npcId]) then return end
-        reportedDeaths[rosterDeathKey(npcId)] = nil
+        -- Mirror the roster death path: a dynamic definition, the server-owned
+        -- ped in the player's bucket, and a death that was actually reported.
+        local definition = NpcRegistry and NpcRegistry[npcId] or nil
+        if not definition or definition.type == 'static' then return end
+        local entity = staticEntity(npcId)
+        local key = rosterDeathKey(npcId)
+        if not entity or GetEntityRoutingBucket(entity) ~= GetPlayerRoutingBucket(playerId)
+            or not reportedDeaths[key] then return end
+        reportedDeaths[key] = nil
         post({
             fivem_session_id = playerId,
             source_event_id = HumalikeHttp.NextSourceEventId(playerId),
