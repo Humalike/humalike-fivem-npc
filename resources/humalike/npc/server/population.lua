@@ -231,6 +231,7 @@ local function spawnFailed(record)
     noteFailed(record.body_id)
     reportDirty = true
     if bodies[record.body_id] == record then retire(record, 'spawn_failed') end
+    if record.scene_id and HumalikeNpcScenes then HumalikeNpcScenes.BodyFailed(record) end
 end
 
 function HumalikeNpcPopulation.Despawn(bodyId, cause)

@@ -290,7 +290,10 @@ CreateThread(function()
                             ClearPedTasks(ped)
                             initializedHoldByPed[ped] = key
                         end
-                        if not faceController(ped, control) then
+                        -- A seated scene driver brakes instead of standing still.
+                        local braked = HumalikeNpcScenesClient ~= nil
+                            and HumalikeNpcScenesClient.Brake(ped)
+                        if not braked and not faceController(ped, control) then
                             TaskStandStill(ped, Config.AmbientControl.StandTaskDurationMs)
                         end
                     end

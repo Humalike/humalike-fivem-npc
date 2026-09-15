@@ -183,6 +183,14 @@ assert(taskClears == 2 and standCalls == 4)
 actionControlled = false
 runHoldIteration()
 assert(taskClears == 2 and standCalls == 5)
+local braked = {}
+HumalikeNpcScenesClient = { Brake = function(ped) braked[#braked + 1] = ped return ped == 42 end }
+runHoldIteration()
+assert(#braked == 1 and braked[1] == 42 and standCalls == 5, 'a braking scene driver is not stood still')
+HumalikeNpcScenesClient.Brake = function() return false end
+runHoldIteration()
+assert(standCalls == 6, 'anyone else stands as before')
+HumalikeNpcScenesClient = nil
 
 dead = false
 handlers['humalike:npc:ambientControlChanged']('42', nil)

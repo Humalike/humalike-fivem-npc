@@ -26,6 +26,11 @@ local vehicleCount = 0
 local warps = {}
 local playerSeated = false
 local credentials = true
+local suspended = {}
+local pauseWaits = false
+local stallNetIds = false
+local bindFailFor = {}
+local capabilityOk = true
 source = 7
 
 function RegisterNetEvent() end
@@ -33,10 +38,31 @@ function AddEventHandler(name, handler) handlers[name] = handlers[name] or {}; h
 local function fire(name, ...)
     for _, handler in ipairs(handlers[name] or {}) do handler(...) end
 end
+-- Threads are coroutines: with pauseWaits set, a build parks at its next Wait
+-- so a plan can land mid-build; resumeAll() lets it go on.
 function CreateThread(callback)
-    if #threads < 1 then threads[#threads + 1] = callback else callback() end
+    if #threads < 1 then
+        threads[#threads + 1] = callback
+        return
+    end
+    local thread = coroutine.create(callback)
+    local ok, err = coroutine.resume(thread)
+    assert(ok, err)
+    if coroutine.status(thread) == 'suspended' then suspended[#suspended + 1] = thread end
 end
-function Wait(ms) now = now + math.max(ms, 50) end
+function Wait(ms)
+    now = now + math.max(ms, 50)
+    if pauseWaits then coroutine.yield() end
+end
+local function resumeAll()
+    local pending = suspended
+    suspended = {}
+    for _, thread in ipairs(pending) do
+        local ok, err = coroutine.resume(thread)
+        assert(ok, err)
+        if coroutine.status(thread) == 'suspended' then suspended[#suspended + 1] = thread end
+    end
+end
 function GetGameTimer() return now end
 function GetPlayers() return { '7' } end
 function GetPlayerName(playerId) return playerId == 7 and 'Tester' or nil end
@@ -84,7 +110,7 @@ function SetEntityRoutingBucket(entity, bucket) (created[entity] or vehicles[ent
 function SetEntityOrphanMode(entity, mode) (created[entity] or vehicles[entity]).orphan = mode end
 function NetworkGetNetworkIdFromEntity(entity)
     local row = created[entity] or vehicles[entity]
-    if not row then return 0 end
+    if not row or (stallNetIds and vehicles[entity]) then return 0 end
     if not row.network_id then
         nextNetworkId = nextNetworkId + 1
         row.network_id = nextNetworkId
@@ -126,13 +152,17 @@ HumalikeHttp = {
         actions[#actions + 1] = { name = name, payload = payload }
         if not callback then return end
         if name == 'bind_npc_body' then
-            callback(true, 200, { status = 'bound' })
+            if bindFailFor[payload.body_id] then
+                callback(true, 200, { status = 'unavailable', reason = 'npc_quarantined' })
+            else
+                callback(true, 200, { status = 'bound' })
+            end
         elseif name == 'release_npc_body' then
             callback(true, 200, { released = true })
         elseif name == 'report_npc_bodies' then
             callback(true, 200, { ok = true })
         elseif name == 'report_capabilities' then
-            callback(true, 200)
+            callback(capabilityOk, capabilityOk and 200 or 500)
         end
     end,
 }
@@ -510,6 +540,168 @@ for index = #clientEvents, 1, -1 do
     if clientEvents[index].name == 'humalike:npc:populationState' then lastState = clientEvents[index] break end
 end
 assert(lastState.arg.group_spawns == true, 'the reconcile tick rebroadcasts a flipped flag')
+
+-- A failed re-post after a flip is retried with the report backoff.
+capabilityOk = false
+convars.humalike_group_spawns = 'false'
+capabilityCount = #actionsNamed('report_capabilities')
+HumalikeNpcPopulation.Reconcile()
+assert(#actionsNamed('report_capabilities') == capabilityCount + 1, 'the flip is posted')
+HumalikeNpcPopulation.Reconcile()
+assert(#actionsNamed('report_capabilities') == capabilityCount + 1, 'no retry before the backoff')
+now = now + 600
+HumalikeNpcPopulation.Reconcile()
+assert(#actionsNamed('report_capabilities') == capabilityCount + 2, 'retried after 500 ms')
+now = now + 600
+HumalikeNpcPopulation.Reconcile()
+assert(#actionsNamed('report_capabilities') == capabilityCount + 2, 'the second retry waits 1000 ms')
+now = now + 600
+capabilityOk = true
+HumalikeNpcPopulation.Reconcile()
+assert(#actionsNamed('report_capabilities') == capabilityCount + 3)
+assert(#lastAction('report_capabilities').payload.features == 0)
+HumalikeNpcPopulation.Reconcile()
+assert(#actionsNamed('report_capabilities') == capabilityCount + 3, 'delivered: no more posts')
+convars.humalike_group_spawns = nil
+HumalikeNpcPopulation.Reconcile()
+assert(lastAction('report_capabilities').payload.features[1] == 'group_scenes')
+
+local function releasesSince(count)
+    local rows = {}
+    for index = count + 1, #actionsNamed('release_npc_body') do
+        local action = actionsNamed('release_npc_body')[index]
+        rows[action.payload.body_id] = action.payload.cause
+    end
+    return rows
+end
+
+-- A re-slot that lands while the build waits: the dropped body leaves with its
+-- own cause, the rest spawn with the new roles, nobody is reported failed.
+plan({}, {}, { 'alone' })
+reply = false
+pauseWaits = true
+plan(crew('s-mid', { 'w1', 'w2', 'w3' }), { scene('s-mid', 'walk', { 'w1', 'w2', 'w3' }) })
+assert(#suspended == 1 and HumalikeNpcScenes.Scenes()[1].status == 'spawning')
+local requestId = spawnRequests()[#spawnRequests()].arg
+pedsBefore = pedCount
+releaseCount = #actionsNamed('release_npc_body')
+plan(crew('s-mid', { 'w2', 'w3' }), { scene('s-mid', 'walk', { 'w2', 'w3' }) }, { 'w1' })
+assert(pedCount == pedsBefore and bodyIds().w1.status == 'spawning', 'the plan alone leaves the build waiting')
+fire('humalike:npc:populationSpawnPointResult', requestId, replyPoint)
+pauseWaits = false
+resumeAll()
+assert(#suspended == 0 and pedCount == pedsBefore + 2, 'the two remaining bodies spawn')
+rows = bodyIds()
+assert(rows.w1 == nil and rows.w2.status == 'bound' and rows.w3.status == 'extra')
+assert(releasesSince(releaseCount).w1 == 'despawned', 'the dropped body is retired with its cause')
+assert(releasesSince(releaseCount).w2 == nil and releasesSince(releaseCount).w3 == nil)
+HumalikeNpcPopulation.Reconcile()
+failed = failedIn(lastAction('report_npc_bodies'))
+assert(not failed.w1 and not failed.w2 and not failed.w3, 'a release mid-build fails nobody')
+assert(entityState[rows.w2.handle].humalike_scene.slot == 0)
+assert(entityState[rows.w2.handle].humalike_scene.leader_net == created[rows.w2.handle].network_id)
+assert(entityState[rows.w3.handle].humalike_scene.slot == 1 and near(entityState[rows.w3.handle].humalike_scene.oy, -1.3))
+assert(HumalikeNpcScenes.Scenes()[1].status == 'live' and HumalikeNpcScenes.Scenes()[1].bodies == 2)
+plan({}, {}, { 'w2', 'w3' })
+HumalikeNpcPopulation.Reconcile()
+assert(HumalikeNpcScenes.Count() == 0)
+
+-- The same with a reconcile tick between the release and the build resuming.
+pauseWaits = true
+plan(crew('s-tick', { 'x1', 'x2', 'x3' }), { scene('s-tick', 'walk', { 'x1', 'x2', 'x3' }) })
+requestId = spawnRequests()[#spawnRequests()].arg
+releaseCount = #actionsNamed('release_npc_body')
+plan(crew('s-tick', { 'x2', 'x3' }), { scene('s-tick', 'walk', { 'x2', 'x3' }) }, { 'x1' })
+HumalikeNpcPopulation.Reconcile()
+assert(bodyIds().x1 == nil and releasesSince(releaseCount).x1 == 'despawned', 'the tick retires the released body')
+assert(bodyIds().x2.status == 'spawning' and HumalikeNpcScenes.Count() == 1, 'the build is still on')
+pedsBefore = pedCount
+fire('humalike:npc:populationSpawnPointResult', requestId, replyPoint)
+pauseWaits = false
+resumeAll()
+assert(pedCount == pedsBefore + 2 and bodyIds().x2.status == 'bound' and bodyIds().x3.status == 'extra')
+HumalikeNpcPopulation.Reconcile()
+failed = failedIn(lastAction('report_npc_bodies'))
+assert(not failed.x1 and not failed.x2 and not failed.x3, 'nothing is reported failed')
+assert(releasesSince(releaseCount).x2 == nil and releasesSince(releaseCount).x3 == nil)
+plan({}, {}, { 'x2', 'x3' })
+HumalikeNpcPopulation.Reconcile()
+assert(HumalikeNpcScenes.Count() == 0)
+
+-- A car that lost its driver while building is abandoned as despawned, not failed.
+pauseWaits = true
+plan(crew('s-nodrv', { 'd', 'q1', 'q2' }, { { 'v1', -1 }, { 'v1', 0 }, { 'v1', 1 } }),
+    { scene('s-nodrv', 'car', { 'd', 'q1', 'q2' }, { vehicles = { sedan } }) })
+requestId = spawnRequests()[#spawnRequests()].arg
+releaseCount = #actionsNamed('release_npc_body')
+plan(crew('s-nodrv', { 'q1', 'q2' }, { { 'v1', 0 }, { 'v1', 1 } }),
+    { scene('s-nodrv', 'car', { 'q1', 'q2' }, { vehicles = { sedan } }) }, { 'd' })
+pedsBefore, vehiclesBefore = pedCount, vehicleCount
+fire('humalike:npc:populationSpawnPointResult', requestId, replyPoint)
+pauseWaits = false
+resumeAll()
+assert(pedCount == pedsBefore and vehicleCount == vehiclesBefore, 'no driver: nothing is created')
+local causes = releasesSince(releaseCount)
+assert(causes.d == 'despawned' and causes.q1 == 'despawned' and causes.q2 == 'despawned')
+assert(bodyIds().q1 == nil and bodyIds().q2 == nil)
+HumalikeNpcPopulation.Reconcile()
+failed = failedIn(lastAction('report_npc_bodies'))
+assert(not failed.d and not failed.q1 and not failed.q2, 'a legitimate release is not a failure')
+assert(HumalikeNpcScenes.Count() == 0)
+
+-- Every body released while the build waits: the scene is dropped by the tick.
+pauseWaits = true
+plan(crew('s-all', { 'a1', 'a2', 'a3' }), { scene('s-all', 'corner', { 'a1', 'a2', 'a3' }) })
+requestId = spawnRequests()[#spawnRequests()].arg
+plan({ }, {}, { 'a1', 'a2', 'a3' })
+HumalikeNpcPopulation.Reconcile()
+assert(HumalikeNpcScenes.Count() == 0 and bodyIds().a1 == nil, 'nothing left to build')
+pedsBefore = pedCount
+fire('humalike:npc:populationSpawnPointResult', requestId, replyPoint)
+pauseWaits = false
+resumeAll()
+assert(pedCount == pedsBefore, 'the late build creates nothing')
+reply = true
+
+-- A refused bind fails the whole crew, vehicle included.
+bindFailFor.p1 = true
+releaseCount = #actionsNamed('release_npc_body')
+plan(crew('s-bind', { 'd1', 'p1', 'p2' }, { { 'v1', -1 }, { 'v1', 0 }, { 'v1', 1 } }),
+    { scene('s-bind', 'car', { 'd1', 'p1', 'p2' }, { vehicles = { sedan } }) })
+bindFailFor = {}
+causes = releasesSince(releaseCount)
+assert(causes.d1 == 'spawn_failed' and causes.p1 == 'spawn_failed' and causes.p2 == 'spawn_failed',
+    'the bound driver and the unbound passenger go with the refused one')
+assert(bodyIds().d1 == nil and bodyIds().p1 == nil and bodyIds().p2 == nil)
+assert(existing[nextVehicle] == nil, 'the car is deleted')
+assert(HumalikeNpcScenes.Count() == 0)
+HumalikeNpcPopulation.Reconcile()
+failed = failedIn(lastAction('report_npc_bodies'))
+assert(failed.d1 and failed.p1 and failed.p2)
+
+-- A build that never resumes is torn down after the spawn timeout, vehicles included.
+stallNetIds = true
+pauseWaits = true
+releaseCount = #actionsNamed('release_npc_body')
+plan(crew('s-stuck', { 'k1', 'k2' }, { { 'w1', -1 }, { 'w2', -1 } }),
+    { scene('s-stuck', 'bikes', { 'k1', 'k2' }, { vehicles = { bike('w1'), bike('w2') } }) })
+requestId = spawnRequests()[#spawnRequests()].arg
+fire('humalike:npc:populationSpawnPointResult', requestId, replyPoint)
+resumeAll()
+local stuckBike = nextVehicle
+assert(#suspended == 1 and existing[stuckBike] == true and vehicles[stuckBike].hash == 888,
+    'the build parked waiting for the bike network id')
+now = now + Config.Population.SpawnTimeoutMs + 6000
+HumalikeNpcPopulation.Reconcile()
+assert(existing[stuckBike] == nil, 'the bike is deleted')
+causes = releasesSince(releaseCount)
+assert(causes.k1 == 'spawn_failed' and causes.k2 == 'spawn_failed')
+assert(bodyIds().k1 == nil and bodyIds().k2 == nil and HumalikeNpcScenes.Count() == 0)
+failed = failedIn(lastAction('report_npc_bodies'))
+assert(failed.k1 and failed.k2)
+stallNetIds = false
+pauseWaits = false
+suspended = {}
 
 print = io.write
 print('server_scenes: ok\n')

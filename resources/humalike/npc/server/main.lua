@@ -1,11 +1,11 @@
 
 function HumalikeNpcReportCapabilities()
     local features = HumalikeNpcFeatures and HumalikeNpcFeatures() or nil
-    if features and HumalikeNpcFeaturesReported then HumalikeNpcFeaturesReported(features) end
     HumalikeHttp.PostAction('report_capabilities', {
         supported_actions = GetSupportedActions(),
         features = features,
     }, function(ok, status)
+        if features and HumalikeNpcFeaturesReported then HumalikeNpcFeaturesReported(features, ok) end
         if not ok then
             print(('[humalike-npc] report_capabilities failed (HTTP %s)'):format(tostring(status)))
         end

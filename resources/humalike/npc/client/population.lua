@@ -141,16 +141,6 @@ local function incapacitated(ped)
     return IsEntityDead(ped) or IsPedRagdoll(ped) or IsPedInAnyVehicle(ped, false)
 end
 
-local function sceneOf(state)
-    local scene = state.humalike_scene
-    if type(scene) ~= 'table' or not HumalikeNpcScenesClient then return nil end
-    return scene
-end
-
-local function ambles(state)
-    local scene = sceneOf(state)
-    return scene == nil or HumalikeNpcScenesClient.Ambles(scene)
-end
 
 local function wanderIdle(ped, now)
     if incapacitated(ped) or IsPedUsingAnyScenario(ped) or not IsPedStopped(ped) then
@@ -188,6 +178,18 @@ local function walkRate(state)
     return math.max(0.5, math.min(1.0, rate))
 end
 
+local function sceneOf(state)
+    local scene = state.humalike_scene
+    if type(scene) ~= 'table' or not HumalikeNpcScenesClient then return nil end
+    return scene
+end
+
+-- Runners and riders own their pace; every other body ambles at its walk rate.
+local function ambles(state)
+    local scene = sceneOf(state)
+    return scene == nil or HumalikeNpcScenesClient.Ambles(scene)
+end
+
 -- The wander loop caps the pace only while nothing else drives the ped.
 local function capPace(ped, state)
     paced[ped] = true
@@ -205,7 +207,7 @@ function HumalikeNpcPopulationClient.RestorePace(ped)
     if not DoesEntityExist(ped) then return end
     local state = Entity(ped).state
     local rate = state.humalike_npc_kind == 'population' and walkRate(state) or nil
-    if rate then
+    if rate and ambles(state) then
         paced[ped] = true
         SetPedMaxMoveBlendRatio(ped, rate)
     else
@@ -277,7 +279,7 @@ local function refresh(ped, state, now)
     local scene = sceneOf(state)
     if scene then
         if ambles(state) and not paced[ped] then capPace(ped, state) end
-        if hasMind(state) and IsPedFleeing(ped) then
+        if hasMind(state) and IsPedFleeing(ped) and not HumalikeNpcScenesClient.Incapacitated(ped) then
             ClearPedTasks(ped)
             HumalikeNpcScenesClient.Reapply(ped, scene, state, now)
             return
