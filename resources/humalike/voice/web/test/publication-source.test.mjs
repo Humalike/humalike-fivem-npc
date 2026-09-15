@@ -19,6 +19,8 @@ test("rejects player microphone publications", () => {
 
 test("Ready server ID must be present, valid, and consistent with room", () => {
   assert.equal(readyServerId("server-1", "fivem:server-1"), "server-1");
+  assert.equal(readyServerId("server-1", "fivem:server-1:boot-1:3:abcd"), "server-1");
+  assert.equal(readyServerId("server-1", "fivem:server-10"), null);
   assert.equal(readyServerId(undefined, "fivem:server-1"), null);
   assert.equal(readyServerId("server-2", "fivem:server-1"), null);
   assert.equal(readyServerId("bad:server", "fivem:bad-server"), null);
