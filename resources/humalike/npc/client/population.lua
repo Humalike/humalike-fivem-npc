@@ -5,10 +5,8 @@ local configured = {}
 local dressed = {}
 local paced = {}
 local ownedBodies = {}
-local liveScenes = {}
 local enabled = false
 local copsAllowed = false
-local groupSpawns = false
 local copsDisabled = false
 local lastSweepAt = 0
 local DEFAULT_STAND_SCENARIO = 'WORLD_HUMAN_STAND_IMPATIENT'
@@ -92,20 +90,13 @@ local function applyRandomCops()
     end
 end
 
-function HumalikeNpcPopulationClient.SetState(active, allowCops, allowScenes)
+function HumalikeNpcPopulationClient.SetState(active, allowCops)
     active = active == true
     allowCops = allowCops == true
-    groupSpawns = allowScenes == true
     if active == enabled and allowCops == copsAllowed then return false end
     enabled, copsAllowed = active, allowCops
     applyRandomCops()
     return true
-end
-
-function HumalikeNpcPopulationClient.Status()
-    local count = 0
-    for _ in pairs(liveScenes) do count = count + 1 end
-    return { enabled = enabled, cops_allowed = copsAllowed, group_spawns = groupSpawns, scenes = count }
 end
 
 function HumalikeNpcPopulationClient.DensityTick()
@@ -118,7 +109,7 @@ end
 RegisterNetEvent('humalike:npc:populationState')
 AddEventHandler('humalike:npc:populationState', function(payload)
     if type(payload) ~= 'table' then return end
-    HumalikeNpcPopulationClient.SetState(payload.enabled, payload.cops_allowed, payload.group_spawns)
+    HumalikeNpcPopulationClient.SetState(payload.enabled, payload.cops_allowed)
 end)
 
 CreateThread(function()
@@ -141,23 +132,30 @@ local function incapacitated(ped)
     return IsEntityDead(ped) or IsPedRagdoll(ped) or IsPedInAnyVehicle(ped, false)
 end
 
-
-local function wanderIdle(ped, now)
+local function idleFor(clock, ped, now, threshold)
     if incapacitated(ped) or IsPedUsingAnyScenario(ped) or not IsPedStopped(ped) then
-        stoppedSince[ped] = nil
+        clock[ped] = nil
         return false
     end
-    stoppedSince[ped] = stoppedSince[ped] or now
-    return now - stoppedSince[ped] >= config().WanderIdleMs
+    clock[ped] = clock[ped] or now
+    return now - clock[ped] >= threshold
+end
+
+local function wanderIdle(ped, now)
+    return idleFor(stoppedSince, ped, now, config().WanderIdleMs)
 end
 
 local function scenarioIdle(ped, now)
-    if incapacitated(ped) or IsPedUsingAnyScenario(ped) or not IsPedStopped(ped) then
-        scenarioIdleSince[ped] = nil
-        return false
-    end
-    scenarioIdleSince[ped] = scenarioIdleSince[ped] or now
-    return now - scenarioIdleSince[ped] >= config().ScenarioIdleMs
+    return idleFor(scenarioIdleSince, ped, now, config().ScenarioIdleMs)
+end
+
+-- The scene module shares the stopped clock: idle after `threshold` ms still.
+function HumalikeNpcPopulationClient.Idle(ped, now, threshold)
+    return idleFor(stoppedSince, ped, now, threshold)
+end
+
+function HumalikeNpcPopulationClient.MarkTasked(ped, now)
+    stoppedSince[ped] = now
 end
 
 local function behaviourOf(state)
@@ -200,6 +198,9 @@ end
 function HumalikeNpcPopulationClient.OwnPace(ped)
     if not DoesEntityExist(ped) then return end
     paced[ped] = nil
+    local scene = sceneOf(Entity(ped).state)
+    -- A run leader wanders at a run through its min blend; an action must walk again.
+    if scene and scene.archetype == 'run' and scene.slot == 0 then SetPedMinMoveBlendRatio(ped, 0.0) end
     SetPedMaxMoveBlendRatio(ped, FREE_PACE)
 end
 
@@ -211,8 +212,7 @@ function HumalikeNpcPopulationClient.RestorePace(ped)
         paced[ped] = true
         SetPedMaxMoveBlendRatio(ped, rate)
     else
-        paced[ped] = nil
-        SetPedMaxMoveBlendRatio(ped, FREE_PACE)
+        HumalikeNpcPopulationClient.OwnPace(ped)
     end
 end
 
@@ -368,7 +368,6 @@ end
 function HumalikeNpcPopulationClient.Tick(now, sweep)
     local seen = {}
     local owned = {}
-    local scenesSeen = {}
     local cfg = config()
     local removed = 0
     sweep = sweep and enabled
@@ -381,8 +380,6 @@ function HumalikeNpcPopulationClient.Tick(now, sweep)
             elseif state.humalike_npc_kind == 'population' then
                 seen[ped] = true
                 owned[ped] = ambles(state)
-                local scene = sceneOf(state)
-                if scene and scene.id ~= nil then scenesSeen[scene.id] = true end
                 dress(ped, state)
                 if configured[ped] == (state.humalike_body_id or true) then
                     refresh(ped, state, now)
@@ -403,7 +400,6 @@ function HumalikeNpcPopulationClient.Tick(now, sweep)
     forgetUnseen(paced, seen)
     if HumalikeNpcScenesClient then HumalikeNpcScenesClient.Forget(seen) end
     ownedBodies = owned
-    liveScenes = scenesSeen
     return removed
 end
 

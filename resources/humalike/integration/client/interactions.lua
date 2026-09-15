@@ -184,14 +184,6 @@ if type(RegisterCommand) == 'function' then
             selected,
             status.reason and (' reason=%s'):format(status.reason) or ''
         ))
-        if HumalikeNpcPopulationClient and HumalikeNpcPopulationClient.Status then
-            local population = HumalikeNpcPopulationClient.Status()
-            print(('[humalike] population enabled=%s group_spawns=%s scenes=%d'):format(
-                tostring(population.enabled),
-                tostring(population.group_spawns),
-                population.scenes
-            ))
-        end
     end, false)
 end
 

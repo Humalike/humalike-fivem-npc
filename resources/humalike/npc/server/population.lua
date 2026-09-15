@@ -14,9 +14,12 @@ local lastContactAt = nil
 local requestSequence = 0
 local enabled = false
 local copsAllowed = false
-local groupSpawns = false
+local deliveredFeatures = nil -- key of the last report_capabilities the edge accepted
+local featureFailures = 0
+local featureRetryAt = 0
+local featuresInFlight = false
 local edgeLost = false
-local broadcast = { enabled = false, cops_allowed = false, group_spawns = false }
+local broadcast = { enabled = false, cops_allowed = false }
 
 local function config()
     return Config.Population
@@ -26,18 +29,18 @@ local function copsConvar()
     return GetConvar('humalike_population_cops', 'false') == 'true'
 end
 
+-- `set`, never `setr`: read on the server, every reconcile tick.
 local function groupSpawnsConvar()
-    return HumalikeNpcGroupSpawnsEnabled ~= nil and HumalikeNpcGroupSpawnsEnabled() or false
+    return GetConvar('humalike_group_spawns', 'true') == 'true'
 end
 
 local function statePayload()
-    return { enabled = enabled and not edgeLost, cops_allowed = copsAllowed, group_spawns = groupSpawns }
+    return { enabled = enabled and not edgeLost, cops_allowed = copsAllowed }
 end
 
 local function publishState()
     local payload = statePayload()
-    if payload.enabled == broadcast.enabled and payload.cops_allowed == broadcast.cops_allowed
-        and payload.group_spawns == broadcast.group_spawns then
+    if payload.enabled == broadcast.enabled and payload.cops_allowed == broadcast.cops_allowed then
         return false
     end
     broadcast = payload
@@ -74,10 +77,6 @@ local function validBehaviour(body)
     return true
 end
 
-local function validId(value)
-    return type(value) == 'string' and value ~= '' and #value <= 64
-end
-
 local function validInteger(value, low, high)
     return type(value) == 'number' and value % 1 == 0 and value >= low and value <= high
 end
@@ -88,14 +87,14 @@ local function validSceneFields(body)
     if body.scene_id == nil then
         return body.scene_slot == nil and body.vehicle_id == nil and body.seat == nil
     end
-    if not validId(body.scene_id) or not validInteger(body.scene_slot, 0, 7) then return false end
+    if not HumalikeValidId(body.scene_id) or not validInteger(body.scene_slot, 0, 7) then return false end
     if (body.vehicle_id == nil) ~= (body.seat == nil) then return false end
-    return body.vehicle_id == nil or (validId(body.vehicle_id) and validInteger(body.seat, -1, 7))
+    return body.vehicle_id == nil or (HumalikeValidId(body.vehicle_id) and validInteger(body.seat, -1, 7))
 end
 
 local function validBody(body)
     if type(body) ~= 'table' or not validBehaviour(body) or not validSceneFields(body)
-        or not validId(body.body_id) or type(body.model) ~= 'string' or body.model == ''
+        or not HumalikeValidId(body.body_id) or type(body.model) ~= 'string' or body.model == ''
         or (body.kind ~= nil and body.kind ~= 'persona' and body.kind ~= 'extra')
         or type(body.model_hash) ~= 'number' or type(body.routing_bucket) ~= 'number'
         or body.routing_bucket % 1 ~= 0 or body.routing_bucket < 0
@@ -284,6 +283,18 @@ local function bind(record)
     end)
 end
 
+-- Waits up to 50 frames for the entity's network id; 0 when it never comes.
+function HumalikeNpcPopulation.AwaitNetworkId(entity)
+    local networkId = NetworkGetNetworkIdFromEntity(entity)
+    local attempts = 0
+    while networkId <= 0 and attempts < 50 do
+        Wait(0)
+        attempts = attempts + 1
+        networkId = NetworkGetNetworkIdFromEntity(entity)
+    end
+    return networkId
+end
+
 local function track(wanted)
     local record = {
         body_id = wanted.body_id,
@@ -344,13 +355,7 @@ local function materialise(record, point, placement)
         state:set('humalike_scene_held', false, true)
     end
     if placement.vehicle then TaskWarpPedIntoVehicle(ped, placement.vehicle, placement.seat) end
-    local networkId = NetworkGetNetworkIdFromEntity(ped)
-    local attempts = 0
-    while networkId <= 0 and attempts < 50 do
-        Wait(0)
-        attempts = attempts + 1
-        networkId = NetworkGetNetworkIdFromEntity(ped)
-    end
+    local networkId = HumalikeNpcPopulation.AwaitNetworkId(ped)
     if networkId <= 0 or bodies[record.body_id] ~= record or record.status ~= 'spawning' then
         return false
     end
@@ -402,7 +407,7 @@ function HumalikeNpcPopulation.Track(wanted)
 end
 HumalikeNpcPopulation.Materialise = materialise
 HumalikeNpcPopulation.Activate = activate
-HumalikeNpcPopulation.Abandon = spawnFailed
+HumalikeNpcPopulation.Fail = spawnFailed
 HumalikeNpcPopulation.Retire = retire
 HumalikeNpcPopulation.ResolveSpawnPoint = resolveSpawnPoint
 HumalikeNpcPopulation.OffsetPoint = offsetPoint
@@ -426,6 +431,13 @@ local function forget(bodyId)
     if not record or record.status == 'released' then return end
     record.forgotten = true
     HumalikeNpcPopulation.Despawn(bodyId, 'despawned')
+end
+
+local function reportFeatures(now)
+    if featuresInFlight or now < featureRetryAt or not HumalikeNpcReportCapabilities then return end
+    if table.concat(HumalikeNpcPopulation.Features(), ',') == deliveredFeatures then return end
+    if not (HumaLike and HumaLike.RuntimeCredentials and HumaLike.RuntimeCredentials()) then return end
+    HumalikeNpcReportCapabilities()
 end
 
 function HumalikeNpcPopulation.Report()
@@ -479,7 +491,6 @@ function HumalikeNpcPopulation.ApplyPlan(body)
     planRevision = revision
     enabled = body.enabled == true
     copsAllowed = copsConvar()
-    groupSpawns = groupSpawnsConvar()
     contact(GetGameTimer())
     publishState()
     local wanted = {}
@@ -495,12 +506,13 @@ function HumalikeNpcPopulation.ApplyPlan(body)
         end
     end
     local scenes = HumalikeNpcScenes
-        and HumalikeNpcScenes.Accept(enabled and body.scenes or nil, wanted, groupSpawns) or {}
-    -- A scene body without its scene (rejected, or scenes switched off) never spawns alone.
+        and HumalikeNpcScenes.Accept(enabled and body.scenes or nil, wanted, groupSpawnsConvar()) or {}
+    -- A scene body without its scene (rejected, or scenes switched off) never spawns
+    -- alone; one of an archetype this build does not know is left to the edge's TTL.
     for bodyId, planned in pairs(wanted) do
-        if planned.scene_id and not scenes[planned.scene_id] then
+        if planned.scene_id and type(scenes[planned.scene_id]) ~= 'table' then
             wanted[bodyId] = nil
-            noteFailed(bodyId)
+            if scenes[planned.scene_id] ~= 'unknown' then noteFailed(bodyId) end
         end
     end
     local released = {}
@@ -570,8 +582,7 @@ function HumalikeNpcPopulation.Reconcile()
     end
     if HumalikeNpcScenes then HumalikeNpcScenes.Reconcile() end
     copsAllowed = copsConvar()
-    groupSpawns = groupSpawnsConvar()
-    if HumalikeNpcFeaturesTick then HumalikeNpcFeaturesTick() end
+    reportFeatures(now)
     edgeLost = enabled and lastContactAt ~= nil
         and now - lastContactAt > cfg.HeartbeatMs * cfg.EdgeLostHeartbeats
     publishState()
@@ -610,7 +621,30 @@ function HumalikeNpcPopulation.Enabled()
 end
 
 function HumalikeNpcPopulation.GroupSpawns()
-    return groupSpawns
+    return groupSpawnsConvar()
+end
+
+function HumalikeNpcPopulation.Features()
+    local features = {}
+    if groupSpawnsConvar() then features[#features + 1] = 'group_scenes' end
+    return features
+end
+
+-- The capability report is posted by main.lua; only a delivered one counts,
+-- so a failed first report and a convar flip both reach the edge from here.
+function HumalikeNpcPopulation.CapabilitiesPosted()
+    featuresInFlight = true
+end
+
+function HumalikeNpcPopulation.CapabilitiesReported(features, ok)
+    featuresInFlight = false
+    if ok then
+        deliveredFeatures = table.concat(features, ',')
+        featureFailures = 0
+        return
+    end
+    featureRetryAt = GetGameTimer() + backoff(featureFailures)
+    featureFailures = featureFailures + 1
 end
 
 function HumalikeNpcPopulation.SendState(playerId)

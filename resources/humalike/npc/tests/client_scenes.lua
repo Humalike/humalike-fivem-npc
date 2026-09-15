@@ -60,6 +60,20 @@ TaskVehicleTempAction = record('temp')
 TaskEnterVehicle = record('enter')
 TaskVehicleDriveWander = record('drive')
 TaskVehicleFollow = record('vfollow')
+SetPedMinMoveBlendRatio = record('minblend')
+SetPedMaxMoveBlendRatio = record('maxblend')
+local idleClock = {}
+HumalikeNpcPopulationClient = {
+    Idle = function(ped, now, threshold)
+        if dead[ped] or usingScenario[ped] or not stopped[ped] then
+            idleClock[ped] = nil
+            return false
+        end
+        idleClock[ped] = idleClock[ped] or now
+        return now - idleClock[ped] >= threshold
+    end,
+    MarkTasked = function(ped, now) idleClock[ped] = now end,
+}
 SetVehicleEngineOn = record('engine')
 ClearPedTasks = record('clear')
 
@@ -179,32 +193,17 @@ Scenes.Refresh(11, scene({ slot = 0 }), free, 8000)
 assert(last()[1] == 'scenario' and last()[2] == 11 and last()[3] == 'WORLD_HUMAN_HANG_OUT_STREET',
     'a corner ped re-slotted to 0 switches scenario without turning again')
 
--- run: the leader sprints to a far pavement point, followers run behind.
+-- run: the leader wanders at a run (min blend 2.0), followers run behind.
 reset()
-coords[10] = { x = 0, y = 0, z = 5 }
 Scenes.Configure(10, scene({ archetype = 'run', slot = 0 }), free, 1000)
-local go = last()
-assert(go[1] == 'go' and go[2] == 10 and go[6] == 2.0 and go[7] == -1)
-local distance = math.sqrt(go[3] * go[3] + go[4] * go[4])
-assert(math.abs(distance - 120.0) < 0.01 and go[5] == 5, '120 m away')
+assert(#calls == 3 and calls[1][1] == 'minblend' and calls[1][2] == 10 and calls[1][3] == 2.0)
+assert(calls[2][1] == 'maxblend' and calls[2][3] == 3.0 and calls[3][1] == 'wander' and calls[3][2] == 10)
+stopped[10] = true
 Scenes.Refresh(10, scene({ archetype = 'run', slot = 0 }), free, 2000)
-assert(#calls == 1, 'still on the way')
-coords[10] = { x = go[3] - 3, y = go[4], z = 5 }
-Scenes.Refresh(10, scene({ archetype = 'run', slot = 0 }), free, 3000)
-assert(#calls == 2 and last()[1] == 'go', 'within 8 m: a new target')
-coords[10] = { x = 0, y = 0, z = 5 }
-safeCoords.deny = true
-reset()
-Scenes.Configure(18, scene({ archetype = 'run', slot = 0 }), free, 1000)
-assert(#calls == 1 and last()[1] == 'wander' and last()[2] == 18, 'no pavement anywhere: wander once')
-Scenes.Refresh(18, scene({ archetype = 'run', slot = 0 }), free, 2000)
-Scenes.Refresh(18, scene({ archetype = 'run', slot = 0 }), free, 5900)
-assert(#calls == 1, 'no new search and no new wander before 5 s')
-Scenes.Refresh(18, scene({ archetype = 'run', slot = 0 }), free, 6000)
-assert(#calls == 2 and last()[1] == 'wander', 'the search is retried every 5 s')
-safeCoords.deny = nil
-Scenes.Refresh(18, scene({ archetype = 'run', slot = 0 }), free, 11000)
-assert(#calls == 3 and last()[1] == 'go', 'and runs once pavement is found')
+assert(#calls == 3, 'a runner is re-issued on the wander idle window only')
+Scenes.Refresh(10, scene({ archetype = 'run', slot = 0 }), free, 6000)
+assert(#calls == 6 and last()[1] == 'wander', 'idle for WanderIdleMs: wander again at a run')
+stopped[10] = nil
 Scenes.Configure(15, scene({ archetype = 'run', slot = 1 }), free, 1000)
 assert(last()[1] == 'follow' and last()[7] == 2.0, 'followers run')
 
@@ -478,11 +477,15 @@ coords[52] = { x = 0, y = 0, z = 0 }
 reset()
 blendCalls = {}
 HumalikeNpcPopulationClient.Tick(1000, false)
-local wanders, follows, goes = named('wander'), named('follow'), named('go')
-assert(#wanders == 3 and wanders[1][2] == 50 and wanders[2][2] == 53 and wanders[3][2] == 54,
-    'the leader, the leaderless follower and the lone body wander')
+local wanders, follows = named('wander'), named('follow')
+assert(#wanders == 4 and wanders[1][2] == 50 and wanders[2][2] == 52 and wanders[3][2] == 53
+    and wanders[4][2] == 54, 'the walk leader, the runner, the leaderless follower and the lone body wander')
 assert(#follows == 1 and follows[1][2] == 51 and follows[1][3] == 50, 'the follower trails the local leader')
-assert(#goes == 1 and goes[1][2] == 52, 'the runner runs')
+local runMin = false
+for _, call in ipairs(blendCalls) do
+    if call[1] == 52 and call[2] == 'min' and call[3] == 2.0 then runMin = true end
+end
+assert(runMin, 'the run leader wanders with a running min blend')
 local capped, freed = {}, {}
 for _, call in ipairs(blendCalls) do
     if call[2] == 'max' then
@@ -497,7 +500,6 @@ local overridden = {}
 for _, call in ipairs(paceCalls) do overridden[call[1]] = true end
 assert(overridden[50] and overridden[51] and overridden[54] and not overridden[52],
     'the walk-rate override skips the runner')
-assert(HumalikeNpcPopulationClient.Status().scenes == 2, 'two scenes are driven by this client')
 reset()
 taskRunning(51, FOLLOW, true)
 netEntities[701] = 50
@@ -512,18 +514,14 @@ assert(calls[1][1] == 'clear' and calls[1][2] == 51 and calls[2][1] == 'stand' a
     'the tick applies the hold flag')
 heldBags[51] = nil
 reset()
-handlers['humalike:npc:populationState']({ enabled = true, cops_allowed = false, group_spawns = true })
-assert(HumalikeNpcPopulationClient.Status().group_spawns == true and HumalikeNpcPopulationClient.Status().enabled)
-handlers['humalike:npc:populationState']({ enabled = true, cops_allowed = false, group_spawns = false })
-assert(HumalikeNpcPopulationClient.Status().group_spawns == false)
 assert(HumalikeNpcPopulationClient.Reapply(51))
 assert(calls[1][1] == 'clear' and calls[2][1] == 'follow', 'Reapply re-issues the scene task')
 blendCalls = {}
 HumalikeNpcPopulationClient.RestorePace(52)
-assert(#blendCalls == 1 and blendCalls[1][1] == 52 and blendCalls[1][3] == 3.0,
-    'RestorePace leaves a runner uncapped')
+assert(#blendCalls == 2 and blendCalls[1][1] == 52 and blendCalls[1][2] == 'min' and blendCalls[1][3] == 0.0
+    and blendCalls[2][3] == 3.0, 'RestorePace leaves a runner uncapped and drops the running min blend')
 HumalikeNpcPopulationClient.RestorePace(51)
-assert(#blendCalls == 2 and blendCalls[2][1] == 51 and blendCalls[2][3] == 1.0,
+assert(#blendCalls == 3 and blendCalls[3][1] == 51 and blendCalls[3][3] == 1.0,
     'and caps a walker at its walk rate')
 reset()
 ragdoll[51] = true

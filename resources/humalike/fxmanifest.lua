@@ -56,7 +56,6 @@ server_scripts {
     'npc/server/npc.lua',
     'npc/server/sessions.lua',
     'npc/server/ambient.lua',
-    'npc/server/features.lua',
     'npc/server/population.lua',
     'npc/server/scenes.lua',
     'npc/server/runtime_control.lua',

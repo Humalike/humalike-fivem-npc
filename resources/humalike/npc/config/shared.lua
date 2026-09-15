@@ -52,6 +52,27 @@ Config.Population = {
     GtaPopulationTypes = { [4] = true, [5] = true },
     CopPedTypes = { [6] = true, [27] = true }, -- GetPedType cop, swat
 }
+Config.Scenes = {
+    BikeSpacing = 2.2, -- metres between a crew's bikes lined up across the heading
+    CornerRadius = 1.4, -- ring around the anchor a corner crew stands on
+    CornerRadiusStep = 0.25, -- per-slot radius step so the ring is not a perfect circle
+    SidewalkSpacing = 2.4, -- metres between bodies loitering along the pavement
+    ColumnSpacing = 1.3, -- metres between walkers or runners behind their leader
+    BuildMarginMs = 5000, -- past SpawnTimeoutMs before a stuck crew build is torn down
+    TurnMs = 1000, -- the anchor-facing turn before a corner scenario starts
+    WalkSpeed = 1.0, -- follow move blend of a walking crew
+    RunSpeed = 2.0, -- follow move blend of a running crew
+    RunMinBlend = 2.0, -- min move blend of the run leader (wander at a run)
+    RunMaxBlend = 3.0, -- max move blend of the run leader
+    FollowStopRange = 1.0, -- metres from its offset a follower stops at
+    DriveSpeed = 12.0, -- m/s for cruising and convoys
+    DriveStyle = 786603, -- driving style flags: normal, obey traffic
+    FollowDistance = 6, -- metres a bike keeps behind the leader's bike
+    EnterTimeoutMs = 15000, -- the enter-vehicle task timeout; also the gap between attempts
+    VehicleStoppedSpeed = 0.5, -- m/s under which a crew vehicle counts as stopped
+    FollowStallMs = 30000, -- a following bike stopped this long is re-issued (outlasts a red light)
+    BrakeAction = 27, -- TaskVehicleTempAction: brake
+}
 Config.Shove = {
     TickMs = 100,
     MinSpeed = 0.5,
@@ -78,6 +99,17 @@ Config.Combat = {
 }
 function HumalikeUnsignedHash(value)
     return value < 0 and value + 4294967296 or value
+end
+function HumalikeValidId(value)
+    return type(value) == 'string' and value ~= '' and #value <= 64
+end
+-- Seats -1..7 cover every stock vehicle; both natives exist on client and server.
+function HumalikePlayerInVehicle(vehicle)
+    for seat = -1, 7 do
+        local occupant = GetPedInVehicleSeat(vehicle, seat)
+        if occupant and occupant > 0 and IsPedAPlayer(occupant) then return true end
+    end
+    return false
 end
 function HumalikeValidCoordinate(value)
     return type(value) == 'number' and value == value and math.abs(value) <= 10000

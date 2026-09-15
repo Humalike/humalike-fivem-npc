@@ -1,36 +1,26 @@
 HumalikeNpcScenes = HumalikeNpcScenes or {}
 local scenes = {}
 
--- (smallest, largest) crew per archetype; fixed on both sides of the wire.
-local SIZES = {
-    corner = { 3, 6 }, sidewalk = { 3, 6 }, walk = { 2, 4 }, run = { 2, 4 },
-    car = { 2, 4 }, bikes = { 2, 5 }, ride = { 1, 1 },
-}
+local ARCHETYPES = { corner = true, sidewalk = true, walk = true, run = true, car = true,
+    bikes = true, ride = true }
 local VEHICLE_ARCHETYPES = { car = true, bikes = true, ride = true }
 local MAX_SLOTS = 8
 local MAX_CANDIDATES = 6
-local BIKE_SPACING = 2.2 -- metres between bikes lined up across the heading
-local CORNER_RADIUS = 1.4 -- ring around the anchor, up to 1.9 with the slot step
-local CORNER_RADIUS_STEP = 0.25
-local SIDEWALK_SPACING = 2.4
-local COLUMN_SPACING = 1.3 -- walkers and runners behind their leader
-local BUILD_MARGIN_MS = 5000 -- past the body spawn timeout before a stuck build is torn down
 
-local function validId(value)
-    return type(value) == 'string' and value ~= '' and #value <= 64
+local function cfg()
+    return Config.Scenes
 end
 
 local function validVehicle(vehicle)
-    return type(vehicle) == 'table' and validId(vehicle.vehicle_id)
-        and validId(vehicle.model) and type(vehicle.model_hash) == 'number'
+    return type(vehicle) == 'table' and HumalikeValidId(vehicle.vehicle_id)
+        and HumalikeValidId(vehicle.model) and type(vehicle.model_hash) == 'number'
         and vehicle.model_hash == HumalikeUnsignedHash(GetHashKey(vehicle.model))
         and (vehicle.spawn_type == 'automobile' or vehicle.spawn_type == 'bike')
 end
 
 local function validSceneShape(scene)
-    return type(scene) == 'table' and validId(scene.scene_id)
+    return type(scene) == 'table' and HumalikeValidId(scene.scene_id)
         and (scene.group_id == nil or type(scene.group_id) == 'string')
-        and SIZES[scene.archetype] ~= nil
         and type(scene.routing_bucket) == 'number' and scene.routing_bucket % 1 == 0
         and scene.routing_bucket >= 0
         and (scene.zone_code == nil or type(scene.zone_code) == 'string')
@@ -38,7 +28,8 @@ local function validSceneShape(scene)
         and type(scene.candidates) == 'table' and #scene.candidates >= 1
         and #scene.candidates <= MAX_CANDIDATES
         and (scene.vehicles == nil or type(scene.vehicles) == 'table')
-        and type(scene.body_ids) == 'table'
+        and type(scene.body_ids) == 'table' and #scene.body_ids >= 1
+        and #scene.body_ids <= MAX_SLOTS
 end
 
 -- A valid scene names bodies the plan wants, in slot order, seated in its own
@@ -48,8 +39,6 @@ local function validScene(scene, wanted)
     for _, point in ipairs(scene.candidates) do
         if not HumalikeNpcPopulation.ValidPoint(point) then return nil end
     end
-    local size = SIZES[scene.archetype]
-    if #scene.body_ids < size[1] or #scene.body_ids > size[2] then return nil end
     local rides = VEHICLE_ARCHETYPES[scene.archetype] == true
     local vehicleList = scene.vehicles or {}
     if #vehicleList > MAX_SLOTS or (#vehicleList > 0) ~= rides then return nil end
@@ -76,18 +65,25 @@ local function validScene(scene, wanted)
 end
 
 -- Validates the plan's scenes against its wanted bodies. Returns the crews the
--- resource will spawn by scene id; a rejected or duplicated id maps to false.
+-- resource will spawn by scene id; a rejected or duplicated id maps to false,
+-- an archetype this build does not know to 'unknown' (its bodies are left to
+-- the edge's pending TTL, not reported failed).
 function HumalikeNpcScenes.Accept(rawScenes, wanted, allowed)
     local accepted = {}
     if not allowed or type(rawScenes) ~= 'table' then return accepted end
     for _, raw in ipairs(rawScenes) do
-        local entry = validScene(raw, wanted)
-        local sceneId = entry and raw.scene_id or nil
+        local sceneId = type(raw) == 'table' and HumalikeValidId(raw.scene_id) and raw.scene_id or nil
+        local entry = sceneId and ARCHETYPES[raw.archetype] and validScene(raw, wanted) or nil
         if not sceneId then
-            HumalikeDebug('population scene rejected: %s',
-                tostring(type(raw) == 'table' and raw.scene_id or nil))
+            HumalikeDebug('population scene rejected: %s', tostring(sceneId))
         elseif accepted[sceneId] ~= nil then
             HumalikeDebug('population scene %s listed twice', sceneId)
+            accepted[sceneId] = false
+        elseif not ARCHETYPES[raw.archetype] then
+            HumalikeDebug('population scene %s: unknown archetype %s', sceneId, tostring(raw.archetype))
+            accepted[sceneId] = 'unknown'
+        elseif not entry then
+            HumalikeDebug('population scene rejected: %s', sceneId)
             accepted[sceneId] = false
         else
             accepted[sceneId] = entry
@@ -96,72 +92,64 @@ function HumalikeNpcScenes.Accept(rawScenes, wanted, allowed)
     return accepted
 end
 
-local function ownsVehicle(live, vehicle)
+local function ownsVehicle(crew, vehicle)
     return DoesEntityExist(vehicle.handle)
-        and Entity(vehicle.handle).state.humalike_scene_id == live.id
+        and Entity(vehicle.handle).state.humalike_scene_id == crew.id
 end
 
-local function playerInside(handle)
-    for seat = -1, MAX_SLOTS - 1 do
-        local occupant = GetPedInVehicleSeat(handle, seat)
-        if occupant and occupant > 0 and IsPedAPlayer(occupant) then return true end
-    end
-    return false
-end
-
--- True once none of the scene's vehicles is left; a player inside keeps one
+-- True once none of the crew's vehicles is left; a player inside keeps one
 -- for the next tick unless `force`.
-local function deleteVehicles(live, force)
+local function deleteVehicles(crew, force)
     local remaining = {}
-    for _, vehicle in ipairs(live.vehicles) do
-        if ownsVehicle(live, vehicle) then
-            if force or not playerInside(vehicle.handle) then
+    for _, vehicle in ipairs(crew.vehicles) do
+        if ownsVehicle(crew, vehicle) then
+            if force or not HumalikePlayerInVehicle(vehicle.handle) then
                 DeleteEntity(vehicle.handle)
             else
                 remaining[#remaining + 1] = vehicle
             end
         end
     end
-    live.vehicles = remaining
+    crew.vehicles = remaining
     return #remaining == 0
 end
 
 -- A spawn failure anywhere fails the crew: every body spawn_failed, vehicles gone.
-local function fail(live)
-    if live.failing then return end
-    live.failing = true
-    deleteVehicles(live, true)
-    for _, record in ipairs(live.records) do HumalikeNpcPopulation.Abandon(record) end
-    if scenes[live.id] == live then scenes[live.id] = nil end
+local function fail(crew)
+    if crew.failing then return end
+    crew.failing = true
+    deleteVehicles(crew, true)
+    for _, record in ipairs(crew.records) do HumalikeNpcPopulation.Fail(record) end
+    if scenes[crew.id] == crew then scenes[crew.id] = nil end
 end
 
 -- A legitimate release is not a failure: the crew leaves with `cause` and no
 -- body is reported failed.
-local function abandon(live, cause)
-    deleteVehicles(live, true)
-    for _, record in ipairs(live.records) do
+local function release(crew, cause)
+    deleteVehicles(crew, true)
+    for _, record in ipairs(crew.records) do
         HumalikeNpcPopulation.Retire(record, record.release_requested or cause)
     end
-    if scenes[live.id] == live then scenes[live.id] = nil end
+    if scenes[crew.id] == crew then scenes[crew.id] = nil end
 end
 
-local function referenced(live, vehicleId)
-    for _, record in ipairs(live.records) do
+local function referenced(crew, vehicleId)
+    for _, record in ipairs(crew.records) do
         if record.vehicle_id == vehicleId then return true end
     end
     return false
 end
 
-local function pruneVehicles(live)
+local function pruneVehicles(crew)
     local kept = {}
-    for _, vehicle in ipairs(live.vehicles) do
-        if referenced(live, vehicle.id) then
+    for _, vehicle in ipairs(crew.vehicles) do
+        if referenced(crew, vehicle.id) then
             kept[#kept + 1] = vehicle
-        elseif ownsVehicle(live, vehicle) then
+        elseif ownsVehicle(crew, vehicle) then
             DeleteEntity(vehicle.handle)
         end
     end
-    live.vehicles = kept
+    crew.vehicles = kept
 end
 
 local function hasDriver(records)
@@ -172,12 +160,12 @@ local function hasDriver(records)
 end
 
 -- Bodies the edge let go while the crew was still building are dropped from
--- the build; it goes on while the crew keeps its minimum and, in a car, its
--- driver. True when the build must stop.
-local function settle(live)
-    if scenes[live.id] ~= live then return true end
+-- the build; it goes on while a body (and, in a car, the driver) remains.
+-- Returns true when the build must stop: the crew was failed or released.
+local function dropReleased(crew)
+    if scenes[crew.id] ~= crew then return true end
     local remaining = {}
-    for _, record in ipairs(live.records) do
+    for _, record in ipairs(crew.records) do
         if HumalikeNpcPopulation.Holds(record) and record.status == 'spawning' then
             if record.release_requested then
                 HumalikeNpcPopulation.Retire(record, record.release_requested)
@@ -185,15 +173,14 @@ local function settle(live)
                 remaining[#remaining + 1] = record
             end
         elseif not record.release_requested then
-            fail(live) -- gone without a release: a timed-out spawn
+            fail(crew) -- gone without a release: a timed-out spawn
             return true
         end
     end
-    live.records = remaining
-    pruneVehicles(live)
-    if #remaining < SIZES[live.archetype][1]
-        or (live.archetype == 'car' and not hasDriver(remaining)) then
-        abandon(live, 'despawned')
+    crew.records = remaining
+    pruneVehicles(crew)
+    if #remaining == 0 or (crew.archetype == 'car' and not hasDriver(remaining)) then
+        release(crew, 'despawned')
         return true
     end
     return false
@@ -201,43 +188,38 @@ end
 
 local function bikeSide(index)
     if index == 0 then return 0.0 end
-    return BIKE_SPACING * math.ceil(index / 2) * (index % 2 == 1 and 1 or -1)
+    return cfg().BikeSpacing * math.ceil(index / 2) * (index % 2 == 1 and 1 or -1)
 end
 
 local function footOffset(archetype, slot, count)
+    local tunables = cfg()
     if archetype == 'corner' then
         local angle = 2 * math.pi * slot / count
-        local radius = CORNER_RADIUS + CORNER_RADIUS_STEP * (slot % 3)
+        local radius = tunables.CornerRadius + tunables.CornerRadiusStep * (slot % 3)
         return radius * math.cos(angle), radius * math.sin(angle)
     elseif archetype == 'sidewalk' then
-        return 0.0, (slot - (count - 1) / 2) * SIDEWALK_SPACING
+        return 0.0, (slot - (count - 1) / 2) * tunables.SidewalkSpacing
     elseif archetype == 'walk' or archetype == 'run' then
-        return 0.0, -COLUMN_SPACING * slot
+        return 0.0, -tunables.ColumnSpacing * slot
     end
     return 0.0, 0.0
 end
 
-local function createVehicle(live, vehicle, point, index)
+local function createVehicle(crew, vehicle, point, index)
     local side = bikeSide(index)
     local x, y = HumalikeNpcPopulation.OffsetPoint(point, side, 0.0)
     local handle = CreateVehicleServerSetter(GetHashKey(vehicle.model), vehicle.spawn_type,
         x, y, point.z, point.heading or 0.0)
     if not handle or handle <= 0 then return nil end
-    SetEntityRoutingBucket(handle, live.routing_bucket)
+    SetEntityRoutingBucket(handle, crew.routing_bucket)
     SetEntityOrphanMode(handle, 2)
     local state = Entity(handle).state
     state:set('humalike_npc_kind', 'population_vehicle', true)
-    state:set('humalike_scene_id', live.id, true)
+    state:set('humalike_scene_id', crew.id, true)
     state:set('humalike_scene_held', false, true)
     local created = { id = vehicle.vehicle_id, handle = handle, side = side }
-    live.vehicles[#live.vehicles + 1] = created
-    local networkId = NetworkGetNetworkIdFromEntity(handle)
-    local attempts = 0
-    while networkId <= 0 and attempts < 50 do
-        Wait(0)
-        attempts = attempts + 1
-        networkId = NetworkGetNetworkIdFromEntity(handle)
-    end
+    crew.vehicles[#crew.vehicles + 1] = created
+    local networkId = HumalikeNpcPopulation.AwaitNetworkId(handle)
     if networkId <= 0 then return nil end
     created.network_id = networkId
     return created
@@ -247,27 +229,27 @@ local function gone(record)
     return not HumalikeNpcPopulation.Holds(record) or record.status == 'released'
 end
 
-local function stampRole(live, record, slot, count)
+local function stampRole(crew, record, slot, count)
     local ped = HumalikeNpcPopulation.PedOf(record)
     if not ped then return end
     local state = Entity(ped).state
     local bag = state.humalike_scene
     if type(bag) ~= 'table' then return end
-    local ox, oy = footOffset(live.archetype, slot, count)
+    local ox, oy = footOffset(crew.archetype, slot, count)
     if record.vehicle_id then ox, oy = bag.ox, bag.oy end -- seated bodies keep their vehicle's spot
-    if bag.slot == slot and bag.leader_net == live.leader_net and bag.ox == ox and bag.oy == oy then
+    if bag.slot == slot and bag.leader_net == crew.leader_net and bag.ox == ox and bag.oy == oy then
         return
     end
-    bag.slot, bag.ox, bag.oy, bag.leader_net = slot, ox, oy, live.leader_net
+    bag.slot, bag.ox, bag.oy, bag.leader_net = slot, ox, oy, crew.leader_net
     state:set('humalike_scene', bag, true)
 end
 
 -- The edge re-slots a crew that shrank: the next body leads and the formation
 -- follows the new slots. Nothing is re-spawned or moved; the owning client
 -- picks the new role up from the state bag.
-local function reslot(live, entry)
+local function reslot(crew, entry)
     local byId = {}
-    for _, record in ipairs(live.records) do byId[record.body_id] = record end
+    for _, record in ipairs(crew.records) do byId[record.body_id] = record end
     local ordered, kept = {}, {}
     for slot, body in ipairs(entry.bodies) do
         local record = byId[body.body_id]
@@ -278,39 +260,39 @@ local function reslot(live, entry)
         end
     end
     if #ordered == 0 then return end
-    for _, record in ipairs(live.records) do
+    for _, record in ipairs(crew.records) do
         if not kept[record] then ordered[#ordered + 1] = record end
     end
-    live.records = ordered
-    live.leader_net = ordered[1].network_id
+    crew.records = ordered
+    crew.leader_net = ordered[1].network_id
     for index, record in ipairs(ordered) do
-        if kept[record] then stampRole(live, record, index - 1, #entry.bodies) end
+        if kept[record] then stampRole(crew, record, index - 1, #entry.bodies) end
     end
 end
 
-local function build(live, scene, entry)
+local function build(crew, scene, entry)
     local point = HumalikeNpcPopulation.ResolveSpawnPoint({
-        scene_id = live.id,
+        scene_id = crew.id,
         candidates = scene.candidates,
         anchor_session_id = scene.anchor_session_id,
         routing_bucket = scene.routing_bucket,
-        mode = VEHICLE_ARCHETYPES[live.archetype] and 'vehicle' or 'foot',
+        mode = VEHICLE_ARCHETYPES[crew.archetype] and 'vehicle' or 'foot',
     })
-    if settle(live) then return end
+    if dropReleased(crew) then return end
     if not point then
-        HumalikeDebug('population scene %s has no ground near any candidate', live.id)
-        fail(live)
+        HumalikeDebug('population scene %s has no ground near any candidate', crew.id)
+        fail(crew)
         return
     end
     local byId = {}
     for index, vehicle in ipairs(entry.vehicles) do
-        if referenced(live, vehicle.vehicle_id) then
-            local created = createVehicle(live, vehicle, point, index - 1)
+        if referenced(crew, vehicle.vehicle_id) then
+            local created = createVehicle(crew, vehicle, point, index - 1)
             if not created then
-                fail(live)
+                fail(crew)
                 return
             end
-            if settle(live) then return end
+            if dropReleased(crew) then return end
             byId[created.id] = created
         end
     end
@@ -318,7 +300,7 @@ local function build(live, scene, entry)
     -- shifts nobody who already stands, the final re-slot settles the roles.
     while true do
         local slot, record = nil, nil
-        for index, candidate in ipairs(live.records) do
+        for index, candidate in ipairs(crew.records) do
             if not candidate.ped then
                 slot, record = index - 1, candidate
                 break
@@ -326,7 +308,7 @@ local function build(live, scene, entry)
         end
         if not record then break end
         local vehicle = record.vehicle_id and byId[record.vehicle_id] or nil
-        local ox, oy = footOffset(live.archetype, slot, #live.records)
+        local ox, oy = footOffset(crew.archetype, slot, #crew.records)
         if vehicle then ox, oy = vehicle.side, 0.0 end
         local placement = {
             ox = ox,
@@ -334,8 +316,8 @@ local function build(live, scene, entry)
             vehicle = vehicle and vehicle.handle or nil,
             seat = record.seat,
             scene = {
-                id = live.id,
-                archetype = live.archetype,
+                id = crew.id,
+                archetype = crew.archetype,
                 slot = slot,
                 ax = point.x,
                 ay = point.y,
@@ -348,19 +330,19 @@ local function build(live, scene, entry)
             },
         }
         if not HumalikeNpcPopulation.Materialise(record, point, placement) then
-            fail(live)
+            fail(crew)
             return
         end
-        if settle(live) then return end
+        if dropReleased(crew) then return end
     end
-    live.leader_net = live.records[1].network_id
-    reslot(live, live.pending or entry)
-    live.pending = nil
-    for _, record in ipairs(live.records) do
+    crew.leader_net = crew.records[1].network_id
+    reslot(crew, crew.pending or entry)
+    crew.pending = nil
+    for _, record in ipairs(crew.records) do
         HumalikeNpcPopulation.Activate(record)
-        if scenes[live.id] ~= live then return end -- a refused bind took the crew down
+        if scenes[crew.id] ~= crew then return end -- a refused bind took the crew down
     end
-    live.status = 'live'
+    crew.status = 'live'
 end
 
 local function spawnScene(sceneId, entry, released)
@@ -371,11 +353,11 @@ local function spawnScene(sceneId, entry, released)
         end
     end
     if not fresh then
-        local live = scenes[sceneId]
-        if live and live.status == 'live' then
-            reslot(live, entry)
-        elseif live then
-            live.pending = entry
+        local crew = scenes[sceneId]
+        if crew and crew.status == 'live' then
+            reslot(crew, entry)
+        elseif crew then
+            crew.pending = entry
         end
         -- A crew never grows: a body missing from a scene already on the street is lost.
         for _, body in ipairs(entry.bodies) do
@@ -386,7 +368,7 @@ local function spawnScene(sceneId, entry, released)
         return
     end
     local scene = entry.scene
-    local live = {
+    local crew = {
         id = sceneId,
         archetype = scene.archetype,
         routing_bucket = scene.routing_bucket,
@@ -397,35 +379,35 @@ local function spawnScene(sceneId, entry, released)
         started_at = GetGameTimer(),
     }
     for slot, body in ipairs(entry.bodies) do
-        live.records[slot] = HumalikeNpcPopulation.Track(body)
+        crew.records[slot] = HumalikeNpcPopulation.Track(body)
     end
-    scenes[sceneId] = live
-    CreateThread(function() build(live, scene, entry) end)
+    scenes[sceneId] = crew
+    CreateThread(function() build(crew, scene, entry) end)
 end
 
 function HumalikeNpcScenes.Spawn(accepted, released)
     for sceneId, entry in pairs(accepted) do
-        if entry then spawnScene(sceneId, entry, released) end
+        if type(entry) == 'table' then spawnScene(sceneId, entry, released) end
     end
 end
 
-local function heldNow(live)
+local function heldNow(crew)
     if not HumalikeAmbientControlHeld then return false end
-    for _, record in ipairs(live.records) do
+    for _, record in ipairs(crew.records) do
         if not gone(record) and record.network_id
             and HumalikeAmbientControlHeld(record.network_id) then return true end
     end
     return false
 end
 
-local function setHeld(live, held)
-    live.held = held
-    for _, record in ipairs(live.records) do
+local function setHeld(crew, held)
+    crew.held = held
+    for _, record in ipairs(crew.records) do
         local ped = HumalikeNpcPopulation.PedOf(record)
         if ped then Entity(ped).state:set('humalike_scene_held', held, true) end
     end
-    for _, vehicle in ipairs(live.vehicles) do
-        if ownsVehicle(live, vehicle) then
+    for _, vehicle in ipairs(crew.vehicles) do
+        if ownsVehicle(crew, vehicle) then
             Entity(vehicle.handle).state:set('humalike_scene_held', held, true)
         end
     end
@@ -433,12 +415,12 @@ end
 
 -- A body of a crew that failed to spawn or bind takes the rest with it.
 function HumalikeNpcScenes.BodyFailed(record)
-    local live = record.scene_id and scenes[record.scene_id] or nil
-    if live then fail(live) end
+    local crew = record.scene_id and scenes[record.scene_id] or nil
+    if crew then fail(crew) end
 end
 
-local function anyAlive(live)
-    for _, record in ipairs(live.records) do
+local function anyAlive(crew)
+    for _, record in ipairs(crew.records) do
         if not gone(record) then return true end
     end
     return false
@@ -450,20 +432,20 @@ end
 -- down here so a dead build thread cannot leak its vehicles.
 function HumalikeNpcScenes.Reconcile()
     local now = GetGameTimer()
-    for sceneId, live in pairs(scenes) do
-        if live.status == 'spawning' then
-            if not anyAlive(live) then
-                deleteVehicles(live, true)
+    for sceneId, crew in pairs(scenes) do
+        if crew.status == 'spawning' then
+            if not anyAlive(crew) then
+                deleteVehicles(crew, true)
                 scenes[sceneId] = nil
-            elseif now - live.started_at > Config.Population.SpawnTimeoutMs + BUILD_MARGIN_MS then
-                fail(live)
+            elseif now - crew.started_at > Config.Population.SpawnTimeoutMs + cfg().BuildMarginMs then
+                fail(crew)
             end
-        elseif live.status == 'live' then
-            if not anyAlive(live) then
-                if deleteVehicles(live, false) then scenes[sceneId] = nil end
+        elseif crew.status == 'live' then
+            if not anyAlive(crew) then
+                if deleteVehicles(crew, false) then scenes[sceneId] = nil end
             else
-                local held = heldNow(live)
-                if held ~= live.held then setHeld(live, held) end
+                local held = heldNow(crew)
+                if held ~= crew.held then setHeld(crew, held) end
             end
         end
     end
@@ -477,19 +459,19 @@ end
 
 function HumalikeNpcScenes.Scenes()
     local rows = {}
-    for sceneId, live in pairs(scenes) do
+    for sceneId, crew in pairs(scenes) do
         local alive = 0
-        for _, record in ipairs(live.records) do
+        for _, record in ipairs(crew.records) do
             if not gone(record) then alive = alive + 1 end
         end
         rows[#rows + 1] = {
             scene_id = sceneId,
-            archetype = live.archetype,
-            status = live.status,
-            held = live.held,
+            archetype = crew.archetype,
+            status = crew.status,
+            held = crew.held,
             bodies = alive,
-            vehicles = #live.vehicles,
-            leader_net = live.leader_net,
+            vehicles = #crew.vehicles,
+            leader_net = crew.leader_net,
         }
     end
     table.sort(rows, function(left, right) return left.scene_id < right.scene_id end)
@@ -498,7 +480,7 @@ end
 
 -- The bodies are already gone by the time the resource stops; only the vehicles are left.
 local function deleteAllVehicles()
-    for _, live in pairs(scenes) do deleteVehicles(live, true) end
+    for _, crew in pairs(scenes) do deleteVehicles(crew, true) end
     scenes = {}
 end
 

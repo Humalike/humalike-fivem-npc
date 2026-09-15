@@ -167,7 +167,6 @@ HumalikeHttp = {
     end,
 }
 
-dofile('server/features.lua')
 dofile('server/population.lua')
 dofile('server/scenes.lua')
 dofile('server/main.lua')
@@ -209,7 +208,9 @@ local function setsOf(key, entity)
 end
 local function near(a, b) return math.abs(a - b) < 0.01 end
 
--- The capability report carries the feature while the convar is on (default).
+-- A failed FIRST report is retried with the report backoff; a delivered one
+-- is not repeated; a flip after success re-posts.
+capabilityOk = false
 fire('humalike:core:ready', { generation = 1 })
 local capability = lastAction('report_capabilities')
 assert(capability and capability.payload.supported_actions[1] == 'wave')
@@ -217,19 +218,32 @@ assert(#capability.payload.features == 1 and capability.payload.features[1] == '
     'group_scenes is reported while humalike_group_spawns is on')
 local capabilityCount = #actionsNamed('report_capabilities')
 HumalikeNpcPopulation.Reconcile()
-assert(#actionsNamed('report_capabilities') == capabilityCount, 'an unchanged convar is not re-posted')
+assert(#actionsNamed('report_capabilities') == capabilityCount, 'no retry before the backoff')
+now = now + 600
+HumalikeNpcPopulation.Reconcile()
+assert(#actionsNamed('report_capabilities') == capabilityCount + 1,
+    'the failed first report is retried after RetryBackoffMs')
+now = now + 600
+HumalikeNpcPopulation.Reconcile()
+assert(#actionsNamed('report_capabilities') == capabilityCount + 1, 'the second retry waits twice as long')
+now = now + 600
+capabilityOk = true
+HumalikeNpcPopulation.Reconcile()
+assert(#actionsNamed('report_capabilities') == capabilityCount + 2)
+HumalikeNpcPopulation.Reconcile()
+assert(#actionsNamed('report_capabilities') == capabilityCount + 2, 'delivered: no more posts')
 convars.humalike_group_spawns = 'false'
 HumalikeNpcPopulation.Reconcile()
-assert(#actionsNamed('report_capabilities') == capabilityCount + 1, 'a flip re-posts the capabilities')
+assert(#actionsNamed('report_capabilities') == capabilityCount + 3, 'a flip after success re-posts')
 assert(#lastAction('report_capabilities').payload.features == 0)
 assert(HumalikeNpcPopulation.GroupSpawns() == false)
 convars.humalike_group_spawns = nil
 credentials = false
 HumalikeNpcPopulation.Reconcile()
-assert(#actionsNamed('report_capabilities') == capabilityCount + 1, 'no re-post without credentials')
+assert(#actionsNamed('report_capabilities') == capabilityCount + 3, 'no re-post without credentials')
 credentials = true
 HumalikeNpcPopulation.Reconcile()
-assert(#actionsNamed('report_capabilities') == capabilityCount + 2)
+assert(#actionsNamed('report_capabilities') == capabilityCount + 4)
 assert(lastAction('report_capabilities').payload.features[1] == 'group_scenes')
 assert(HumalikeNpcPopulation.GroupSpawns() == true)
 
@@ -286,7 +300,8 @@ local requestsBefore, pedsBefore = #spawnRequests(), pedCount
 plan(crew('s-bad', { 'b1', 'b2', 'b3' }), { scene('s-bad', 'parade', { 'b1', 'b2', 'b3' }) })
 assert(#spawnRequests() == requestsBefore and pedCount == pedsBefore)
 local failed = failedIn(lastAction('report_npc_bodies'))
-assert(failed.b1 and failed.b2 and failed.b3, 'an unknown archetype fails every body')
+assert(not failed.b1 and not failed.b2 and not failed.b3,
+    'an unknown archetype fails nobody: the edge TTL takes the bodies back')
 assert(next(bodyIds()) == nil)
 local function rejected(label, wanted, scenes)
     local requests, peds = #spawnRequests(), pedCount
@@ -299,7 +314,6 @@ local function rejected(label, wanted, scenes)
 end
 rejected('slot mismatch', crew('s-slot', { 'b1', 'b2', 'b3' }),
     { scene('s-slot', 'corner', { 'b2', 'b1', 'b3' }) })
-rejected('too small', crew('s-small', { 'b1', 'b2' }), { scene('s-small', 'corner', { 'b1', 'b2' }) })
 rejected('foot scene with a vehicle', crew('s-veh', { 'b1', 'b2', 'b3' }),
     { scene('s-veh', 'corner', { 'b1', 'b2', 'b3' }, { vehicles = {
         { vehicle_id = 'v1', model = 'schafter2', model_hash = 4294966519, spawn_type = 'automobile' } } }) })
@@ -325,7 +339,6 @@ local request = spawnRequests()[#spawnRequests()]
 assert(request.mode == 'foot' and request.arg:match('^s%-corner:'))
 local rows = bodyIds()
 assert(rows.c1.status == 'bound' and rows.c2.status == 'bound' and rows.c3.status == 'extra')
-assert(rows.c1.scene_id == 'c1' or rows.c1.scene_id == 's-corner')
 assert(rows.c1.scene_id == 's-corner' and rows.c3.scene_id == 's-corner', 'Bodies() rows carry the scene')
 local peds = { rows.c1.handle, rows.c2.handle, rows.c3.handle }
 local positions = {}
@@ -529,17 +542,8 @@ assert(bodyIds().o1 == nil and bodyIds().o2 == nil and bodyIds().o3 == nil)
 failed = failedIn(lastAction('report_npc_bodies'))
 assert(failed.o1 and failed.o2 and failed.o3 and not failed.alone)
 assert(HumalikeNpcScenes.Count() == 0)
-local lastState = clientEvents[#clientEvents]
-for index = #clientEvents, 1, -1 do
-    if clientEvents[index].name == 'humalike:npc:populationState' then lastState = clientEvents[index] break end
-end
-assert(lastState.arg.group_spawns == false, 'the state event carries the flag')
 convars.humalike_group_spawns = nil
 HumalikeNpcPopulation.Reconcile()
-for index = #clientEvents, 1, -1 do
-    if clientEvents[index].name == 'humalike:npc:populationState' then lastState = clientEvents[index] break end
-end
-assert(lastState.arg.group_spawns == true, 'the reconcile tick rebroadcasts a flipped flag')
 
 -- A failed re-post after a flip is retried with the report backoff.
 capabilityOk = false

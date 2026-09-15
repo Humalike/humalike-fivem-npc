@@ -1,5 +1,7 @@
 HumalikeNpcScenesClient = HumalikeNpcScenesClient or {}
 
+-- Inferred, not verified in-game: a min move blend ratio of 2.0 makes a
+-- wandering ped run instead of walk.
 local CORNER_SCENARIOS = {
     'WORLD_HUMAN_HANG_OUT_STREET', 'WORLD_HUMAN_SMOKING', 'WORLD_HUMAN_STAND_MOBILE',
     'WORLD_HUMAN_DRINKING', 'WORLD_HUMAN_STAND_IMPATIENT',
@@ -11,45 +13,25 @@ local SIDEWALK_SCENARIOS = {
 local SCENARIO_ARCHETYPES = { corner = CORNER_SCENARIOS, sidewalk = SIDEWALK_SCENARIOS }
 local AMBLING = { corner = true, sidewalk = true, walk = true } -- run and riders keep their pace
 local VEHICLE_ARCHETYPES = { car = true, bikes = true, ride = true }
-local TURN_MS = 1000 -- the anchor-facing turn before a corner scenario starts
-local HOLD_MS = 2000
-local BRAKE_ACTION = 27
-local RUN_DISTANCE = 120.0
-local RUN_ARRIVE = 8.0
-local RUN_ATTEMPTS = 4
-local RUN_RETRY_MS = 5000 -- between target searches when no pavement is found
-local RUN_SPEED = 2.0
-local WALK_SPEED = 1.0
-local FOLLOW_STOP = 1.0
-local DRIVE_SPEED = 12.0
-local DRIVE_STYLE = 786603
-local FOLLOW_DISTANCE = 6
-local ENTER_TIMEOUT_MS = 15000 -- the enter task's own timeout; also the gap between attempts
-local VEHICLE_STOPPED_SPEED = 0.5
--- A bike following its leader has no script-task hash to poll (only the
--- wander mission does), so a follower is re-issued after a long stall instead;
--- 30 s outlasts any red light.
-local FOLLOW_STALL_MS = 30000
-local MAX_SEAT = 7
-local PAVEMENT_FLAGS = 2 | 4 | 8 -- GetSafeCoordForPed: not isolated, not interior, not water
 local FOLLOW_TASK = 'SCRIPT_TASK_FOLLOW_TO_OFFSET_OF_ENTITY'
 local ENTER_TASK = 'SCRIPT_TASK_ENTER_VEHICLE'
 local DRIVE_WANDER_TASK = 'SCRIPT_TASK_VEHICLE_DRIVE_WANDER'
 
-local idleSince = {}
 local turnUntil = {}
 local turned = {}
 local heldInit = {}
-local runTargets = {}
-local runRetryAt = {}
 local stoppedSince = {}
 local roles = {}
 local following = {}
 local enteredAt = {}
 local vehicleLost = {}
 
-local function config()
-    return Config.Population
+local function cfg()
+    return Config.Scenes
+end
+
+local function population()
+    return HumalikeNpcPopulationClient
 end
 
 local function entityOf(networkId)
@@ -81,12 +63,7 @@ function HumalikeNpcScenesClient.Incapacitated(ped)
 end
 
 local function idle(ped, now, threshold)
-    if IsPedUsingAnyScenario(ped) or not IsPedStopped(ped) then
-        idleSince[ped] = nil
-        return false
-    end
-    idleSince[ped] = idleSince[ped] or now
-    return now - idleSince[ped] >= threshold
+    return population().Idle(ped, now, threshold)
 end
 
 local function scenarioFor(scene)
@@ -103,42 +80,7 @@ local function follow(ped, scene, speed)
     end
     following[ped] = true
     TaskFollowToOffsetOfEntity(ped, leader, tonumber(scene.ox) or 0.0, tonumber(scene.oy) or 0.0,
-        0.0, speed, -1, FOLLOW_STOP, true)
-end
-
-local function runTarget(ped)
-    local coords = GetEntityCoords(ped)
-    for _ = 1, RUN_ATTEMPTS do
-        local angle = math.random() * 2 * math.pi
-        local found, safe = GetSafeCoordForPed(coords.x + RUN_DISTANCE * math.cos(angle),
-            coords.y + RUN_DISTANCE * math.sin(angle), coords.z, true, PAVEMENT_FLAGS)
-        if found and safe then return safe end
-    end
-    return nil
-end
-
-local function applyRun(ped, scene, now)
-    if scene.slot ~= 0 then
-        follow(ped, scene, RUN_SPEED)
-        return
-    end
-    local target = runTarget(ped)
-    runTargets[ped] = target
-    if not target then
-        -- One wander per failed search; the next search waits RUN_RETRY_MS.
-        runRetryAt[ped] = now + RUN_RETRY_MS
-        TaskWanderStandard(ped, 10.0, 10)
-        return
-    end
-    runRetryAt[ped] = nil
-    TaskGoStraightToCoord(ped, target.x, target.y, target.z, RUN_SPEED, -1, 0.0, 0.0)
-end
-
-local function runArrived(ped)
-    local target = runTargets[ped]
-    local coords = GetEntityCoords(ped)
-    local dx, dy = coords.x - target.x, coords.y - target.y
-    return dx * dx + dy * dy <= RUN_ARRIVE * RUN_ARRIVE
+        0.0, speed, -1, cfg().FollowStopRange, true)
 end
 
 local function leaderVehicle(scene)
@@ -153,19 +95,11 @@ local function bikeFollower(scene)
     return scene.archetype == 'bikes' and scene.slot ~= 0
 end
 
-local function playerInside(vehicle)
-    for seat = -1, MAX_SEAT do
-        local occupant = GetPedInVehicleSeat(vehicle, seat)
-        if occupant ~= 0 and IsPedAPlayer(occupant) then return true end
-    end
-    return false
-end
-
 -- A seat someone else took, or a player anywhere in the vehicle, ends the
 -- ride for this body: it walks off once and is not sent back.
 local function seatTaken(ped, vehicle, seat)
     local occupant = GetPedInVehicleSeat(vehicle, seat)
-    return (occupant ~= 0 and occupant ~= ped) or playerInside(vehicle)
+    return (occupant ~= 0 and occupant ~= ped) or HumalikePlayerInVehicle(vehicle)
 end
 
 local function enter(ped, scene, vehicle, now)
@@ -175,24 +109,27 @@ local function enter(ped, scene, vehicle, now)
         TaskWanderStandard(ped, 10.0, 10)
         return
     end
-    if enteredAt[ped] and now - enteredAt[ped] < ENTER_TIMEOUT_MS then return end
+    local timeout = cfg().EnterTimeoutMs
+    if enteredAt[ped] and now - enteredAt[ped] < timeout then return end
     enteredAt[ped] = now
-    TaskEnterVehicle(ped, vehicle, ENTER_TIMEOUT_MS, seat, 1.0, 1, 0)
+    TaskEnterVehicle(ped, vehicle, timeout, seat, 1.0, 1, 0)
 end
 
 local function drive(ped, scene, vehicle)
+    local tunables = cfg()
     SetVehicleEngineOn(vehicle, true, true, false)
     stoppedSince[ped] = nil
     if bikeFollower(scene) then
         local lead = leaderVehicle(scene)
         if lead then
             following[ped] = true
-            TaskVehicleFollow(ped, vehicle, lead, DRIVE_STYLE, DRIVE_SPEED, FOLLOW_DISTANCE)
+            TaskVehicleFollow(ped, vehicle, lead, tunables.DriveStyle, tunables.DriveSpeed,
+                tunables.FollowDistance)
             return
         end
     end
     following[ped] = false
-    TaskVehicleDriveWander(ped, vehicle, DRIVE_SPEED, DRIVE_STYLE)
+    TaskVehicleDriveWander(ped, vehicle, tunables.DriveSpeed, tunables.DriveStyle)
 end
 
 local function applyVehicle(ped, scene, now)
@@ -216,26 +153,30 @@ local function roleOf(scene)
 end
 
 local function apply(ped, scene, now)
-    idleSince[ped] = now
+    population().MarkTasked(ped, now)
     roles[ped] = roleOf(scene)
     local archetype = scene.archetype
+    local tunables = cfg()
     if SCENARIO_ARCHETYPES[archetype] then
         if not turned[ped] then
             turned[ped] = true
-            turnUntil[ped] = now + TURN_MS
-            TaskTurnPedToFaceCoord(ped, scene.ax, scene.ay, scene.az, TURN_MS)
+            turnUntil[ped] = now + tunables.TurnMs
+            TaskTurnPedToFaceCoord(ped, scene.ax, scene.ay, scene.az, tunables.TurnMs)
             return
         end
         turnUntil[ped] = nil
         TaskStartScenarioInPlace(ped, scenarioFor(scene), 0, true)
-    elseif archetype == 'walk' then
-        if scene.slot == 0 then
-            TaskWanderStandard(ped, 10.0, 10)
-        else
-            follow(ped, scene, WALK_SPEED)
+    elseif archetype == 'walk' or archetype == 'run' then
+        local running = archetype == 'run'
+        if scene.slot ~= 0 then
+            follow(ped, scene, running and tunables.RunSpeed or tunables.WalkSpeed)
+            return
         end
-    elseif archetype == 'run' then
-        applyRun(ped, scene, now)
+        if running then
+            SetPedMinMoveBlendRatio(ped, tunables.RunMinBlend)
+            SetPedMaxMoveBlendRatio(ped, tunables.RunMaxBlend)
+        end
+        TaskWanderStandard(ped, 10.0, 10)
     elseif VEHICLE_ARCHETYPES[archetype] then
         applyVehicle(ped, scene, now)
     else
@@ -252,7 +193,7 @@ function HumalikeNpcScenesClient.Brake(ped, scene)
     end
     local vehicle = entityOf(scene.vehicle_net)
     if not vehicle or GetPedInVehicleSeat(vehicle, -1) ~= ped then return false end
-    TaskVehicleTempAction(ped, vehicle, BRAKE_ACTION, HOLD_MS)
+    TaskVehicleTempAction(ped, vehicle, cfg().BrakeAction, Config.AmbientControl.StandTaskDurationMs)
     return true
 end
 
@@ -266,7 +207,7 @@ local function applyHeld(ped, scene)
         HumalikeNpcScenesClient.Brake(ped, scene)
         return
     end
-    TaskStandStill(ped, HOLD_MS)
+    TaskStandStill(ped, Config.AmbientControl.StandTaskDurationMs)
 end
 
 -- A follower keeps its follow task until it drops; wandering without a
@@ -277,19 +218,11 @@ local function refreshFollower(ped, scene, now)
         if not leader or taskDropped(ped, FOLLOW_TASK) then apply(ped, scene, now) end
         return
     end
-    if leader or idle(ped, now, config().WanderIdleMs) then apply(ped, scene, now) end
-end
-
-local function refreshRunLeader(ped, scene, now)
-    if not runTargets[ped] then
-        if now >= (runRetryAt[ped] or 0) then apply(ped, scene, now) end
-        return
-    end
-    if runArrived(ped) or idle(ped, now, config().WanderIdleMs) then apply(ped, scene, now) end
+    if leader or idle(ped, now, Config.Population.WanderIdleMs) then apply(ped, scene, now) end
 end
 
 local function refreshDriver(ped, scene, vehicle, now)
-    if GetEntitySpeed(vehicle) >= VEHICLE_STOPPED_SPEED then
+    if GetEntitySpeed(vehicle) >= cfg().VehicleStoppedSpeed then
         stoppedSince[ped] = nil
     else
         stoppedSince[ped] = stoppedSince[ped] or now
@@ -301,7 +234,8 @@ local function refreshDriver(ped, scene, vehicle, now)
             return
         end
         if following[ped] then
-            if stoppedSince[ped] and now - stoppedSince[ped] >= FOLLOW_STALL_MS then
+            -- No script-task hash to poll for the follow mission: a long stall stands in.
+            if stoppedSince[ped] and now - stoppedSince[ped] >= cfg().FollowStallMs then
                 apply(ped, scene, now)
             end
             return
@@ -313,7 +247,7 @@ end
 local function refreshVehicle(ped, scene, now)
     local vehicle = entityOf(scene.vehicle_net)
     if not vehicle then
-        if not IsPedInAnyVehicle(ped, false) and idle(ped, now, config().WanderIdleMs) then
+        if not IsPedInAnyVehicle(ped, false) and idle(ped, now, Config.Population.WanderIdleMs) then
             apply(ped, scene, now)
         end
         return
@@ -338,10 +272,7 @@ function HumalikeNpcScenesClient.Configure(ped, scene, state, now)
 end
 
 function HumalikeNpcScenesClient.Refresh(ped, scene, state, now)
-    if HumalikeNpcScenesClient.Incapacitated(ped) then
-        idleSince[ped] = nil
-        return
-    end
+    if HumalikeNpcScenesClient.Incapacitated(ped) then return end
     if state.humalike_scene_held == true then
         applyHeld(ped, scene)
         return
@@ -365,11 +296,9 @@ function HumalikeNpcScenesClient.Refresh(ped, scene, state, now)
         refreshVehicle(ped, scene, now)
     elseif (archetype == 'walk' or archetype == 'run') and scene.slot ~= 0 then
         refreshFollower(ped, scene, now)
-    elseif archetype == 'run' then
-        refreshRunLeader(ped, scene, now)
     else
-        local threshold = SCENARIO_ARCHETYPES[archetype] and config().ScenarioIdleMs
-            or config().WanderIdleMs
+        local threshold = SCENARIO_ARCHETYPES[archetype] and Config.Population.ScenarioIdleMs
+            or Config.Population.WanderIdleMs
         if idle(ped, now, threshold) then apply(ped, scene, now) end
     end
 end
@@ -385,8 +314,8 @@ function HumalikeNpcScenesClient.Reapply(ped, scene, state, now)
     apply(ped, scene, now)
 end
 
-local registries = { idleSince, turnUntil, turned, heldInit, runTargets, runRetryAt, stoppedSince,
-    roles, following, enteredAt, vehicleLost }
+local registries = { turnUntil, turned, heldInit, stoppedSince, roles, following, enteredAt,
+    vehicleLost }
 
 function HumalikeNpcScenesClient.Forget(seen)
     for _, registry in ipairs(registries) do
