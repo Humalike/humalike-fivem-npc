@@ -11,6 +11,13 @@ local dead = false
 LoadedPeds = {}
 AmbientNpcEntries = {}
 LoadedPeds['static-loop'] = 99
+LoadedPeds['dynamic-loop'] = 98
+KnownNpcs = {
+    ['static-loop'] = { type = 'static' },
+    ['dynamic-loop'] = { type = 'dynamic' },
+    ['static-1'] = { type = 'static' },
+    ['dynamic-1'] = { type = 'dynamic' },
+}
 
 function AddEventHandler(name, handler) handlers[name] = handler end
 function CreateThread(handler) threads[#threads + 1] = handler end
@@ -53,7 +60,7 @@ waitLimit = 6
 pcall(threads[2])
 
 assert(handlers.entityDamaged)
-assert(healthRestores == 2)
+assert(healthRestores == 2, 'the refill loop only touches static roster peds')
 assert(#sent == 2 and sent[1][1] == 'humalike:npc:gunshotFired'
     and sent[2][1] == 'humalike:npc:gunshotFired',
     'automatic fire reports once per burst and rearms after 500 ms silence')
@@ -98,6 +105,24 @@ handlers.entityDamaged(101, 99, 10, 25)
 stateNpcId = nil
 handlers.entityDamaged(101, 42, 10, 25)
 assert(#sent == 8)
+
+-- A dynamic roster NPC keeps GTA health: no refill, and it reports its own death
+-- without an entity id so the server resolves the ped it owns.
+stateNpcId = 'dynamic-1'
+LoadedPeds['dynamic-1'] = 102
+dead = false
+local restoresBefore = healthRestores
+handlers.entityDamaged(102, 42, 0, 6)
+assert(healthRestores == restoresBefore, 'dynamic roster peds are never refilled')
+assert(sent[#sent - 1][1] == 'humalike:npc:npcDamaged' and sent[#sent - 1][3] == -1)
+assert(sent[#sent][1] == 'humalike:npc:npcAttacked' and sent[#sent][3] == nil)
+assert(#timers == 2, 'a dynamic roster ped schedules a death check')
+local sentBefore = #sent
+dead = true
+timers[2]()
+assert(#sent == sentBefore + 1 and sent[#sent][1] == 'humalike:npc:npcDied')
+assert(sent[#sent][2] == 'dynamic-1' and sent[#sent][3] == nil, 'roster deaths carry no entity id')
+dead = false
 
 local persistentServer = assert(io.open('server/persistent.lua')):read('*a')
 assert(not persistentServer:find('SetEntityInvincible'))

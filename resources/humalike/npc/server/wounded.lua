@@ -102,7 +102,7 @@ local function finalize(npcId, reason)
     if not state then return end
     downed[npcId] = nil
     pinBody(resolveBody(state), false)
-    if HumalikeForgetReportedDeath then HumalikeForgetReportedDeath(state.entity_id) end
+    if HumalikeForgetReportedDeath then HumalikeForgetReportedDeath(state.entity_id, npcId) end
     TriggerClientEvent('humalike:npc:npcDownedState', -1, npcId, { state = 'gone' })
     HumalikeDebug('npc %s deceased (%s); wiping memory', npcId, reason)
     TriggerEvent('humalike:npc:npcDeceased', npcId, state.entity_id, reason)

@@ -245,18 +245,46 @@ AddEventHandler('humalike:npc:npcShoved', function(npcId, entityId, intensity)
     }, 1000)
 end)
 local reportedDeaths = {}
-function HumalikeForgetReportedDeath(entityId)
+local function rosterDeathKey(npcId) return 'npc:' .. npcId end
+function HumalikeForgetReportedDeath(entityId, npcId)
     if type(entityId) == 'number' then reportedDeaths[entityId] = nil end
+    if type(npcId) == 'string' then reportedDeaths[rosterDeathKey(npcId)] = nil end
 end
 
 RegisterNetEvent('humalike:npc:npcDied')
 AddEventHandler('humalike:npc:npcDied', function(npcId, entityId)
     local playerId = tonumber(source)
     if not playerId or playerId <= 0 or playerId % 1 ~= 0
-        or type(entityId) ~= 'number' or entityId <= 0 or entityId % 1 ~= 0
         or type(npcId) ~= 'string' or not HumalikePlayer.IsCharacterLoaded(playerId) then
         return
     end
+    if entityId == nil then
+        -- A dynamic roster NPC: the server owns the ped, so it verifies the
+        -- death itself. Static NPCs never reach zero health (see combat.lua).
+        local definition = NpcRegistry and NpcRegistry[npcId] or nil
+        if not definition or definition.type == 'static' then return end
+        local entity = staticEntity(npcId)
+        local key = rosterDeathKey(npcId)
+        if not entity or GetEntityRoutingBucket(entity) ~= GetPlayerRoutingBucket(playerId)
+            or GetEntityHealth(entity) > 0 or reportedDeaths[key] then return end
+        reportedDeaths[key] = true
+        if HumalikeWoundedOnLethalHit then
+            HumalikeWoundedOnLethalHit(npcId, nil, entity)
+        end
+        post({
+            fivem_session_id = playerId,
+            source_event_id = HumalikeHttp.NextSourceEventId(playerId),
+            occurred_at = os.date('!%Y-%m-%dT%H:%M:%SZ'),
+            event = {
+                type = 'npc_died',
+                npc_id = npcId,
+                fatal = HumalikeWoundedStateOf ~= nil
+                    and HumalikeWoundedStateOf(npcId) == 'deceased' or false,
+            },
+        }, 1000)
+        return
+    end
+    if type(entityId) ~= 'number' or entityId <= 0 or entityId % 1 ~= 0 then return end
 
     local lease, entity = ambientLease(entityId)
     if not lease or lease.npc_id ~= npcId or type(lease.lease_token) ~= 'string'
@@ -297,10 +325,21 @@ end
 AddEventHandler('humalike:npc:npcRevived', function(playerId, npcId, entityId, leaseToken)
     playerId = tonumber(playerId)
     if not playerId or playerId <= 0 or playerId % 1 ~= 0
-        or type(entityId) ~= 'number' or entityId <= 0 or entityId % 1 ~= 0
         or type(npcId) ~= 'string' or not HumalikePlayer.IsCharacterLoaded(playerId) then
         return
     end
+    if entityId == nil then
+        if not (NpcRegistry and NpcRegistry[npcId]) then return end
+        reportedDeaths[rosterDeathKey(npcId)] = nil
+        post({
+            fivem_session_id = playerId,
+            source_event_id = HumalikeHttp.NextSourceEventId(playerId),
+            occurred_at = os.date('!%Y-%m-%dT%H:%M:%SZ'),
+            event = { type = 'npc_revived', npc_id = npcId },
+        }, 1000)
+        return
+    end
+    if type(entityId) ~= 'number' or entityId <= 0 or entityId % 1 ~= 0 then return end
 
     local lease = ambientLease(entityId)
     if not lease or lease.npc_id ~= npcId or lease.lease_token ~= leaseToken then return end

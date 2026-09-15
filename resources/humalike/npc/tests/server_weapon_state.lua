@@ -399,3 +399,42 @@ shoved('cap-1', 61, 'bump')
 assert(#observations == capBefore + limit + 2, 'a dropped player starts with a clean window and clocks')
 
 print('server_weapon_state (deaths): ok')
+
+-- Dynamic roster NPCs report their own death without an entity id; static ones never die.
+NpcRegistry['dyn-1'] = { x = 8, y = 0, z = 0, type = 'dynamic' }
+NpcRegistry['stat-1'] = { x = 8, y = 0, z = 0, type = 'static' }
+PersistentNpcEntities = { ['dyn-1'] = 88, ['stat-1'] = 89 }
+existing[88] = true
+existing[89] = true
+buckets[88] = 0
+buckets[89] = 0
+playerBucket = 0
+entityHealth = 0
+local lethal = {}
+HumalikeWoundedOnLethalHit = function(npcId, entityId, entity)
+    lethal[#lethal + 1] = { npcId, entityId, entity }
+end
+local beforeRoster = #observations
+handlers['humalike:npc:npcDied']('dyn-1', nil)
+assert(#observations == beforeRoster + 1 and observations[#observations].event.type == 'npc_died')
+assert(observations[#observations].event.npc_id == 'dyn-1')
+assert(observations[#observations].event.lease_token == nil, 'roster deaths carry no lease token')
+assert(#lethal == 1 and lethal[1][1] == 'dyn-1' and lethal[1][2] == nil and lethal[1][3] == 88)
+handlers['humalike:npc:npcDied']('dyn-1', nil)
+assert(#observations == beforeRoster + 1, 'a roster death is reported once')
+handlers['humalike:npc:npcDied']('stat-1', nil)
+assert(#observations == beforeRoster + 1 and #lethal == 1, 'static NPCs never die')
+HumalikeForgetReportedDeath(nil, 'dyn-1')
+entityHealth = 100
+handlers['humalike:npc:npcDied']('dyn-1', nil)
+assert(#observations == beforeRoster + 1, 'a living roster ped is not a death')
+entityHealth = 0
+handlers['humalike:npc:npcDied']('dyn-1', nil)
+assert(#observations == beforeRoster + 2, 'forgetting the death lets the next one through')
+handlers['humalike:npc:npcRevived']('7', 'dyn-1', nil, nil)
+assert(#observations == beforeRoster + 3 and observations[#observations].event.type == 'npc_revived')
+assert(observations[#observations].event.npc_id == 'dyn-1')
+assert(observations[#observations].event.lease_token == nil)
+handlers['humalike:npc:npcDied']('dyn-1', nil)
+assert(#observations == beforeRoster + 4, 'a revive re-arms the death report')
+PersistentNpcEntities = nil

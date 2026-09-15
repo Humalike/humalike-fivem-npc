@@ -1,12 +1,20 @@
 
 local pendingDeathChecks = {}
 
+-- Only static roster NPCs are unkillable; dynamic roster NPCs keep GTA health
+-- and go through the wounded/deceased flow like population bodies.
+local function healsToFull(npcId)
+    local entry = KnownNpcs and KnownNpcs[npcId] or nil
+    return entry ~= nil and entry.type == 'static'
+end
+
 AddEventHandler('entityDamaged', function(victim, culprit, weapon, baseDamage)
     if culprit ~= PlayerPedId() then return end
     local npcId = Entity(victim).state.humalike_npc_id
     if not npcId then return end
     if HumalikeNpcShove then HumalikeNpcShove.NoteDamage(victim, GetGameTimer()) end
-    if LoadedPeds and LoadedPeds[npcId] == victim then
+    local rosterPed = LoadedPeds and LoadedPeds[npcId] == victim
+    if rosterPed and healsToFull(npcId) then
         SetEntityHealth(victim, GetEntityMaxHealth(victim))
     end
 
@@ -25,7 +33,9 @@ AddEventHandler('entityDamaged', function(victim, culprit, weapon, baseDamage)
         tostring(baseDamage))
     TriggerServerEvent('humalike:npc:npcAttacked', npcId, entityId, weapon,
         baseDamage, HumalikeWeaponName and HumalikeWeaponName(weapon) or nil)
-    if entityId and not pendingDeathChecks[victim] then
+    -- Ambient/population bodies report with their entity id; dynamic roster
+    -- peds report without one and the server resolves its own entity.
+    if (entityId or (rosterPed and not healsToFull(npcId))) and not pendingDeathChecks[victim] then
         pendingDeathChecks[victim] = true
         SetTimeout(150, function()
             pendingDeathChecks[victim] = nil
@@ -42,7 +52,7 @@ CreateThread(function()
     while true do
         Wait(next(LoadedPeds or {}) and 500 or 1500)
         for npcId, ped in pairs(LoadedPeds or {}) do
-            if DoesEntityExist(ped) and not IsEntityDead(ped)
+            if DoesEntityExist(ped) and not IsEntityDead(ped) and healsToFull(npcId)
                 and not (HumalikeDownedState and HumalikeDownedState(npcId)) then
                 SetEntityHealth(ped, GetEntityMaxHealth(ped))
             end
