@@ -81,13 +81,12 @@ local function validInteger(value, low, high)
     return type(value) == 'number' and value % 1 == 0 and value >= low and value <= high
 end
 
--- Scene fields travel together: a lone body carries none, a scene body its
--- slot, and a seated body both its vehicle and its seat.
+-- Scene fields travel together: a lone body carries no vehicle or seat, a
+-- seated body both. A body's slot is its position in the scene's body_ids;
+-- a `scene_slot` an older edge still sends is ignored.
 local function validSceneFields(body)
-    if body.scene_id == nil then
-        return body.scene_slot == nil and body.vehicle_id == nil and body.seat == nil
-    end
-    if not HumalikeValidId(body.scene_id) or not validInteger(body.scene_slot, 0, 7) then return false end
+    if body.scene_id == nil then return body.vehicle_id == nil and body.seat == nil end
+    if not HumalikeValidId(body.scene_id) then return false end
     if (body.vehicle_id == nil) ~= (body.seat == nil) then return false end
     return body.vehicle_id == nil or (HumalikeValidId(body.vehicle_id) and validInteger(body.seat, -1, 7))
 end
@@ -310,7 +309,6 @@ local function track(wanted)
         candidates = wanted.candidates,
         anchor_session_id = wanted.anchor_session_id,
         scene_id = wanted.scene_id,
-        scene_slot = wanted.scene_slot,
         vehicle_id = wanted.vehicle_id,
         seat = wanted.seat,
         status = 'spawning',

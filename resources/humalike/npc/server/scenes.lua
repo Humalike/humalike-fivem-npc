@@ -32,8 +32,9 @@ local function validSceneShape(scene)
         and #scene.body_ids <= MAX_SLOTS
 end
 
--- A valid scene names bodies the plan wants, in slot order, seated in its own
--- vehicles when the archetype rides; nil rejects the whole crew.
+-- A valid scene names bodies the plan wants, each once, seated in its own
+-- vehicles when the archetype rides; a body's slot is its position here
+-- (0 leads). nil rejects the whole crew.
 local function validScene(scene, wanted)
     if not validSceneShape(scene) then return nil end
     for _, point in ipairs(scene.candidates) do
@@ -51,7 +52,7 @@ local function validScene(scene, wanted)
     for index, bodyId in ipairs(scene.body_ids) do
         local body = type(bodyId) == 'string' and wanted[bodyId] or nil
         if not body or seen[bodyId] or body.scene_id ~= scene.scene_id
-            or body.scene_slot ~= index - 1 or body.routing_bucket ~= scene.routing_bucket
+            or body.routing_bucket ~= scene.routing_bucket
             or (body.vehicle_id ~= nil) ~= rides then return nil end
         if rides then
             local seat = body.vehicle_id .. ':' .. tostring(body.seat)
@@ -244,9 +245,9 @@ local function stampRole(crew, record, slot, count)
     state:set('humalike_scene', bag, true)
 end
 
--- The edge re-slots a crew that shrank: the next body leads and the formation
--- follows the new slots. Nothing is re-spawned or moved; the owning client
--- picks the new role up from the state bag.
+-- A re-pushed plan re-slots the crew by position in body_ids: the first body
+-- leads and the formation follows. Nothing is re-spawned or moved; the owning
+-- client picks the new role up from the state bag.
 local function reslot(crew, entry)
     local byId = {}
     for _, record in ipairs(crew.records) do byId[record.body_id] = record end

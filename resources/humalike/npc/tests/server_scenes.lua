@@ -281,7 +281,7 @@ end
 local function crew(sceneId, ids, seats)
     local rows = {}
     for slot, bodyId in ipairs(ids) do
-        local fields = { scene_id = sceneId, scene_slot = slot - 1 }
+        local fields = { scene_id = sceneId }
         if seats then fields.vehicle_id, fields.seat = seats[slot][1], seats[slot][2] end
         if slot == #ids and not seats then fields.kind = 'extra'; fields.style_seed = 9 end
         rows[#rows + 1] = body(bodyId, fields)
@@ -312,8 +312,6 @@ local function rejected(label, wanted, scenes)
     end
     assert(next(bodyIds()) == nil, label)
 end
-rejected('slot mismatch', crew('s-slot', { 'b1', 'b2', 'b3' }),
-    { scene('s-slot', 'corner', { 'b2', 'b1', 'b3' }) })
 rejected('foot scene with a vehicle', crew('s-veh', { 'b1', 'b2', 'b3' }),
     { scene('s-veh', 'corner', { 'b1', 'b2', 'b3' }, { vehicles = {
         { vehicle_id = 'v1', model = 'schafter2', model_hash = 4294966519, spawn_type = 'automobile' } } }) })
@@ -326,8 +324,8 @@ rejected('seat in a vehicle the scene lacks', crew('s-seat', { 'b1', 'b2' }, { {
     { scene('s-seat', 'car', { 'b1', 'b2' }, { vehicles = {
         { vehicle_id = 'v1', model = 'schafter2', model_hash = 4294966519, spawn_type = 'automobile' } } }) })
 rejected('scene body without its scene', crew('s-missing', { 'b1', 'b2', 'b3' }), {})
-local lone = body('lone', { scene_slot = 0 })
-rejected('a lone body carrying a slot', { lone }, {})
+local lone = body('lone', { seat = 0 })
+rejected('a lone body carrying a seat', { lone }, {})
 rejected('candidates out of range', crew('s-far', { 'b1', 'b2', 'b3' }),
     { scene('s-far', 'corner', { 'b1', 'b2', 'b3' }, { candidates = { { x = 99999, y = 0, z = 0 } } }) })
 
@@ -389,6 +387,40 @@ assert(next(bodyIds()) == nil)
 for _, ped in ipairs(peds) do assert(existing[ped] == nil, 'every member is deleted') end
 HumalikeNpcPopulation.Reconcile()
 assert(HumalikeNpcScenes.Count() == 0, 'a foot scene with no bodies left is dropped')
+
+-- Slots come from the position in body_ids: nothing on the wire names them.
+local positional = crew('s-pos', { 'n1', 'n2', 'n3' })
+for _, planned in ipairs(positional) do assert(planned.scene_slot == nil) end
+plan(positional, { scene('s-pos', 'walk', { 'n1', 'n2', 'n3' }) })
+rows = bodyIds()
+for slot, bodyId in ipairs({ 'n1', 'n2', 'n3' }) do
+    local bag = entityState[rows[bodyId].handle].humalike_scene
+    assert(bag.slot == slot - 1 and near(bag.oy, -1.3 * (slot - 1)), bodyId .. ' takes slot ' .. (slot - 1))
+    assert(bag.leader_net == created[rows.n1.handle].network_id)
+end
+-- A re-pushed plan that reorders body_ids re-stamps the slots from position.
+pedsBefore = pedCount
+local posSets = setsOf('humalike_scene')
+plan(crew('s-pos', { 'n1', 'n2', 'n3' }), { scene('s-pos', 'walk', { 'n3', 'n1', 'n2' }) })
+assert(pedCount == pedsBefore, 'nobody is re-spawned')
+assert(setsOf('humalike_scene') == posSets + 3, 'every bag is rewritten once')
+local n3 = entityState[rows.n3.handle].humalike_scene
+assert(n3.slot == 0 and n3.oy == 0.0 and n3.leader_net == created[rows.n3.handle].network_id, 'n3 leads')
+local n1 = entityState[rows.n1.handle].humalike_scene
+assert(n1.slot == 1 and near(n1.oy, -1.3) and n1.leader_net == created[rows.n3.handle].network_id)
+local n2 = entityState[rows.n2.handle].humalike_scene
+assert(n2.slot == 2 and near(n2.oy, -2.6) and n2.leader_net == created[rows.n3.handle].network_id)
+assert(HumalikeNpcScenes.Scenes()[1].leader_net == created[rows.n3.handle].network_id)
+-- A stale scene_slot from an older edge is ignored: position still wins.
+local stale = crew('s-stale', { 'm1', 'm2', 'm3' })
+for _, planned in ipairs(stale) do planned.scene_slot = 2 end
+plan(stale, { scene('s-stale', 'walk', { 'm1', 'm2', 'm3' }) })
+rows = bodyIds()
+assert(rows.m1 and rows.m2 and rows.m3, 'the crew spawns')
+assert(entityState[rows.m1.handle].humalike_scene.slot == 0 and entityState[rows.m3.handle].humalike_scene.slot == 2)
+plan({}, {}, { 'm1', 'm2', 'm3' })
+HumalikeNpcPopulation.Reconcile()
+assert(HumalikeNpcScenes.Count() == 0)
 
 -- A shrinking walk scene: the leader is released, the next plan re-slots the rest.
 plan(crew('s-walk', { 'w1', 'w2', 'w3' }), { scene('s-walk', 'walk', { 'w1', 'w2', 'w3' }) })
