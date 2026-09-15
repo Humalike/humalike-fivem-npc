@@ -5,8 +5,10 @@ local configured = {}
 local dressed = {}
 local paced = {}
 local ownedBodies = {}
+local liveScenes = {}
 local enabled = false
 local copsAllowed = false
+local groupSpawns = false
 local copsDisabled = false
 local lastSweepAt = 0
 local DEFAULT_STAND_SCENARIO = 'WORLD_HUMAN_STAND_IMPATIENT'
@@ -27,6 +29,14 @@ local function pavementPoint(candidate)
     return nil
 end
 
+-- Node type 1 (roads) with a heading, so a vehicle lands facing the traffic.
+local function roadPoint(candidate)
+    local found, node, heading = GetClosestVehicleNodeWithHeading(candidate.x, candidate.y,
+        candidate.z, 1, 3.0, 0)
+    if found and node then return node.x, node.y, node.z, heading end
+    return nil
+end
+
 local function acceptable(x, y, z)
     local playerPed = PlayerPedId()
     if playerPed == 0 or not DoesEntityExist(playerPed) then return false end
@@ -37,13 +47,21 @@ local function acceptable(x, y, z)
     return not IsSphereVisible(x, y, z, 2.0)
 end
 
-function HumalikeNpcPopulationClient.SelectSpawnPoint(candidates)
+-- `mode` is `foot` (pavement, the default) or `vehicle` (nearest road node).
+function HumalikeNpcPopulationClient.SelectSpawnPoint(candidates, mode)
+    local onRoad = mode == 'vehicle'
     for _, candidate in ipairs(type(candidates) == 'table' and candidates or {}) do
         if type(candidate) == 'table' and HumalikeValidCoordinate(candidate.x)
             and HumalikeValidCoordinate(candidate.y) and HumalikeValidCoordinate(candidate.z) then
-            local x, y, z = pavementPoint(candidate)
+            local x, y, z, heading
+            if onRoad then
+                x, y, z, heading = roadPoint(candidate)
+            else
+                x, y, z = pavementPoint(candidate)
+            end
             if x and acceptable(x, y, z) then
-                return { x = x, y = y, z = z, heading = tonumber(candidate.heading) or 0.0 }
+                return { x = x, y = y, z = z,
+                    heading = tonumber(heading) or tonumber(candidate.heading) or 0.0 }
             end
         end
     end
@@ -51,10 +69,10 @@ function HumalikeNpcPopulationClient.SelectSpawnPoint(candidates)
 end
 
 RegisterNetEvent('humalike:npc:populationSpawnPoint')
-AddEventHandler('humalike:npc:populationSpawnPoint', function(requestId, candidates)
+AddEventHandler('humalike:npc:populationSpawnPoint', function(requestId, candidates, mode)
     if type(requestId) ~= 'string' then return end
     TriggerServerEvent('humalike:npc:populationSpawnPointResult', requestId,
-        HumalikeNpcPopulationClient.SelectSpawnPoint(candidates))
+        HumalikeNpcPopulationClient.SelectSpawnPoint(candidates, mode))
 end)
 
 local function setRandomCops(enabled)
@@ -74,13 +92,20 @@ local function applyRandomCops()
     end
 end
 
-function HumalikeNpcPopulationClient.SetState(active, allowCops)
+function HumalikeNpcPopulationClient.SetState(active, allowCops, allowScenes)
     active = active == true
     allowCops = allowCops == true
+    groupSpawns = allowScenes == true
     if active == enabled and allowCops == copsAllowed then return false end
     enabled, copsAllowed = active, allowCops
     applyRandomCops()
     return true
+end
+
+function HumalikeNpcPopulationClient.Status()
+    local count = 0
+    for _ in pairs(liveScenes) do count = count + 1 end
+    return { enabled = enabled, cops_allowed = copsAllowed, group_spawns = groupSpawns, scenes = count }
 end
 
 function HumalikeNpcPopulationClient.DensityTick()
@@ -93,7 +118,7 @@ end
 RegisterNetEvent('humalike:npc:populationState')
 AddEventHandler('humalike:npc:populationState', function(payload)
     if type(payload) ~= 'table' then return end
-    HumalikeNpcPopulationClient.SetState(payload.enabled, payload.cops_allowed)
+    HumalikeNpcPopulationClient.SetState(payload.enabled, payload.cops_allowed, payload.group_spawns)
 end)
 
 CreateThread(function()
@@ -114,6 +139,17 @@ end
 
 local function incapacitated(ped)
     return IsEntityDead(ped) or IsPedRagdoll(ped) or IsPedInAnyVehicle(ped, false)
+end
+
+local function sceneOf(state)
+    local scene = state.humalike_scene
+    if type(scene) ~= 'table' or not HumalikeNpcScenesClient then return nil end
+    return scene
+end
+
+local function ambles(state)
+    local scene = sceneOf(state)
+    return scene == nil or HumalikeNpcScenesClient.Ambles(scene)
 end
 
 local function wanderIdle(ped, now)
@@ -204,12 +240,27 @@ function HumalikeNpcPopulationClient.OwnsReactions(ped)
     return state.humalike_npc_kind == 'population' and hasMind(state)
 end
 
+-- Scene bodies at walk pace keep the cap; runners and riders own theirs.
+local function scenePace(ped, state)
+    if ambles(state) then
+        capPace(ped, state)
+    else
+        HumalikeNpcPopulationClient.OwnPace(ped)
+    end
+end
+
 local function configure(ped, state, now)
     configured[ped] = state.humalike_body_id or true
     local isManaged = managed(ped)
     ownReactions(ped, state, not isManaged)
     if isManaged then
         HumalikeNpcPopulationClient.OwnPace(ped)
+        return
+    end
+    local scene = sceneOf(state)
+    if scene then
+        scenePace(ped, state)
+        HumalikeNpcScenesClient.Configure(ped, scene, state, now)
         return
     end
     capPace(ped, state)
@@ -221,6 +272,17 @@ local function refresh(ped, state, now)
     ownReactions(ped, state, false)
     if managed(ped) then
         if paced[ped] then HumalikeNpcPopulationClient.OwnPace(ped) end
+        return
+    end
+    local scene = sceneOf(state)
+    if scene then
+        if ambles(state) and not paced[ped] then capPace(ped, state) end
+        if hasMind(state) and IsPedFleeing(ped) then
+            ClearPedTasks(ped)
+            HumalikeNpcScenesClient.Reapply(ped, scene, state, now)
+            return
+        end
+        HumalikeNpcScenesClient.Refresh(ped, scene, state, now)
         return
     end
     if not paced[ped] then capPace(ped, state) end
@@ -242,9 +304,16 @@ end
 function HumalikeNpcPopulationClient.Reapply(ped)
     if not DoesEntityExist(ped) or not NetworkHasControlOfEntity(ped) then return false end
     local state = Entity(ped).state
-    if state.humalike_npc_kind ~= 'population' or managed(ped) or incapacitated(ped) then
-        return false
+    if state.humalike_npc_kind ~= 'population' or managed(ped) then return false end
+    local scene = sceneOf(state)
+    if scene then
+        if HumalikeNpcScenesClient.Incapacitated(ped) then return false end
+        ClearPedTasks(ped)
+        scenePace(ped, state)
+        HumalikeNpcScenesClient.Reapply(ped, scene, state, GetGameTimer())
+        return true
     end
+    if incapacitated(ped) then return false end
     ClearPedTasks(ped)
     capPace(ped, state)
     applyBehaviour(ped, state, GetGameTimer())
@@ -296,6 +365,8 @@ end
 
 function HumalikeNpcPopulationClient.Tick(now, sweep)
     local seen = {}
+    local owned = {}
+    local scenesSeen = {}
     local cfg = config()
     local removed = 0
     sweep = sweep and enabled
@@ -307,6 +378,9 @@ function HumalikeNpcPopulationClient.Tick(now, sweep)
                 seen[ped] = true -- kind not replicated yet; leave it alone this tick
             elseif state.humalike_npc_kind == 'population' then
                 seen[ped] = true
+                owned[ped] = ambles(state)
+                local scene = sceneOf(state)
+                if scene and scene.id ~= nil then scenesSeen[scene.id] = true end
                 dress(ped, state)
                 if configured[ped] == (state.humalike_body_id or true) then
                     refresh(ped, state, now)
@@ -325,7 +399,9 @@ function HumalikeNpcPopulationClient.Tick(now, sweep)
     forgetUnseen(configured, seen)
     forgetUnseen(dressed, seen)
     forgetUnseen(paced, seen)
-    ownedBodies = seen
+    if HumalikeNpcScenesClient then HumalikeNpcScenesClient.Forget(seen) end
+    ownedBodies = owned
+    liveScenes = scenesSeen
     return removed
 end
 
@@ -334,8 +410,8 @@ end
 function HumalikeNpcPopulationClient.PaceTick()
     local rate = config().MoveRate
     if rate == 1.0 then return end
-    for ped in pairs(ownedBodies) do
-        if DoesEntityExist(ped) and NetworkHasControlOfEntity(ped) and not managed(ped) then
+    for ped, walks in pairs(ownedBodies) do
+        if walks and DoesEntityExist(ped) and NetworkHasControlOfEntity(ped) and not managed(ped) then
             SetPedMoveRateOverride(ped, rate)
         end
     end

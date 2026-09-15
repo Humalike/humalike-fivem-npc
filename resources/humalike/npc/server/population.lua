@@ -14,8 +14,9 @@ local lastContactAt = nil
 local requestSequence = 0
 local enabled = false
 local copsAllowed = false
+local groupSpawns = false
 local edgeLost = false
-local broadcast = { enabled = false, cops_allowed = false }
+local broadcast = { enabled = false, cops_allowed = false, group_spawns = false }
 
 local function config()
     return Config.Population
@@ -25,13 +26,18 @@ local function copsConvar()
     return GetConvar('humalike_population_cops', 'false') == 'true'
 end
 
+local function groupSpawnsConvar()
+    return HumalikeNpcGroupSpawnsEnabled ~= nil and HumalikeNpcGroupSpawnsEnabled() or false
+end
+
 local function statePayload()
-    return { enabled = enabled and not edgeLost, cops_allowed = copsAllowed }
+    return { enabled = enabled and not edgeLost, cops_allowed = copsAllowed, group_spawns = groupSpawns }
 end
 
 local function publishState()
     local payload = statePayload()
-    if payload.enabled == broadcast.enabled and payload.cops_allowed == broadcast.cops_allowed then
+    if payload.enabled == broadcast.enabled and payload.cops_allowed == broadcast.cops_allowed
+        and payload.group_spawns == broadcast.group_spawns then
         return false
     end
     broadcast = payload
@@ -68,10 +74,28 @@ local function validBehaviour(body)
     return true
 end
 
+local function validId(value)
+    return type(value) == 'string' and value ~= '' and #value <= 64
+end
+
+local function validInteger(value, low, high)
+    return type(value) == 'number' and value % 1 == 0 and value >= low and value <= high
+end
+
+-- Scene fields travel together: a lone body carries none, a scene body its
+-- slot, and a seated body both its vehicle and its seat.
+local function validSceneFields(body)
+    if body.scene_id == nil then
+        return body.scene_slot == nil and body.vehicle_id == nil and body.seat == nil
+    end
+    if not validId(body.scene_id) or not validInteger(body.scene_slot, 0, 7) then return false end
+    if (body.vehicle_id == nil) ~= (body.seat == nil) then return false end
+    return body.vehicle_id == nil or (validId(body.vehicle_id) and validInteger(body.seat, -1, 7))
+end
+
 local function validBody(body)
-    if type(body) ~= 'table' or not validBehaviour(body)
-        or type(body.body_id) ~= 'string' or body.body_id == ''
-        or #body.body_id > 64 or type(body.model) ~= 'string' or body.model == ''
+    if type(body) ~= 'table' or not validBehaviour(body) or not validSceneFields(body)
+        or not validId(body.body_id) or type(body.model) ~= 'string' or body.model == ''
         or (body.kind ~= nil and body.kind ~= 'persona' and body.kind ~= 'extra')
         or type(body.model_hash) ~= 'number' or type(body.routing_bucket) ~= 'number'
         or body.routing_bucket % 1 ~= 0 or body.routing_bucket < 0
@@ -97,16 +121,16 @@ local function playerPed(playerId, bucket)
     return ped
 end
 
-local function spawnPointClient(record)
-    local origin = record.candidates[1]
+local function spawnPointClient(request)
+    local origin = request.candidates[1]
     local best, bestDistance = nil, config().SpawnPointClientRange ^ 2
-    local anchor = playerPed(record.anchor_session_id, record.routing_bucket)
+    local anchor = playerPed(request.anchor_session_id, request.routing_bucket)
     if anchor and HumalikeDistanceSquared(GetEntityCoords(anchor), origin) <= bestDistance then
-        return record.anchor_session_id
+        return request.anchor_session_id
     end
     for _, playerId in ipairs(GetPlayers()) do
         local id = tonumber(playerId)
-        local ped = playerPed(id, record.routing_bucket)
+        local ped = playerPed(id, request.routing_bucket)
         if ped then
             local distance = HumalikeDistanceSquared(GetEntityCoords(ped), origin)
             if distance <= bestDistance then best, bestDistance = id, distance end
@@ -115,19 +139,21 @@ local function spawnPointClient(record)
     return best
 end
 
--- Only a nearby client sees the navmesh; nil fails the spawn.
-local function resolveSpawnPoint(record)
-    local playerId = spawnPointClient(record)
+-- Only a nearby client sees the navmesh; nil fails the spawn. `mode` is
+-- `foot` (pavement) or `vehicle` (road node); a body record is a valid request.
+local function resolveSpawnPoint(request)
+    local playerId = spawnPointClient(request)
     if not playerId then return nil end
     requestSequence = requestSequence + 1
-    local requestId = ('%s:%d'):format(record.body_id, requestSequence)
-    local request = { player_id = playerId, candidates = record.candidates }
-    spawnPointRequests[requestId] = request
-    TriggerClientEvent('humalike:npc:populationSpawnPoint', playerId, requestId, record.candidates)
+    local requestId = ('%s:%d'):format(request.body_id or request.scene_id, requestSequence)
+    local pending = { player_id = playerId, candidates = request.candidates }
+    spawnPointRequests[requestId] = pending
+    TriggerClientEvent('humalike:npc:populationSpawnPoint', playerId, requestId, request.candidates,
+        request.mode == 'vehicle' and 'vehicle' or 'foot')
     local deadline = GetGameTimer() + config().SpawnPointTimeoutMs
-    while not request.done and GetGameTimer() < deadline do Wait(50) end
+    while not pending.done and GetGameTimer() < deadline do Wait(50) end
     spawnPointRequests[requestId] = nil
-    return request.point
+    return pending.point
 end
 
 local function discard(record)
@@ -257,8 +283,7 @@ local function bind(record)
     end)
 end
 
-function HumalikeNpcPopulation.Spawn(wanted)
-    if bodies[wanted.body_id] then return false end
+local function track(wanted)
     local record = {
         body_id = wanted.body_id,
         kind = wanted.kind == 'extra' and 'extra' or 'persona',
@@ -272,10 +297,81 @@ function HumalikeNpcPopulation.Spawn(wanted)
         zone_code = wanted.zone_code,
         candidates = wanted.candidates,
         anchor_session_id = wanted.anchor_session_id,
+        scene_id = wanted.scene_id,
+        scene_slot = wanted.scene_slot,
+        vehicle_id = wanted.vehicle_id,
+        seat = wanted.seat,
         status = 'spawning',
         started_at = GetGameTimer(),
     }
     bodies[wanted.body_id] = record
+    return record
+end
+
+-- GTA headings turn counter-clockwise from north: right is (cos, sin) and
+-- forward (-sin, cos), so `ox` metres to the right and `oy` ahead of `point`.
+local function offsetPoint(point, ox, oy)
+    if not ox and not oy then return point.x, point.y end
+    local heading = math.rad(point.heading or 0.0)
+    local sin, cos = math.sin(heading), math.cos(heading)
+    ox, oy = ox or 0.0, oy or 0.0
+    return point.x + ox * cos - oy * sin, point.y + ox * sin + oy * cos
+end
+
+-- Creates the record's ped at `point` (shifted by `placement.ox`/`oy`), stamps
+-- its state bags, seats it when the placement names a vehicle and waits for
+-- its network id. False leaves the record to the caller.
+local function materialise(record, point, placement)
+    placement = placement or {}
+    if bodies[record.body_id] ~= record or record.status ~= 'spawning' then return false end
+    local x, y = offsetPoint(point, placement.ox, placement.oy)
+    local ped = CreatePed(4, GetHashKey(record.model), x, y, point.z, point.heading or 0.0, true, true)
+    if not ped or ped <= 0 then return false end
+    record.ped = ped
+    SetEntityRoutingBucket(ped, record.routing_bucket)
+    SetEntityOrphanMode(ped, 2)
+    local state = Entity(ped).state
+    state:set('humalike_npc_kind', 'population', true)
+    state:set('humalike_body_kind', record.kind, true)
+    state:set('humalike_body_id', record.body_id, true)
+    state:set('humalike_body_behaviour', record.behaviour, true)
+    state:set('humalike_body_scenario', record.scenario, true)
+    state:set('humalike_walk_rate', record.walk_rate, true)
+    if record.kind == 'extra' then state:set('humalike_style_seed', record.style_seed, true) end
+    if placement.scene then
+        state:set('humalike_scene', placement.scene, true)
+        state:set('humalike_scene_held', false, true)
+    end
+    if placement.vehicle then TaskWarpPedIntoVehicle(ped, placement.vehicle, placement.seat) end
+    local networkId = NetworkGetNetworkIdFromEntity(ped)
+    local attempts = 0
+    while networkId <= 0 and attempts < 50 do
+        Wait(0)
+        attempts = attempts + 1
+        networkId = NetworkGetNetworkIdFromEntity(ped)
+    end
+    if networkId <= 0 or bodies[record.body_id] ~= record or record.status ~= 'spawning' then
+        return false
+    end
+    record.network_id = networkId
+    return true
+end
+
+local function activate(record)
+    if record.kind == 'extra' then
+        record.status = 'extra'
+        reportDirty = true
+        if record.release_requested then
+            HumalikeNpcPopulation.Despawn(record.body_id, record.release_requested)
+        end
+        return
+    end
+    bind(record)
+end
+
+function HumalikeNpcPopulation.Spawn(wanted)
+    if bodies[wanted.body_id] then return false end
+    local record = track(wanted)
     CreateThread(function()
         local point = resolveSpawnPoint(record)
         if bodies[record.body_id] ~= record then return end
@@ -288,46 +384,40 @@ function HumalikeNpcPopulation.Spawn(wanted)
             spawnFailed(record)
             return
         end
-        local ped = CreatePed(4, GetHashKey(record.model), point.x, point.y, point.z,
-            point.heading or 0.0, true, true)
-        if not ped or ped <= 0 then
+        if not materialise(record, point) then
             spawnFailed(record)
             return
         end
-        record.ped = ped
-        SetEntityRoutingBucket(ped, record.routing_bucket)
-        SetEntityOrphanMode(ped, 2)
-        local state = Entity(ped).state
-        state:set('humalike_npc_kind', 'population', true)
-        state:set('humalike_body_kind', record.kind, true)
-        state:set('humalike_body_id', record.body_id, true)
-        state:set('humalike_body_behaviour', record.behaviour, true)
-        state:set('humalike_body_scenario', record.scenario, true)
-        state:set('humalike_walk_rate', record.walk_rate, true)
-        if record.kind == 'extra' then state:set('humalike_style_seed', record.style_seed, true) end
-        local networkId = NetworkGetNetworkIdFromEntity(ped)
-        local attempts = 0
-        while networkId <= 0 and attempts < 50 do
-            Wait(0)
-            attempts = attempts + 1
-            networkId = NetworkGetNetworkIdFromEntity(ped)
-        end
-        if networkId <= 0 or bodies[record.body_id] ~= record or record.status ~= 'spawning' then
-            spawnFailed(record)
-            return
-        end
-        record.network_id = networkId
-        if record.kind == 'extra' then
-            record.status = 'extra'
-            reportDirty = true
-            if record.release_requested then
-                HumalikeNpcPopulation.Despawn(record.body_id, record.release_requested)
-            end
-            return
-        end
-        bind(record)
+        activate(record)
     end)
     return true
+end
+
+-- The scene module builds a crew step by step through these; a lone body
+-- takes the same path inside Spawn.
+function HumalikeNpcPopulation.Track(wanted)
+    if bodies[wanted.body_id] then return nil end
+    return track(wanted)
+end
+HumalikeNpcPopulation.Materialise = materialise
+HumalikeNpcPopulation.Activate = activate
+HumalikeNpcPopulation.Abandon = spawnFailed
+HumalikeNpcPopulation.Retire = retire
+HumalikeNpcPopulation.ResolveSpawnPoint = resolveSpawnPoint
+HumalikeNpcPopulation.OffsetPoint = offsetPoint
+HumalikeNpcPopulation.ValidPoint = validPoint
+function HumalikeNpcPopulation.Tracked(bodyId)
+    return bodies[bodyId] ~= nil
+end
+function HumalikeNpcPopulation.Holds(record)
+    return bodies[record.body_id] == record
+end
+function HumalikeNpcPopulation.PedOf(record)
+    return ownsPed(record, record.ped) and record.ped or nil
+end
+function HumalikeNpcPopulation.NoteFailed(bodyId)
+    noteFailed(bodyId)
+    reportDirty = true
 end
 
 local function forget(bodyId)
@@ -388,6 +478,7 @@ function HumalikeNpcPopulation.ApplyPlan(body)
     planRevision = revision
     enabled = body.enabled == true
     copsAllowed = copsConvar()
+    groupSpawns = groupSpawnsConvar()
     contact(GetGameTimer())
     publishState()
     local wanted = {}
@@ -402,6 +493,15 @@ function HumalikeNpcPopulation.ApplyPlan(body)
             end
         end
     end
+    local scenes = HumalikeNpcScenes
+        and HumalikeNpcScenes.Accept(enabled and body.scenes or nil, wanted, groupSpawns) or {}
+    -- A scene body without its scene (rejected, or scenes switched off) never spawns alone.
+    for bodyId, planned in pairs(wanted) do
+        if planned.scene_id and not scenes[planned.scene_id] then
+            wanted[bodyId] = nil
+            noteFailed(bodyId)
+        end
+    end
     local released = {}
     for _, bodyId in ipairs(type(body.released) == 'table' and body.released or {}) do
         if type(bodyId) == 'string' then released[bodyId] = true end
@@ -414,8 +514,11 @@ function HumalikeNpcPopulation.ApplyPlan(body)
         end
     end
     for bodyId, planned in pairs(wanted) do
-        if not bodies[bodyId] and not released[bodyId] then HumalikeNpcPopulation.Spawn(planned) end
+        if not bodies[bodyId] and not released[bodyId] and not planned.scene_id then
+            HumalikeNpcPopulation.Spawn(planned)
+        end
     end
+    if HumalikeNpcScenes then HumalikeNpcScenes.Spawn(scenes, released) end
     reportFailures, reportRetryAt = 0, 0
     HumalikeNpcPopulation.Report()
     return true
@@ -464,7 +567,10 @@ function HumalikeNpcPopulation.Reconcile()
             end
         end
     end
+    if HumalikeNpcScenes then HumalikeNpcScenes.Reconcile() end
     copsAllowed = copsConvar()
+    groupSpawns = groupSpawnsConvar()
+    if HumalikeNpcFeaturesTick then HumalikeNpcFeaturesTick() end
     edgeLost = enabled and lastContactAt ~= nil
         and now - lastContactAt > cfg.HeartbeatMs * cfg.EdgeLostHeartbeats
     publishState()
@@ -491,6 +597,7 @@ function HumalikeNpcPopulation.Bodies()
             handle = record.ped,
             network_id = record.network_id,
             routing_bucket = record.routing_bucket,
+            scene_id = record.scene_id,
         }
     end
     table.sort(rows, function(left, right) return left.body_id < right.body_id end)
@@ -499,6 +606,10 @@ end
 
 function HumalikeNpcPopulation.Enabled()
     return enabled and not edgeLost
+end
+
+function HumalikeNpcPopulation.GroupSpawns()
+    return groupSpawns
 end
 
 function HumalikeNpcPopulation.SendState(playerId)

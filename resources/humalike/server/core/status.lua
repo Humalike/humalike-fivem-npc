@@ -29,6 +29,15 @@ RegisterCommand('humalike_status', function(source)
         state.detail
     ))
 
+    if HumalikeNpcPopulation then
+        print(('[humalike] population enabled=%s bodies=%d group_spawns=%s scenes=%d'):format(
+            tostring(HumalikeNpcPopulation.Enabled()),
+            #HumalikeNpcPopulation.Bodies(),
+            tostring(HumalikeNpcPopulation.GroupSpawns()),
+            HumalikeNpcScenes and HumalikeNpcScenes.Count() or 0
+        ))
+    end
+
     if type(HumalikeGetProviderStatus) ~= 'function' then
         print('[humalike] integrations=starting')
         return

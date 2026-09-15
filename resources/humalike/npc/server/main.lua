@@ -1,12 +1,17 @@
 
-local function reportCapabilities()
-    HumalikeHttp.PostAction('report_capabilities', { supported_actions = GetSupportedActions() },
-        function(ok, status)
-            if not ok then
-                print(('[humalike-npc] report_capabilities failed (HTTP %s)'):format(tostring(status)))
-            end
-        end)
+function HumalikeNpcReportCapabilities()
+    local features = HumalikeNpcFeatures and HumalikeNpcFeatures() or nil
+    if features and HumalikeNpcFeaturesReported then HumalikeNpcFeaturesReported(features) end
+    HumalikeHttp.PostAction('report_capabilities', {
+        supported_actions = GetSupportedActions(),
+        features = features,
+    }, function(ok, status)
+        if not ok then
+            print(('[humalike-npc] report_capabilities failed (HTTP %s)'):format(tostring(status)))
+        end
+    end)
 end
+local reportCapabilities = HumalikeNpcReportCapabilities
 
 local pendingReadyGeneration
 
@@ -76,8 +81,10 @@ RegisterCommand('humalikenpc:status', function(source)
     local lines = {
         ('player provider: %s'):format(HumalikePlayer.Name() or 'none'),
         ('npcs in roster: %d'):format(count),
-        ('population: enabled=%s bodies=%s'):format(
+        ('population: enabled=%s group_spawns=%s scenes=%d bodies=%s'):format(
             tostring(HumalikeNpcPopulation and HumalikeNpcPopulation.Enabled() or false),
+            tostring(HumalikeNpcPopulation and HumalikeNpcPopulation.GroupSpawns() or false),
+            HumalikeNpcScenes and HumalikeNpcScenes.Count() or 0,
             populationSummary()),
         ('last roster sync: %s (%s)'):format(
             HumalikeStatus.lastRosterSyncAt and os.date('%Y-%m-%d %H:%M:%S', HumalikeStatus.lastRosterSyncAt) or 'never',

@@ -89,6 +89,16 @@ setr humalike_debug 1
 While HumaLike owns the street population, GTA's random police stay off unless
 `set humalike_population_cops true` is set; the convar is read every few seconds.
 
+World groups can also appear as scenes: a few members of one group spawned
+together at one spot, hanging out on a corner or along the pavement, walking or
+running as a pack, cruising in one car or riding as a pack of bikes, and a lone
+courier on a scooter. A scene lives and despawns as a unit, a hold on any member
+stops the whole crew, and its vehicles are the only vehicles the resource ever
+spawns (GTA keeps its traffic). `set humalike_group_spawns false` turns scenes
+off; the flag is read every few seconds, reported to the edge as the
+`group_scenes` capability, and a plan that still names a scene while it is off
+is refused so no stale crew can spawn.
+
 ## Development
 
 ```sh
