@@ -42,6 +42,25 @@ local function enter(ped, vehicle, now)
     return true
 end
 
+-- True for a population driver sitting at the wheel of its own car: the
+-- actions treat it as a driver, not as a passenger who followed a player in.
+function HumalikeNpcDriving.DrivesOwnVehicle(ped)
+    local vehicle = GetVehiclePedIsIn(ped, false)
+    if vehicle == 0 then return false end
+    local state = Entity(ped).state
+    return state.humalike_body_behaviour == 'drive'
+        and state.humalike_vehicle_net == NetworkGetNetworkIdFromEntity(vehicle)
+        and GetPedInVehicleSeat(vehicle, -1) == ped
+end
+
+-- Back on the road from wherever it stopped.
+function HumalikeNpcDriving.Resume(ped)
+    local vehicle = GetVehiclePedIsIn(ped, false)
+    if vehicle == 0 then return false end
+    drive(ped, vehicle)
+    return true
+end
+
 -- Riders are meant to be in vehicles, so only death and ragdoll count.
 function HumalikeNpcDriving.Incapacitated(ped)
     return IsEntityDead(ped) or IsPedRagdoll(ped)

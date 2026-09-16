@@ -234,6 +234,12 @@ NpcActionSustain['follow_player'] = function(ped)
 end
 function BeginStopFollowing(ped)
     taskedGait[ped] = nil
+    if NpcActionDrivesOwnVehicle and NpcActionDrivesOwnVehicle(ped) then
+        -- Nothing to stop: a driver stays at its wheel.
+        resetVehicleState(ped)
+        ReleaseActionControl(ped)
+        return
+    end
     local vehicle = GetVehiclePedIsIn(ped, false)
     if vehicle ~= 0 then
         MarkActionControl(ped, 'stop_following', {})

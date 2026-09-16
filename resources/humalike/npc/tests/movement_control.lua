@@ -42,3 +42,20 @@ assert(action == nil and stopFollowing == 2 and walks == 1 and wanders == 0,
     'a passenger finishes the existing safe exit path before wandering')
 
 print('movement_control: ok')
+
+-- A population driver at its own wheel: "stop" brakes and stays seated; it is
+-- never treated as a passenger to send out of the car.
+local braked = 0
+HumalikeNpcDriving = { Brake = function(ped) assert(ped == 42); braked = braked + 1 end }
+local ownDriver = true
+function NpcActionDrivesOwnVehicle(ped) return ped == 42 and ownDriver end
+inVehicle = true
+action = 'follow_player'
+local before = stopFollowing
+NpcActions.hold_position(42, {})
+assert(action == nil and braked == 1 and stopFollowing == before,
+    'a driver told to stop brakes instead of leaving its car')
+ownDriver = false
+NpcActions.hold_position(42, {})
+assert(stopFollowing == before + 1 and braked == 1, 'a passenger still climbs out as before')
+print('movement_control driver cases: ok')
