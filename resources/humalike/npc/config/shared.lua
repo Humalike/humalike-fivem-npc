@@ -50,7 +50,7 @@ Config.Population = {
     SweepMinPlayerDistance = 15.0,
     SweepMaxPerTick = 5,
     VehicleNodeClearance = 5.0, -- metres: a road node holding a vehicle is not a spawn point
-    VehiclePointReuseMs = 30000, -- a resolved vehicle point is off limits to other drivers this long
+    VehiclePointReuseMs = 5000, -- two drivers resolving at once must not share a node; the client checks real vehicles
     GtaPopulationTypes = { [4] = true, [5] = true },
     CopPedTypes = { [6] = true, [27] = true }, -- GetPedType cop, swat
 }
