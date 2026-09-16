@@ -985,6 +985,13 @@ assert(bodyIds()['drv-2'] == nil and lastAction('release_npc_body').payload.body
 assert(lastAction('release_npc_body').payload.cause == 'spawn_failed')
 assert(lastAction('report_npc_bodies').payload.failed[1] == 'drv-2')
 failVehicle = false
+-- A second driver resolving the node the first car already stands on is
+-- refused server-side too (two requests may resolve before the car exists).
+assert(HumalikeNpcPopulation.ApplyPlan({ revision = 51.5, enabled = true, -- between the neighbours: revisions only need to grow
+    wanted = { driver('drv-1'), driver('drv-same') }, released = {} }))
+assert(bodyIds()['drv-same'] == nil and lastAction('release_npc_body').payload.body_id == 'drv-same')
+assert(lastAction('release_npc_body').payload.cause == 'spawn_failed', 'a taken vehicle point fails the spawn')
+now = now + Config.Population.VehiclePointReuseMs + 1
 failPed = true
 deletedCount = #deleted
 assert(HumalikeNpcPopulation.ApplyPlan({ revision = 52, enabled = true,
@@ -997,6 +1004,7 @@ assert(lastAction('release_npc_body').payload.cause == 'spawn_failed')
 failPed = false
 bindResponse = { status = 'unavailable', reason = 'server_capacity_reached' }
 deletedCount = #deleted
+now = now + Config.Population.VehiclePointReuseMs + 1 -- a fresh road node for the next car
 assert(HumalikeNpcPopulation.ApplyPlan({ revision = 53, enabled = true,
     wanted = { driver('drv-1'), driver('drv-4') }, released = {} }))
 assert(#deleted == deletedCount + 2, 'a refused bind deletes the ped and the vehicle')
@@ -1014,6 +1022,7 @@ assert(#deleted == deletedCount + 2 and existing[501] == nil and existing[drv1.h
 assert(lastAction('release_npc_body').payload.body_id == 'drv-1')
 assert(lastAction('release_npc_body').payload.cause == 'despawned')
 assert(HumalikeNpcPopulation.Drivers() == 0)
+now = now + Config.Population.VehiclePointReuseMs + 1 -- a fresh road node for the next car
 assert(HumalikeNpcPopulation.ApplyPlan({ revision = 55, enabled = true,
     wanted = { driver('drv-5') }, released = {} }))
 local drv5 = bodyIds()['drv-5']
@@ -1033,6 +1042,7 @@ assert(existing[drv5.vehicle] == nil and deleted[#deleted] == drv5.vehicle,
 HumalikeNpcPopulation.Reconcile()
 
 -- The vehicle bag is the only claim: a recycled handle is left alone.
+now = now + Config.Population.VehiclePointReuseMs + 1 -- a fresh road node for the next car
 assert(HumalikeNpcPopulation.ApplyPlan({ revision = 57, enabled = true,
     wanted = { driver('drv-6') }, released = {} }))
 local drv6 = bodyIds()['drv-6']
@@ -1060,6 +1070,7 @@ local drivingExtra = driver('bad-extra', { kind = 'extra' })
 drivingExtra.npc_id = nil
 local bike = driver('drv-bike')
 bike.vehicle = { model = 'hexer', model_hash = 888, spawn_type = 'bike' }
+now = now + Config.Population.VehiclePointReuseMs + 1 -- a fresh road node for the bike
 assert(HumalikeNpcPopulation.ApplyPlan({ revision = 59, enabled = true, wanted = {
     noVehicle, drivingExtra, walkerWithCar, badHash, badType, badModel, bike,
 }, released = {} }))
@@ -1073,6 +1084,7 @@ report = lastAction('report_npc_bodies')
 assert(#report.payload.failed == 6, 'every rejected body is reported failed')
 convars.humalike_npc_vehicles = 'false'
 pedCount, vehicleCount = nextPed, nextVehicle
+now = now + Config.Population.VehiclePointReuseMs + 1 -- a fresh road node for the next car
 assert(HumalikeNpcPopulation.ApplyPlan({ revision = 60, enabled = true,
     wanted = { bike, driver('drv-off'), planned('walker-on', 7) }, released = {} }))
 rows = bodyIds()
@@ -1084,6 +1096,7 @@ assert(#report.payload.failed == 1 and report.payload.failed[1] == 'drv-off')
 convars.humalike_npc_vehicles = nil
 
 -- A resource stop takes every vehicle, a seated player or not.
+now = now + Config.Population.VehiclePointReuseMs + 1 -- a fresh road node for the next car
 assert(HumalikeNpcPopulation.ApplyPlan({ revision = 61, enabled = true,
     wanted = { bike, driver('drv-7') }, released = {} }))
 local drv7 = bodyIds()['drv-7']

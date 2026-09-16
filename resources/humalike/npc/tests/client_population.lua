@@ -185,11 +185,20 @@ function GetClosestVehicleNodeWithHeading(x, y, z, nodeType, zTolerance, flags)
     if node then return true, { x = node[1], y = node[2], z = node[3] }, node[4] end
     return false, nil, 0.0
 end
+local occupiedNodes = {}
+function IsAnyVehicleNearPoint(x, y, z, radius)
+    assert(radius == Config.Population.VehicleNodeClearance)
+    return occupiedNodes[x] == true
+end
 nodes[100] = { 100, 1, 10.5, 270 }
 nodes[300] = { 305, 2, 12, 135 }
 point = HumalikeNpcPopulationClient.SelectSpawnPoint(candidates, 'vehicle')
 assert(point.x == 305 and point.y == 2 and point.z == 12 and point.heading == 135,
     'vehicle mode picks the road node with its heading; a visible node is skipped')
+occupiedNodes[305] = true
+assert(HumalikeNpcPopulationClient.SelectSpawnPoint(candidates, 'vehicle') == nil,
+    'a road node already holding a vehicle is never a spawn point')
+occupiedNodes[305] = nil
 nodes[300] = { 305, 2, 12 }
 point = HumalikeNpcPopulationClient.SelectSpawnPoint(candidates, 'vehicle')
 assert(point.heading == 0.0, 'a node without a heading falls back to the candidate heading')

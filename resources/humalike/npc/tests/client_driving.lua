@@ -202,6 +202,7 @@ function PlayerPedId() return 1 end
 function IsSphereVisible(x) return visible[x] == true end
 function GetEntityCoords() return { x = 0, y = 0, z = 0 } end
 function GetSafeCoordForPed() return false, nil end
+function IsAnyVehicleNearPoint() return false end
 function GetClosestVehicleNodeWithHeading(x)
     local node = nodes[x]
     if node then return true, { x = node[1], y = node[2], z = node[3] }, node[4] end

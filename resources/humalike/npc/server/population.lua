@@ -140,6 +140,24 @@ end
 
 -- Only a nearby client sees the navmesh; nil fails the spawn. A driver asks
 -- for a road node (`vehicle`), anyone else for pavement (`foot`).
+-- Vehicle points handed out recently: two drivers resolving the same node
+-- before the first vehicle exists must not land on top of each other.
+local vehiclePoints = {}
+
+local function vehiclePointFree(point, now)
+    local cfg = config()
+    local clearance = cfg.VehicleNodeClearance * cfg.VehicleNodeClearance
+    for index = #vehiclePoints, 1, -1 do
+        local used = vehiclePoints[index]
+        if now - used.at > cfg.VehiclePointReuseMs then
+            table.remove(vehiclePoints, index)
+        elseif HumalikeDistanceSquared(used, point) < clearance then
+            return false
+        end
+    end
+    return true
+end
+
 local function resolveSpawnPoint(record)
     local playerId = spawnPointClient(record)
     if not playerId then return nil end
@@ -152,7 +170,12 @@ local function resolveSpawnPoint(record)
     local deadline = GetGameTimer() + config().SpawnPointTimeoutMs
     while not request.done and GetGameTimer() < deadline do Wait(50) end
     spawnPointRequests[requestId] = nil
-    return request.point
+    local point = request.point
+    if point and record.vehicle and not vehiclePointFree(point, GetGameTimer()) then
+        HumalikeDebug('population body %s: vehicle point already taken', record.body_id)
+        return nil
+    end
+    return point
 end
 
 local function discard(record)
@@ -340,7 +363,9 @@ local function createVehicle(record, point)
     state:set('humalike_npc_kind', 'population_vehicle', true)
     state:set('humalike_body_id', record.body_id, true)
     record.vehicle_net = awaitNetworkId(handle)
-    return record.vehicle_net > 0
+    if record.vehicle_net <= 0 then return false end
+    vehiclePoints[#vehiclePoints + 1] = { x = point.x, y = point.y, z = point.z, at = GetGameTimer() }
+    return true
 end
 
 -- Creates the record's vehicle (a driver) and ped at `point`, stamps the

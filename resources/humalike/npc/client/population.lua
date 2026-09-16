@@ -28,11 +28,16 @@ local function pavementPoint(candidate)
 end
 
 -- Node type 1 (roads) with a heading, so a vehicle lands facing the traffic.
+-- Neighbouring candidates snap to the same node, so a node already holding a
+-- vehicle (ours or traffic) is skipped rather than spawned into.
 local function roadPoint(candidate)
     local found, node, heading = GetClosestVehicleNodeWithHeading(candidate.x, candidate.y,
         candidate.z, 1, 3.0, 0)
-    if found and node then return node.x, node.y, node.z, heading end
-    return nil
+    if not found or not node then return nil end
+    if IsAnyVehicleNearPoint(node.x, node.y, node.z, config().VehicleNodeClearance) then
+        return nil
+    end
+    return node.x, node.y, node.z, heading
 end
 
 local function acceptable(x, y, z)
