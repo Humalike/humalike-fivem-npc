@@ -35,9 +35,13 @@ function HumalikeWorldVehicle.OwnState(ped)
         or not NetworkDoesEntityExistWithNetworkId(networkId) then return nil end
     local vehicle = NetworkGetEntityFromNetworkId(networkId)
     if not vehicle or vehicle <= 0 or not DoesEntityExist(vehicle) then return nil end
+    local distance = #(GetEntityCoords(vehicle) - GetEntityCoords(ped))
     return {
         network_id = networkId,
-        distance_m = #(GetEntityCoords(vehicle) - GetEntityCoords(ped)),
+        distance_m = distance,
+        -- The walk back is this resource's call (Config.Vehicles.ReturnDistance);
+        -- the edge offers the deed only while this says so.
+        in_reach = distance <= Config.Vehicles.ReturnDistance,
         kind = kindOf(vehicle),
     }
 end

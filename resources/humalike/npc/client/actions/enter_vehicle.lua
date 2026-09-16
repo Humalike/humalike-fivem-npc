@@ -13,16 +13,12 @@ local function networked(vehicle)
     return DoesEntityExist(vehicle) and NetworkGetEntityIsNetworked(vehicle)
 end
 
-local function taskRunning(ped, taskName)
-    return GetScriptTaskStatus(ped, GetHashKey(taskName)) <= 1
-end
-
 -- Somebody else's car: the body's own is enter_own_vehicle's business and the
 -- one it already sits in is not a lift, so a driver told "get in my car" while
 -- the player stands beside their parked car finds that car, not its own seat.
 local function nearestVehicle(ped, current)
     local npcCoords = GetEntityCoords(ped)
-    local own = HumalikeNpcDriving and HumalikeNpcDriving.OwnVehicle(ped) or nil
+    local own = HumalikeNpcDriving.OwnVehicle(ped)
     local best, bestDistance = nil, MAX_DISTANCE
     for _, vehicle in ipairs(GetGamePool('CVehicle')) do
         if vehicle ~= own and vehicle ~= current and networked(vehicle) and stationary(vehicle) then
@@ -38,7 +34,7 @@ end
 
 local function freeSeat(ped, vehicle)
     if GetPedInVehicleSeat(vehicle, -1) ~= 0 then
-        for seat = 0, 8 do
+        for seat = 0, GetVehicleMaxNumberOfPassengers(vehicle) - 1 do
             if GetPedInVehicleSeat(vehicle, seat) == 0 then return seat end
         end
         return nil
@@ -55,16 +51,16 @@ end
 local function step(ped, attempt)
     local current = GetVehiclePedIsIn(ped, false)
     if current ~= 0 and current ~= attempt.vehicle then
-        if not taskRunning(ped, 'SCRIPT_TASK_LEAVE_VEHICLE') then TaskLeaveVehicle(ped, current, 0) end
+        if not HumalikeNpcDriving.TaskRunning(ped, 'SCRIPT_TASK_LEAVE_VEHICLE') then TaskLeaveVehicle(ped, current, 0) end
         return true
     end
-    if taskRunning(ped, 'SCRIPT_TASK_ENTER_VEHICLE') then return true end
+    if HumalikeNpcDriving.TaskRunning(ped, 'SCRIPT_TASK_ENTER_VEHICLE') then return true end
     local seat = freeSeat(ped, attempt.vehicle)
     if not seat then
         print('[humalike-npc] enter_vehicle: no free seat')
         return false
     end
-    TaskEnterVehicle(ped, attempt.vehicle, 15000, seat, 1.0, 1, 0)
+    TaskEnterVehicle(ped, attempt.vehicle, Config.Vehicles.EnterTimeoutMs, seat, 1.0, 1, 0)
     return true
 end
 
@@ -80,7 +76,7 @@ NpcActions['enter_vehicle'] = function(ped, params)
         done(ped)
         return
     end
-    if current ~= 0 and NpcActionDrivesOwnVehicle and NpcActionDrivesOwnVehicle(ped) then
+    if current ~= 0 and NpcActionDrivesOwnVehicle(ped) then
         HumalikeNpcDriving.Dismiss(ped) -- gives its own car up for the other one
     end
     if current == 0 then ClearPedTasks(ped) end

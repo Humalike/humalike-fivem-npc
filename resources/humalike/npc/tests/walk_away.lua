@@ -48,6 +48,8 @@ function Entity(ped)
     return { state = { set = function(_self, key, value) bags[key] = value end } }
 end
 
+HumalikeNpcDriving = HumalikeNpcDriving or { DrivesOwnVehicle = function() return false end }
+NpcActionDrivesOwnVehicle = NpcActionDrivesOwnVehicle or function() return false end
 dofile('client/reactions.lua')
 dofile('client/actions/state.lua')
 dofile('client/actions/leave.lua')

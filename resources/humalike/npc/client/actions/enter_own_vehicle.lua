@@ -10,10 +10,6 @@ local function cfg()
     return Config.Vehicles
 end
 
-local function taskRunning(ped, taskName)
-    return GetScriptTaskStatus(ped, GetHashKey(taskName)) <= 1
-end
-
 local function done(ped)
     attempts[ped] = nil
     ReleaseActionControl(ped)
@@ -25,28 +21,16 @@ local function driveOff(ped)
     HumalikeNpcDriving.Resume(ped)
 end
 
--- The body's own car, if it still exists, is free and within walking reach.
-local function ownVehicle(ped)
-    local vehicle = HumalikeNpcDriving and HumalikeNpcDriving.OwnVehicle(ped) or nil
-    if not vehicle then return nil, 'no vehicle of its own' end
-    if #(GetEntityCoords(vehicle) - GetEntityCoords(ped)) > cfg().ReturnDistance then
-        return nil, 'own vehicle out of reach'
-    end
-    local occupant = GetPedInVehicleSeat(vehicle, -1)
-    if (occupant ~= 0 and occupant ~= ped) or HumalikePlayerInVehicle(vehicle) then
-        return nil, 'own vehicle taken'
-    end
-    return vehicle
-end
+local ownVehicle = function(ped) return HumalikeNpcDriving.OwnVehicleInReach(ped) end
 
 -- Out of whatever it sits in first, then into its own driver seat.
 local function step(ped, vehicle)
     local current = GetVehiclePedIsIn(ped, false)
     if current ~= 0 and current ~= vehicle then
-        if not taskRunning(ped, 'SCRIPT_TASK_LEAVE_VEHICLE') then TaskLeaveVehicle(ped, current, 0) end
+        if not HumalikeNpcDriving.TaskRunning(ped, 'SCRIPT_TASK_LEAVE_VEHICLE') then TaskLeaveVehicle(ped, current, 0) end
         return
     end
-    if not taskRunning(ped, 'SCRIPT_TASK_ENTER_VEHICLE') then
+    if not HumalikeNpcDriving.TaskRunning(ped, 'SCRIPT_TASK_ENTER_VEHICLE') then
         TaskEnterVehicle(ped, vehicle, cfg().EnterTimeoutMs, -1, 1.0, 1, 0)
     end
 end

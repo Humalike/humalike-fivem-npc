@@ -51,6 +51,7 @@ Config.Population = {
     SweepMaxPerTick = 5,
     DriverSpawnOffset = 2.5, -- metres beside the car a driver is created before being seated
     VehicleNodeClearance = 5.0, -- metres: a road node holding a vehicle is not a spawn point
+    FeatureReportTimeoutMs = 20000, -- a capability post with no callback by then is treated as lost
     VehiclePointReuseMs = 5000, -- two drivers resolving at once must not share a node; the client checks real vehicles
     GtaPopulationTypes = { [4] = true, [5] = true },
     CopPedTypes = { [6] = true, [27] = true }, -- GetPedType cop, swat

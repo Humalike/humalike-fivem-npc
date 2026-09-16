@@ -20,6 +20,8 @@ end
 function GetScriptTaskStatus() return leaveTaskStatus end
 function GetHashKey(name) return name end
 
+HumalikeNpcDriving = HumalikeNpcDriving or { DrivesOwnVehicle = function() return false end, OwnVehicleInReach = function() return nil end }
+NpcActionDrivesOwnVehicle = NpcActionDrivesOwnVehicle or function() return false end
 dofile('client/actions/exit_vehicle.lua')
 
 NpcActions.exit_vehicle(npc, {})
@@ -54,10 +56,10 @@ assert(releases == 3 and ActionControlledPeds[npc] == nil)
 
 -- A population driver told to get out gives its car up for good.
 local dismissed = 0
+local ownReach = nil
 HumalikeNpcDriving = {
     Dismiss = function(ped) assert(ped == npc); dismissed = dismissed + 1 end,
-    IsDismissed = function() return dismissed > 0 end,
-    OwnVehicle = function() return nil end,
+    OwnVehicleInReach = function() return ownReach end,
 }
 local ownDriver = true
 function NpcActionDrivesOwnVehicle(ped) return ped == npc and ownDriver end
@@ -73,22 +75,12 @@ assert(dismissed == 1, 'a passenger has no car of its own to dismiss')
 -- Out of SOMEBODY ELSE'S car with its own standing near, getting out is the
 -- start of going home: the walk-back deed takes over instead of a release.
 local ownCar, homeCalls = 30, 0
-local function vec(x, y, z)
-    return setmetatable({ x = x, y = y, z = z }, {
-        __sub = function(a, b) return vec(a.x - b.x, a.y - b.y, a.z - b.z) end,
-        __len = function(v) return math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z) end,
-    })
-end
-local coords = { [npc] = vec(0, 0, 0), [ownCar] = vec(11, 0, 0) }
-function GetEntityCoords(entity) return coords[entity] end
-function GetPedInVehicleSeat() return 0 end
-function HumalikePlayerInVehicle() return false end
 NpcActions.enter_own_vehicle = function(ped, params)
     assert(ped == npc and type(params) == 'table')
     homeCalls = homeCalls + 1
     ActionControlledPeds[ped] = 'enter_own_vehicle'
 end
-HumalikeNpcDriving.OwnVehicle = function() return ownCar end
+ownReach = ownCar
 ownDriver = false -- it got out of its OWN car earlier (dismissed) and then rode along
 inVehicle = vehicle
 ActionControlledPeds[npc] = nil
@@ -101,14 +93,14 @@ assert(homeCalls == 1 and releases == releasesBefore and ActionControlledPeds[np
     'out of their car with its own near: it goes home instead of being released')
 
 -- Its own car too far, or none at all: out and released as before.
-coords[ownCar] = vec(61, 0, 0)
+ownReach = nil
 inVehicle = vehicle
 ActionControlledPeds[npc] = nil
 NpcActions.exit_vehicle(npc, {})
 inVehicle = 0
 NpcActionSustain.exit_vehicle(npc)
 assert(homeCalls == 1 and releases == releasesBefore + 1, 'own car out of reach: just out')
-coords[ownCar] = vec(11, 0, 0)
+ownReach = ownCar
 
 -- Out of its OWN car on request: it stays out, however close the car is.
 ownDriver = true

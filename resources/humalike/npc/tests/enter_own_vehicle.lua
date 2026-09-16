@@ -38,7 +38,15 @@ function NpcActionDrivesOwnVehicle(ped) return ped == npc and drivesOwn end
 function print() end
 local own = ownCar
 HumalikeNpcDriving = {
-    OwnVehicle = function(ped) assert(ped == npc); return own end,
+    OwnVehicleInReach = function(ped)
+        assert(ped == npc)
+        if not own then return nil, 'no vehicle of its own' end
+        if #(coords[own] - coords[npc]) > Config.Vehicles.ReturnDistance then return nil, 'own vehicle out of reach' end
+        local occupant = seats[own] and seats[own][-1] or 0
+        if (occupant ~= 0 and occupant ~= npc) or inVehicle[player] == own then return nil, 'own vehicle taken' end
+        return own
+    end,
+    TaskRunning = function(ped, hash) return (taskStatus[ped] and taskStatus[ped][hash] or 7) <= 1 end,
     Reclaim = function(ped) assert(ped == npc); reclaimed = reclaimed + 1 end,
     Dismiss = function(ped) assert(ped == npc); dismissed = dismissed + 1 end,
     Resume = function(ped) assert(ped == npc); resumed = resumed + 1; return true end,

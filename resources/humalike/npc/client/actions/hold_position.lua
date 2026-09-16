@@ -1,7 +1,7 @@
 NpcActions = NpcActions or {}
 
 NpcActions['hold_position'] = function(ped, _params)
-    if NpcActionDrivesOwnVehicle and NpcActionDrivesOwnVehicle(ped) then
+    if NpcActionDrivesOwnVehicle(ped) then
         -- A driver told to stop brakes; the hold the server installs keeps it braked.
         ReleaseActionControl(ped)
         HumalikeNpcDriving.Brake(ped, true)

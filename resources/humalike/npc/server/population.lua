@@ -21,6 +21,7 @@ local deliveredFeatures = nil -- key of the last report_capabilities the edge ac
 local featureFailures = 0
 local featureRetryAt = 0
 local featuresInFlight = false
+local featuresPostedAt = 0
 
 local function config()
     return Config.Population
@@ -171,9 +172,16 @@ local function resolveSpawnPoint(record)
     while not request.done and GetGameTimer() < deadline do Wait(50) end
     spawnPointRequests[requestId] = nil
     local point = request.point
-    if point and record.vehicle and not vehiclePointFree(point, GetGameTimer()) then
-        HumalikeDebug('population body %s: vehicle point already taken', record.body_id)
-        return nil
+    if point and record.vehicle then
+        local now = GetGameTimer()
+        if not vehiclePointFree(point, now) then
+            HumalikeDebug('population body %s: vehicle point already taken', record.body_id)
+            return nil
+        end
+        -- Reserved the moment it is accepted: the network-id wait below
+        -- yields, and a second driver resolving the same node in that window
+        -- would otherwise pass this check too.
+        vehiclePoints[#vehiclePoints + 1] = { x = point.x, y = point.y, z = point.z, at = now }
     end
     return point
 end
@@ -363,22 +371,21 @@ local function createVehicle(record, point)
     state:set('humalike_npc_kind', 'population_vehicle', true)
     state:set('humalike_body_id', record.body_id, true)
     record.vehicle_net = awaitNetworkId(handle)
-    if record.vehicle_net <= 0 then return false end
-    vehiclePoints[#vehiclePoints + 1] = { x = point.x, y = point.y, z = point.z, at = GetGameTimer() }
-    return true
+    return record.vehicle_net > 0
 end
 
 -- Creates the record's vehicle (a driver) and ped at `point`, stamps the
 -- state bags, seats the driver and waits for the ped's network id. False
 -- leaves the record to the caller.
 -- A driver is created beside its car, not inside its body: a warp that
--- misses leaves it standing at the door rather than crushed under the chassis.
+-- misses leaves it standing at the driver's door rather than crushed under
+-- the chassis. GTA's local X points right, so the driver side is minus X.
 local function besideVehicle(point)
     local heading = math.rad(point.heading or 0.0)
     local side = config().DriverSpawnOffset
     return {
-        x = point.x + math.cos(heading) * side,
-        y = point.y + math.sin(heading) * side,
+        x = point.x - math.cos(heading) * side,
+        y = point.y - math.sin(heading) * side,
         z = point.z,
         heading = point.heading,
     }
@@ -470,6 +477,10 @@ local function forget(bodyId)
 end
 
 local function reportFeatures(now)
+    -- A post whose callback never came back must not gag every later report.
+    if featuresInFlight and now - featuresPostedAt > config().FeatureReportTimeoutMs then
+        featuresInFlight = false
+    end
     if featuresInFlight or now < featureRetryAt or not HumalikeNpcReportCapabilities then return end
     if table.concat(HumalikeNpcPopulation.Features(), ',') == deliveredFeatures then return end
     if not (HumaLike and HumaLike.RuntimeCredentials and HumaLike.RuntimeCredentials()) then return end
@@ -633,8 +644,6 @@ function HumalikeNpcPopulation.Bodies()
             status = record.status,
             kept = record.kept,
             handle = record.ped,
-            vehicle = record.vehicle_handle,
-            behaviour = record.behaviour,
             network_id = record.network_id,
             routing_bucket = record.routing_bucket,
         }
@@ -669,6 +678,7 @@ end
 -- so a failed first report and a convar flip both reach the edge from here.
 function HumalikeNpcPopulation.CapabilitiesPosted()
     featuresInFlight = true
+    featuresPostedAt = GetGameTimer()
 end
 
 function HumalikeNpcPopulation.CapabilitiesReported(features, ok)

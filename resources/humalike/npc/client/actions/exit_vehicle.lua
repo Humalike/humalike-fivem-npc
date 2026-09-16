@@ -25,12 +25,7 @@ end
 -- request, then rode along in the player's, still goes home when sent out of
 -- that one (the dismissal from the first exit is not a reason to stay on foot).
 local function goesHome(ped)
-    if fromOwn[ped] or not HumalikeNpcDriving or not NpcActions.enter_own_vehicle then return false end
-    local own = HumalikeNpcDriving.OwnVehicle(ped)
-    if not own then return false end
-    if #(GetEntityCoords(own) - GetEntityCoords(ped)) > Config.Vehicles.ReturnDistance then return false end
-    local occupant = GetPedInVehicleSeat(own, -1)
-    if (occupant ~= 0 and occupant ~= ped) or HumalikePlayerInVehicle(own) then return false end
+    if fromOwn[ped] or not HumalikeNpcDriving.OwnVehicleInReach(ped) then return false end
     NpcActions.enter_own_vehicle(ped, ActionParams[ped] or {})
     return ActionControlledPeds[ped] == 'enter_own_vehicle'
 end
@@ -51,7 +46,7 @@ NpcActions['exit_vehicle'] = function(ped, _params)
         return
     end
     fromOwn[ped] = nil
-    if NpcActionDrivesOwnVehicle and NpcActionDrivesOwnVehicle(ped) then
+    if NpcActionDrivesOwnVehicle(ped) then
         HumalikeNpcDriving.Dismiss(ped) -- told to get out of its own car: it stays parked
         fromOwn[ped] = true
     end

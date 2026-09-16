@@ -18,6 +18,8 @@ function BeginStopFollowing()
     action = nil
 end
 
+HumalikeNpcDriving = HumalikeNpcDriving or { DrivesOwnVehicle = function() return false end }
+NpcActionDrivesOwnVehicle = NpcActionDrivesOwnVehicle or function() return false end
 dofile('client/actions/hold_position.lua')
 dofile('client/actions/release_movement.lua')
 NpcActions.walk_away = function(_ped, params)

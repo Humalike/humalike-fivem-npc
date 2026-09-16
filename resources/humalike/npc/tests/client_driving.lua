@@ -30,7 +30,13 @@ function GetPedInVehicleSeat(vehicle, seat) return seats[vehicle] and seats[vehi
 function GetScriptTaskStatus(ped, hash) return taskStatus[ped] and taskStatus[ped][hash] or 7 end
 function IsPedAPlayer(ped) return players[ped] == true end
 function GetHashKey(name) return #name end
-function Entity(ped) return { state = bags[ped] or {} } end
+local function bagOf(ped)
+    bags[ped] = bags[ped] or {}
+    local bag = bags[ped]
+    bag.set = bag.set or function(self, key, value) rawset(self, key, value) end
+    return bag
+end
+function Entity(ped) return { state = bagOf(ped) } end
 local function taskRunning(ped, hash, running)
     taskStatus[ped] = taskStatus[ped] or {}
     taskStatus[ped][hash] = running and 1 or 7
@@ -184,6 +190,16 @@ inVehicle[20] = 40
 seats[40] = { [-1] = 20 }
 assert(Driving.Apply(20, driver, 87000) == true and last()[1] == 'drive', 'back in the seat: drive')
 
+-- Moved over to a passenger seat of its own car (someone else drives): left
+-- alone, never handed a drive task.
+reset()
+inVehicle[20] = 40
+seats[40] = { [-1] = 99, [0] = 20 }
+assert(Driving.Apply(20, driver, 89000) == true and #calls == 0, 'a passenger in its own car does not drive')
+assert(Driving.Refresh(20, driver, 89500) == true and #calls == 0)
+seats[40] = { [-1] = 20 }
+reset()
+
 -- Dismissed (got out on request, went with a player): on foot it is left to
 -- the population's wander; seated in some other car it is left alone; back at
 -- its own wheel it drives again.
@@ -194,6 +210,9 @@ coords[20] = { x = 1, y = 0, z = 1.5 }
 coords[40] = { x = 0, y = 0, z = 0 }
 Driving.Dismiss(20)
 assert(Driving.Apply(20, driver, 90000) == false and #calls == 0, 'dismissed: never warped or sent back in')
+assert(driver.humalike_driver_dismissed == true, 'the dismissal rides on the ped for the next owner')
+Driving.Forget({}) -- another client takes the ped over: no local memory, only the bag
+assert(Driving.Apply(20, driver, 90500) == false and #calls == 0, 'the new owner honours the dismissal too')
 assert(Driving.Refresh(20, driver, 91000) == false and #calls == 0)
 inVehicle[20] = 99
 assert(Driving.Refresh(20, driver, 92000) == true and #calls == 0, 'a passenger elsewhere is left alone')

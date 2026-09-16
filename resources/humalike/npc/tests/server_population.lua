@@ -941,6 +941,13 @@ local function driver(bodyId, fields)
     for key, value in pairs(fields or {}) do body[key] = value end
     return body
 end
+local function vehicleHandleOf(bodyId)
+    for handle, state in pairs(entityState) do
+        if type(state) == 'table' and state.humalike_body_id == bodyId
+            and state.humalike_npc_kind == 'population_vehicle' then return handle end
+    end
+    return nil
+end
 local function spawnRequests()
     local rows = {}
     for _, event in ipairs(clientEvents) do
@@ -954,15 +961,18 @@ assert(HumalikeNpcPopulation.ApplyPlan({ revision = 50, enabled = true,
 local request = spawnRequests()[#spawnRequests()]
 assert(request.mode == 'vehicle' and request.arg:match('^drv%-1:'), 'a driver asks for a road node')
 local drv1 = bodyIds()['drv-1']
-assert(drv1.status == 'bound' and drv1.behaviour == 'drive' and drv1.vehicle == 501)
+local drv1Vehicle = vehicleHandleOf('drv-1')
+assert(drv1.status == 'bound' and entityState[drv1.handle].humalike_body_behaviour == 'drive'
+    and entityState[drv1.handle].humalike_vehicle_net == NetworkGetNetworkIdFromEntity(501),
+    'the driver body carries its behaviour and its car on its state bag')
 local car = vehicles[501]
 assert(car.hash == -777 and car.spawn_type == 'automobile')
 assert(car.x == 20 and car.y == 5 and car.z == 30 and car.heading == 45, 'the vehicle takes the resolved point')
 assert(car.bucket == 2 and car.orphan == 2)
 assert(entityState[501].humalike_npc_kind == 'population_vehicle')
 assert(entityState[501].humalike_body_id == 'drv-1')
-assert(math.abs(created[drv1.handle].x - (20 + math.cos(math.rad(45)) * 2.5)) < 0.01
-    and math.abs(created[drv1.handle].y - (5 + math.sin(math.rad(45)) * 2.5)) < 0.01
+assert(math.abs(created[drv1.handle].x - (20 - math.cos(math.rad(45)) * 2.5)) < 0.01
+    and math.abs(created[drv1.handle].y - (5 - math.sin(math.rad(45)) * 2.5)) < 0.01
     and created[drv1.handle].hash == -123, 'the ped is created beside the vehicle, not inside it')
 assert(#warps == 1 and warps[1][1] == drv1.handle and warps[1][2] == 501 and warps[1][3] == -1,
     'the ped is warped into the driver seat')
@@ -1028,18 +1038,19 @@ now = now + Config.Population.VehiclePointReuseMs + 1 -- a fresh road node for t
 assert(HumalikeNpcPopulation.ApplyPlan({ revision = 55, enabled = true,
     wanted = { driver('drv-5') }, released = {} }))
 local drv5 = bodyIds()['drv-5']
-assert(drv5.status == 'bound' and existing[drv5.vehicle])
+local drv5Vehicle = vehicleHandleOf('drv-5')
+assert(drv5.status == 'bound' and existing[drv5Vehicle])
 playerSeated = true
 deletedCount = #deleted
 assert(HumalikeNpcPopulation.ApplyPlan({ revision = 56, enabled = true,
     wanted = {}, released = { 'drv-5' } }))
 assert(#deleted == deletedCount + 1 and deleted[#deleted] == drv5.handle, 'only the ped is deleted')
-assert(existing[drv5.vehicle] == true and bodyIds()['drv-5'] == nil, 'the vehicle stays; the record is gone')
+assert(existing[drv5Vehicle] == true and bodyIds()['drv-5'] == nil, 'the vehicle stays; the record is gone')
 HumalikeNpcPopulation.Reconcile()
-assert(existing[drv5.vehicle] == true, 'still occupied: kept')
+assert(existing[drv5Vehicle] == true, 'still occupied: kept')
 playerSeated = false
 HumalikeNpcPopulation.Reconcile()
-assert(existing[drv5.vehicle] == nil and deleted[#deleted] == drv5.vehicle,
+assert(existing[drv5Vehicle] == nil and deleted[#deleted] == drv5Vehicle,
     'the player left: the reconcile tick deletes the vehicle')
 HumalikeNpcPopulation.Reconcile()
 
@@ -1048,12 +1059,13 @@ now = now + Config.Population.VehiclePointReuseMs + 1 -- a fresh road node for t
 assert(HumalikeNpcPopulation.ApplyPlan({ revision = 57, enabled = true,
     wanted = { driver('drv-6') }, released = {} }))
 local drv6 = bodyIds()['drv-6']
-entityState[drv6.vehicle].humalike_body_id = 'someone-else'
+local drv6Vehicle = vehicleHandleOf('drv-6')
+entityState[drv6Vehicle].humalike_body_id = 'someone-else'
 deletedCount = #deleted
 assert(HumalikeNpcPopulation.ApplyPlan({ revision = 58, enabled = true,
     wanted = {}, released = { 'drv-6' } }))
 assert(#deleted == deletedCount + 1 and deleted[#deleted] == drv6.handle, 'the stranger keeps its vehicle')
-existing[drv6.vehicle] = nil
+existing[drv6Vehicle] = nil
 
 -- Validation: vehicle iff drive, extras never drive, the hash must match the
 -- model, the spawn type is automobile or bike; with the convar off every
@@ -1080,8 +1092,9 @@ rows = bodyIds()
 for _, bodyId in ipairs({ 'bad-no-vehicle', 'bad-extra', 'bad-walker', 'bad-hash', 'bad-type', 'bad-model' }) do
     assert(rows[bodyId] == nil, bodyId .. ' must be rejected')
 end
-assert(rows['drv-bike'].status == 'bound' and vehicles[rows['drv-bike'].vehicle].spawn_type == 'bike')
-assert(vehicles[rows['drv-bike'].vehicle].hash == 888)
+local bikeVehicle = vehicleHandleOf('drv-bike')
+assert(rows['drv-bike'].status == 'bound' and vehicles[bikeVehicle].spawn_type == 'bike')
+assert(vehicles[bikeVehicle].hash == 888)
 report = lastAction('report_npc_bodies')
 assert(#report.payload.failed == 6, 'every rejected body is reported failed')
 convars.humalike_npc_vehicles = 'false'
@@ -1102,15 +1115,16 @@ now = now + Config.Population.VehiclePointReuseMs + 1 -- a fresh road node for t
 assert(HumalikeNpcPopulation.ApplyPlan({ revision = 61, enabled = true,
     wanted = { bike, driver('drv-7') }, released = {} }))
 local drv7 = bodyIds()['drv-7']
+local drv7Vehicle = vehicleHandleOf('drv-7')
 playerSeated = true
 deletedCount = #deleted
 assert(HumalikeNpcPopulation.ApplyPlan({ revision = 62, enabled = true,
     wanted = { bike }, released = { 'drv-7' } }))
-assert(existing[drv7.vehicle] == true, 'stranded with the player inside')
+assert(existing[drv7Vehicle] == true, 'stranded with the player inside')
 noCredentials = true
 fire('humalike:core:stopping')
-assert(existing[drv7.vehicle] == nil, 'the stranded vehicle is deleted on stop')
-assert(existing[rows['drv-bike'].vehicle] == nil and existing[rows['drv-bike'].handle] == nil,
+assert(existing[drv7Vehicle] == nil, 'the stranded vehicle is deleted on stop')
+assert(existing[bikeVehicle] == nil and existing[rows['drv-bike'].handle] == nil,
     'so are a live driver and its bike')
 fire('onResourceStop', 'humalike')
 playerSeated = false

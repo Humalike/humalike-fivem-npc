@@ -1,5 +1,5 @@
 
-Config = { Punch = { MaxDistance = 6.0 } }
+Config = { Punch = { MaxDistance = 6.0 }, Vehicles = { EnterTimeoutMs = 15000 } }
 NpcActions, NpcActionSustain, ActionControlledPeds = {}, {}, {}
 
 local npc, partner, vehicle, unrelatedVehicle, ownCar = 1, 10, 20, 21, 22
@@ -41,6 +41,11 @@ local function vec(x, y, z)
     })
 end
 function GetEntityCoords() return vec(0, 0, 0) end
+function GetVehicleMaxNumberOfPassengers() return 3 end
+HumalikeNpcDriving = {
+    OwnVehicle = function() return nil end,
+    TaskRunning = function(ped, hash) return (taskStatus[ped] and taskStatus[ped][hash] or 7) <= 1 end,
+}
 function GetGamePool()
     poolCalls = poolCalls + 1
     return pool
@@ -91,10 +96,8 @@ now = 1000
 -- climbs OUT first, and only then walks over -- and stays under the action
 -- until it sits in the TARGET, never released while still in its own car.
 local dismissed = 0
-HumalikeNpcDriving = {
-    Dismiss = function(ped) assert(ped == npc); dismissed = dismissed + 1 end,
-    OwnVehicle = function() return ownCar end,
-}
+HumalikeNpcDriving.Dismiss = function(ped) assert(ped == npc); dismissed = dismissed + 1 end
+HumalikeNpcDriving.OwnVehicle = function() return ownCar end
 local ownDriver = true
 function NpcActionDrivesOwnVehicle(ped) return ped == npc and ownDriver end
 inVehicle[npc] = ownCar

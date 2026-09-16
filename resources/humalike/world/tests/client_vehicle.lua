@@ -45,6 +45,7 @@ SendNUIMessage = function() end
 CreateThread = function() end
 Wait = function() end
 
+Config = { Vehicles = { ReturnDistance = 60.0 } }
 WorldConfig = {
     collector = { movementThreshold = 0.1 },
     npcEdge = {
@@ -91,6 +92,7 @@ assert(frame.player.vehicle.kind == 'car')
 assert(frame.npcs[1].vehicle.kind == 'bike', 'the vehicle kind rides along')
 assert(frame.npcs[1].own_vehicle.network_id == 502 and frame.npcs[1].own_vehicle.kind == 'bike')
 assert(frame.npcs[1].own_vehicle.distance_m == 0, 'seated in it: no distance to its own vehicle')
+assert(frame.npcs[1].own_vehicle.in_reach == true)
 
 occupants[101], occupants[102] = { [0] = 1 }, { [-1] = 2 }
 frame = HumalikeWorldNpcEdge.BuildPositionsFrame(player, 1, 8)
@@ -106,6 +108,10 @@ assert(frame.npcs[1].own_vehicle.distance_m == 0)
 entities[2] = vector3(13, 0, 0)
 frame = HumalikeWorldNpcEdge.BuildPositionsFrame(player, 1, 10)
 assert(frame.npcs[1].own_vehicle.distance_m == 12, 'with how far it has walked from it')
+assert(frame.npcs[1].own_vehicle.in_reach == true)
+entities[2] = vector3(62, 0, 0)
+frame = HumalikeWorldNpcEdge.BuildPositionsFrame(player, 1, 11)
+assert(frame.npcs[1].own_vehicle.in_reach == false, 'past the return distance the walk back is off')
 entities[2] = vector3(1, 0, 0)
 bags[2].humalike_vehicle_net = 777
 assert(HumalikeWorldVehicle.OwnState(2) == nil, 'a vehicle that no longer exists is not reported')

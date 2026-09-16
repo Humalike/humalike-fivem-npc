@@ -30,7 +30,7 @@ end
 
 -- ends_at is server-synced seconds (GetCloudTimeAsInt); GetGameTimer differs per client.
 function NpcActionLeave.Begin(ped, key, params, plan, issue)
-    if NpcActionDrivesOwnVehicle and NpcActionDrivesOwnVehicle(ped) then
+    if NpcActionDrivesOwnVehicle(ped) then
         -- Leaving, for a driver, is driving off: the server drops the hold
         -- with this action and the population keeps it on the road.
         ReleaseActionControl(ped)

@@ -265,7 +265,11 @@ local function refresh(ped, state, now)
         if paced[ped] then HumalikeNpcPopulationClient.OwnPace(ped) end
         return
     end
-    if not paced[ped] and not drives(state) then capPace(ped, state) end
+    if drives(state) then
+        if paced[ped] then HumalikeNpcPopulationClient.OwnPace(ped) end
+    elseif not paced[ped] then
+        capPace(ped, state)
+    end
     if incapacitated(ped, state) then return end
     -- A flee GTA started before the flag came back is replaced by the plan.
     if hasMind(state) and IsPedFleeing(ped) then
