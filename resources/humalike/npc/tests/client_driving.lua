@@ -97,8 +97,9 @@ assert(Driving.Refresh(20, driver, 61000) == true)
 assert(#calls == 4 and calls[3][1] == 'engine' and last()[1] == 'drive', 'no drive task: drive again')
 taskRunning(20, WANDER, true)
 
--- Told to drive off, the hold loop's repeat brake yields for a moment (the
--- server's release lands a tick later); an explicit stop order still brakes.
+-- Told to drive off, the hold loop's repeat brake yields (the server's
+-- release lands a tick later); an explicit stop order still brakes and ends
+-- the yielding.
 reset()
 GetGameTimer = function() return 100000 end
 GetVehiclePedIsIn = function(ped) return inVehicle[ped] or 0 end
@@ -106,18 +107,39 @@ assert(Driving.Brake(20) == true and last()[1] == 'temp', 'a held driver brakes'
 reset()
 assert(Driving.Resume(20) == true and last()[1] == 'drive')
 reset()
-assert(Driving.Brake(20) == true and #calls == 0, 'right after Resume the loop brake is swallowed')
-GetGameTimer = function() return 104999 end
-assert(Driving.Brake(20) == true and #calls == 0, 'for the whole grace window')
-GetGameTimer = function() return 105000 end
-assert(Driving.Brake(20) == true and last()[1] == 'temp', 'then it brakes again')
-reset()
-assert(Driving.Resume(20) == true)
-reset()
+assert(Driving.Brake(20) == true and #calls == 0, 'after Resume the loop brake is swallowed')
+GetGameTimer = function() return 200000 end
+assert(Driving.Brake(20) == true and #calls == 0, 'for as long as nobody orders a stop')
 assert(Driving.Brake(20, true) == true and last()[1] == 'temp', 'a stop order brakes at once')
 reset()
-GetGameTimer = function() return 105100 end
-assert(Driving.Brake(20) == true and last()[1] == 'temp', 'and ends the grace')
+assert(Driving.Brake(20) == true and last()[1] == 'temp', 'and the loop brakes again from then on')
+reset()
+
+-- Reclaimed on foot beside its car (told to get back in), it WALKS: the
+-- spawn-time warp is only for a driver born beside its car.
+inVehicle[20] = nil
+seats[40] = {}
+coords[20] = { x = 1, y = 0, z = 1.5 }
+coords[40] = { x = 0, y = 0, z = 0 }
+Driving.Dismiss(20)
+Driving.Reclaim(20)
+assert(Driving.Apply(20, driver, 300000) == true and named('warp')[1] == nil and last()[1] == 'enter',
+    'reclaimed: walks to the seat, no warp')
+reset()
+inVehicle[20] = 40
+seats[40] = { [-1] = 20 }
+assert(Driving.Apply(20, driver, 301000) == true and last()[1] == 'drive')
+reset()
+inVehicle[20] = nil
+seats[40] = {}
+assert(Driving.Apply(20, driver, 400000) == true and named('warp')[1] ~= nil, 'seated once, the warp is back for a spawn miss')
+reset()
+coords[20], coords[40] = nil, nil
+inVehicle[20] = 40
+seats[40] = { [-1] = 20 }
+assert(Driving.Apply(20, driver, 401000) == true)
+Driving.Forget({}) -- clean slate for the sections below
+reset()
 taskRunning(20, WANDER, true)
 
 -- Lying on the roof (or standing by the door) of a free car: straight into
