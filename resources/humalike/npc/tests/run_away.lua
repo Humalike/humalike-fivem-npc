@@ -70,6 +70,8 @@ HumalikeNpcPopulationClient = {
     end,
 }
 
+HumalikeNpcDriving = HumalikeNpcDriving or { DrivesOwnVehicle = function() return false end }
+NpcActionDrivesOwnVehicle = NpcActionDrivesOwnVehicle or function() return false end
 dofile('client/reactions.lua')
 dofile('client/actions/state.lua')
 dofile('client/actions/leave.lua')

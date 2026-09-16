@@ -48,6 +48,8 @@ function Entity(ped)
     return { state = { set = function(_self, key, value) bags[key] = value end } }
 end
 
+HumalikeNpcDriving = HumalikeNpcDriving or { DrivesOwnVehicle = function() return false end }
+NpcActionDrivesOwnVehicle = NpcActionDrivesOwnVehicle or function() return false end
 dofile('client/reactions.lua')
 dofile('client/actions/state.lua')
 dofile('client/actions/leave.lua')
@@ -103,4 +105,15 @@ NpcActionSustain['walk_away'](npcPed)
 assert(ActionControlledPeds[npcPed] == 'walk_away' and #walks == walksBefore + 1,
     'a walk resumed with time left is re-issued')
 
+
+-- A driver that decides to leave drives off; it never climbs out to walk.
+local resumed = 0
+HumalikeNpcDriving = {
+    DrivesOwnVehicle = function(ped) return ped == 77 end,
+    Resume = function(ped) assert(ped == 77); resumed = resumed + 1; return true end,
+}
+NpcActions.walk_away(77, { player_id = 7 })
+assert(resumed == 1, 'a driver leaving means driving away')
+assert(not IsActionControlled(77), 'and no walk task holds it')
+print('walk_away driver case: ok')
 print('walk_away: ok')

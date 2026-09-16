@@ -22,7 +22,7 @@ HumalikeWorldRegistry = { entries = {
         modelHash = 300, runtimeToken = 'stale', activity = 'idle', kind = 'ambient',
     },
 } }
-HumalikeWorldVehicle = { StreamState = function() return nil end }
+HumalikeWorldVehicle = { StreamState = function() return nil end, OwnState = function() return nil end }
 HumalikeWorldCollector = { bootId = 'boot', latest = nil }
 
 function vector3(x, y, z) return { x = x, y = y, z = z } end

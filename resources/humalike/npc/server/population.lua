@@ -16,6 +16,12 @@ local enabled = false
 local copsAllowed = false
 local edgeLost = false
 local broadcast = { enabled = false, cops_allowed = false }
+local strandedVehicles = {} -- handle -> body_id; a player sat inside when the body went
+local deliveredFeatures = nil -- key of the last report_capabilities the edge accepted
+local featureFailures = 0
+local featureRetryAt = 0
+local featuresInFlight = false
+local featuresPostedAt = 0
 
 local function config()
     return Config.Population
@@ -23,6 +29,11 @@ end
 
 local function copsConvar()
     return GetConvar('humalike_population_cops', 'false') == 'true'
+end
+
+-- `set`, never `setr`: read on the server, every reconcile tick.
+local function vehiclesConvar()
+    return GetConvar('humalike_npc_vehicles', 'true') == 'true'
 end
 
 local function statePayload()
@@ -60,7 +71,7 @@ end
 
 local function validBehaviour(body)
     if body.behaviour ~= nil and body.behaviour ~= 'wander' and body.behaviour ~= 'stand'
-        and body.behaviour ~= 'scenario' then return false end
+        and body.behaviour ~= 'scenario' and body.behaviour ~= 'drive' then return false end
     if body.scenario ~= nil and (type(body.scenario) ~= 'string' or #body.scenario > 48
         or not body.scenario:match('^[A-Z0-9_]+$')) then return false end
     if body.walk_rate ~= nil and (type(body.walk_rate) ~= 'number' or body.walk_rate ~= body.walk_rate
@@ -68,10 +79,23 @@ local function validBehaviour(body)
     return true
 end
 
-local function validBody(body)
-    if type(body) ~= 'table' or not validBehaviour(body)
-        or type(body.body_id) ~= 'string' or body.body_id == ''
-        or #body.body_id > 64 or type(body.model) ~= 'string' or body.model == ''
+local function validVehicle(vehicle)
+    return type(vehicle) == 'table' and HumalikeValidId(vehicle.model)
+        and type(vehicle.model_hash) == 'number'
+        and vehicle.model_hash == HumalikeUnsignedHash(GetHashKey(vehicle.model))
+        and (vehicle.spawn_type == 'automobile' or vehicle.spawn_type == 'bike')
+end
+
+-- A driving persona carries its vehicle and nobody else does; with the convar
+-- off a drive body is rejected so a stale plan cannot seat one.
+local function validDrive(body, drives)
+    if body.behaviour ~= 'drive' then return body.vehicle == nil end
+    return drives and body.kind ~= 'extra' and validVehicle(body.vehicle)
+end
+
+local function validBody(body, drives)
+    if type(body) ~= 'table' or not validBehaviour(body) or not validDrive(body, drives)
+        or not HumalikeValidId(body.body_id) or type(body.model) ~= 'string' or body.model == ''
         or (body.kind ~= nil and body.kind ~= 'persona' and body.kind ~= 'extra')
         or type(body.model_hash) ~= 'number' or type(body.routing_bucket) ~= 'number'
         or body.routing_bucket % 1 ~= 0 or body.routing_bucket < 0
@@ -115,7 +139,26 @@ local function spawnPointClient(record)
     return best
 end
 
--- Only a nearby client sees the navmesh; nil fails the spawn.
+-- Only a nearby client sees the navmesh; nil fails the spawn. A driver asks
+-- for a road node (`vehicle`), anyone else for pavement (`foot`).
+-- Vehicle points handed out recently: two drivers resolving the same node
+-- before the first vehicle exists must not land on top of each other.
+local vehiclePoints = {}
+
+local function vehiclePointFree(point, now)
+    local cfg = config()
+    local clearance = cfg.VehicleNodeClearance * cfg.VehicleNodeClearance
+    for index = #vehiclePoints, 1, -1 do
+        local used = vehiclePoints[index]
+        if now - used.at > cfg.VehiclePointReuseMs then
+            table.remove(vehiclePoints, index)
+        elseif HumalikeDistanceSquared(used, point) < clearance then
+            return false
+        end
+    end
+    return true
+end
+
 local function resolveSpawnPoint(record)
     local playerId = spawnPointClient(record)
     if not playerId then return nil end
@@ -123,11 +166,24 @@ local function resolveSpawnPoint(record)
     local requestId = ('%s:%d'):format(record.body_id, requestSequence)
     local request = { player_id = playerId, candidates = record.candidates }
     spawnPointRequests[requestId] = request
-    TriggerClientEvent('humalike:npc:populationSpawnPoint', playerId, requestId, record.candidates)
+    TriggerClientEvent('humalike:npc:populationSpawnPoint', playerId, requestId, record.candidates,
+        record.vehicle and 'vehicle' or 'foot')
     local deadline = GetGameTimer() + config().SpawnPointTimeoutMs
     while not request.done and GetGameTimer() < deadline do Wait(50) end
     spawnPointRequests[requestId] = nil
-    return request.point
+    local point = request.point
+    if point and record.vehicle then
+        local now = GetGameTimer()
+        if not vehiclePointFree(point, now) then
+            HumalikeDebug('population body %s: vehicle point already taken', record.body_id)
+            return nil
+        end
+        -- Reserved the moment it is accepted: the network-id wait below
+        -- yields, and a second driver resolving the same node in that window
+        -- would otherwise pass this check too.
+        vehiclePoints[#vehiclePoints + 1] = { x = point.x, y = point.y, z = point.z, at = now }
+    end
+    return point
 end
 
 local function discard(record)
@@ -138,11 +194,40 @@ local function ownsPed(record, ped)
     return ped and DoesEntityExist(ped) and Entity(ped).state.humalike_body_id == record.body_id
 end
 
-local function deletePed(record)
+local function ownsVehicle(bodyId, vehicle)
+    return vehicle and DoesEntityExist(vehicle) and Entity(vehicle).state.humalike_body_id == bodyId
+end
+
+-- A player sitting inside keeps the vehicle for the reconcile tick to retry;
+-- `force` (resource stop) takes it anyway.
+local function deleteVehicle(record, force)
+    local vehicle = record.vehicle_handle
+    record.vehicle_handle = nil
+    if not ownsVehicle(record.body_id, vehicle) then return end
+    if not force and HumalikePlayerInVehicle(vehicle) then
+        strandedVehicles[vehicle] = record.body_id
+        return
+    end
+    DeleteEntity(vehicle)
+end
+
+local function sweepStrandedVehicles(force)
+    for vehicle, bodyId in pairs(strandedVehicles) do
+        if not ownsVehicle(bodyId, vehicle) then
+            strandedVehicles[vehicle] = nil
+        elseif force or not HumalikePlayerInVehicle(vehicle) then
+            strandedVehicles[vehicle] = nil
+            DeleteEntity(vehicle)
+        end
+    end
+end
+
+local function deletePed(record, force)
     local ped = record.ped
     record.ped = nil
     -- Only the record's own ped is deleted; a recycled handle belongs to another.
     if ownsPed(record, ped) then DeleteEntity(ped) end
+    deleteVehicle(record, force)
 end
 
 local function release(record, cause, bestEffort)
@@ -238,6 +323,7 @@ local function bind(record)
     }, function(ok, status, body)
         if bodies[record.body_id] ~= record or record.status ~= 'spawning' then
             if ownsPed(record, ped) then DeleteEntity(ped) end
+            deleteVehicle(record)
             return
         end
         if not ok or type(body) ~= 'table' or body.status ~= 'bound' then
@@ -257,6 +343,83 @@ local function bind(record)
     end)
 end
 
+-- Waits up to 50 frames for the entity's network id; 0 when it never comes.
+local function awaitNetworkId(entity)
+    local networkId = NetworkGetNetworkIdFromEntity(entity)
+    local attempts = 0
+    while networkId <= 0 and attempts < 50 do
+        Wait(0)
+        attempts = attempts + 1
+        networkId = NetworkGetNetworkIdFromEntity(entity)
+    end
+    return networkId
+end
+
+local function spawning(record)
+    return bodies[record.body_id] == record and record.status == 'spawning'
+end
+
+local function createVehicle(record, point)
+    local vehicle = record.vehicle
+    local handle = CreateVehicleServerSetter(GetHashKey(vehicle.model), vehicle.spawn_type,
+        point.x, point.y, point.z, point.heading or 0.0)
+    if not handle or handle <= 0 then return false end
+    record.vehicle_handle = handle
+    SetEntityRoutingBucket(handle, record.routing_bucket)
+    SetEntityOrphanMode(handle, 2)
+    local state = Entity(handle).state
+    state:set('humalike_npc_kind', 'population_vehicle', true)
+    state:set('humalike_body_id', record.body_id, true)
+    record.vehicle_net = awaitNetworkId(handle)
+    return record.vehicle_net > 0
+end
+
+-- Creates the record's vehicle (a driver) and ped at `point`, stamps the
+-- state bags, seats the driver and waits for the ped's network id. False
+-- leaves the record to the caller.
+-- A driver is created beside its car, not inside its body: a warp that
+-- misses leaves it standing at the driver's door rather than crushed under
+-- the chassis. GTA's local X points right, so the driver side is minus X.
+local function besideVehicle(point)
+    local heading = math.rad(point.heading or 0.0)
+    local side = config().DriverSpawnOffset
+    return {
+        x = point.x - math.cos(heading) * side,
+        y = point.y - math.sin(heading) * side,
+        z = point.z,
+        heading = point.heading,
+    }
+end
+
+local function materialise(record, point)
+    if record.vehicle and not (createVehicle(record, point) and spawning(record)) then return false end
+    local at = record.vehicle and besideVehicle(point) or point
+    local ped = CreatePed(4, GetHashKey(record.model), at.x, at.y, at.z,
+        at.heading or 0.0, true, true)
+    if not ped or ped <= 0 then return false end
+    record.ped = ped
+    SetEntityRoutingBucket(ped, record.routing_bucket)
+    SetEntityOrphanMode(ped, 2)
+    local state = Entity(ped).state
+    state:set('humalike_npc_kind', 'population', true)
+    state:set('humalike_body_kind', record.kind, true)
+    state:set('humalike_body_id', record.body_id, true)
+    state:set('humalike_body_behaviour', record.behaviour, true)
+    state:set('humalike_body_scenario', record.scenario, true)
+    state:set('humalike_walk_rate', record.walk_rate, true)
+    if record.kind == 'extra' then state:set('humalike_style_seed', record.style_seed, true) end
+    if record.vehicle_handle then
+        state:set('humalike_vehicle_net', record.vehicle_net, true)
+        -- The warp can miss (the ped lands on the roof); the owning client
+        -- seats a driver it finds beside its car (npc/client/driving.lua).
+        TaskWarpPedIntoVehicle(ped, record.vehicle_handle, -1)
+    end
+    local networkId = awaitNetworkId(ped)
+    if networkId <= 0 or not spawning(record) then return false end
+    record.network_id = networkId
+    return true
+end
+
 function HumalikeNpcPopulation.Spawn(wanted)
     if bodies[wanted.body_id] then return false end
     local record = {
@@ -268,6 +431,7 @@ function HumalikeNpcPopulation.Spawn(wanted)
         behaviour = wanted.behaviour or 'wander',
         scenario = wanted.scenario,
         walk_rate = wanted.walk_rate or 1.0,
+        vehicle = wanted.vehicle,
         routing_bucket = wanted.routing_bucket,
         zone_code = wanted.zone_code,
         candidates = wanted.candidates,
@@ -284,39 +448,14 @@ function HumalikeNpcPopulation.Spawn(wanted)
             return
         end
         if not point then
-            HumalikeDebug('population body %s has no pavement near any candidate', record.body_id)
+            HumalikeDebug('population body %s has no ground near any candidate', record.body_id)
             spawnFailed(record)
             return
         end
-        local ped = CreatePed(4, GetHashKey(record.model), point.x, point.y, point.z,
-            point.heading or 0.0, true, true)
-        if not ped or ped <= 0 then
+        if not materialise(record, point) then
             spawnFailed(record)
             return
         end
-        record.ped = ped
-        SetEntityRoutingBucket(ped, record.routing_bucket)
-        SetEntityOrphanMode(ped, 2)
-        local state = Entity(ped).state
-        state:set('humalike_npc_kind', 'population', true)
-        state:set('humalike_body_kind', record.kind, true)
-        state:set('humalike_body_id', record.body_id, true)
-        state:set('humalike_body_behaviour', record.behaviour, true)
-        state:set('humalike_body_scenario', record.scenario, true)
-        state:set('humalike_walk_rate', record.walk_rate, true)
-        if record.kind == 'extra' then state:set('humalike_style_seed', record.style_seed, true) end
-        local networkId = NetworkGetNetworkIdFromEntity(ped)
-        local attempts = 0
-        while networkId <= 0 and attempts < 50 do
-            Wait(0)
-            attempts = attempts + 1
-            networkId = NetworkGetNetworkIdFromEntity(ped)
-        end
-        if networkId <= 0 or bodies[record.body_id] ~= record or record.status ~= 'spawning' then
-            spawnFailed(record)
-            return
-        end
-        record.network_id = networkId
         if record.kind == 'extra' then
             record.status = 'extra'
             reportDirty = true
@@ -335,6 +474,17 @@ local function forget(bodyId)
     if not record or record.status == 'released' then return end
     record.forgotten = true
     HumalikeNpcPopulation.Despawn(bodyId, 'despawned')
+end
+
+local function reportFeatures(now)
+    -- A post whose callback never came back must not gag every later report.
+    if featuresInFlight and now - featuresPostedAt > config().FeatureReportTimeoutMs then
+        featuresInFlight = false
+    end
+    if featuresInFlight or now < featureRetryAt or not HumalikeNpcReportCapabilities then return end
+    if table.concat(HumalikeNpcPopulation.Features(), ',') == deliveredFeatures then return end
+    if not (HumaLike and HumaLike.RuntimeCredentials and HumaLike.RuntimeCredentials()) then return end
+    HumalikeNpcReportCapabilities()
 end
 
 function HumalikeNpcPopulation.Report()
@@ -391,9 +541,12 @@ function HumalikeNpcPopulation.ApplyPlan(body)
     contact(GetGameTimer())
     publishState()
     local wanted = {}
+    local drives = vehiclesConvar()
     if enabled and type(body.wanted) == 'table' then
         for _, planned in ipairs(body.wanted) do
-            if validBody(planned) then
+            -- A driver already on the road outlives a convar flip: culled like any body.
+            local tracked = type(planned) == 'table' and bodies[planned.body_id] ~= nil
+            if validBody(planned, drives or tracked) then
                 wanted[planned.body_id] = planned
             else
                 local bodyId = type(planned) == 'table' and planned.body_id or nil
@@ -464,10 +617,12 @@ function HumalikeNpcPopulation.Reconcile()
             end
         end
     end
+    sweepStrandedVehicles(false)
     copsAllowed = copsConvar()
     edgeLost = enabled and lastContactAt ~= nil
         and now - lastContactAt > cfg.HeartbeatMs * cfg.EdgeLostHeartbeats
     publishState()
+    reportFeatures(now)
     if lastReportAt and now - lastReportAt >= cfg.HeartbeatMs then reportDirty = true end
     -- A request that never calls back must not block reports until restart.
     if reportInFlight and now - reportStartedAt > cfg.RetryBackoffCapMs * 2 then
@@ -499,6 +654,42 @@ end
 
 function HumalikeNpcPopulation.Enabled()
     return enabled and not edgeLost
+end
+
+function HumalikeNpcPopulation.Vehicles()
+    return vehiclesConvar()
+end
+
+function HumalikeNpcPopulation.Drivers()
+    local count = 0
+    for _, record in pairs(bodies) do
+        if record.behaviour == 'drive' and record.status == 'bound' then count = count + 1 end
+    end
+    return count
+end
+
+function HumalikeNpcPopulation.Features()
+    local features = {}
+    if vehiclesConvar() then features[#features + 1] = 'npc_vehicles' end
+    return features
+end
+
+-- The capability report is posted by main.lua; only a delivered one counts,
+-- so a failed first report and a convar flip both reach the edge from here.
+function HumalikeNpcPopulation.CapabilitiesPosted()
+    featuresInFlight = true
+    featuresPostedAt = GetGameTimer()
+end
+
+function HumalikeNpcPopulation.CapabilitiesReported(features, ok)
+    featuresInFlight = false
+    if ok then
+        deliveredFeatures = table.concat(features, ',')
+        featureFailures = 0
+        return
+    end
+    featureRetryAt = GetGameTimer() + backoff(featureFailures)
+    featureFailures = featureFailures + 1
 end
 
 function HumalikeNpcPopulation.SendState(playerId)
@@ -541,13 +732,15 @@ end)
 -- Runs before core clears the credentials; onResourceStop only sweeps what is left.
 AddEventHandler('humalike:core:stopping', function()
     for _, record in pairs(bodies) do
-        deletePed(record)
+        deletePed(record, true)
         record.release_requested = record.release_requested or 'resource_stop'
         if not record.releasing then release(record, 'resource_stop', true) end
     end
+    sweepStrandedVehicles(true)
 end)
 
 AddEventHandler('onResourceStop', function(resourceName)
     if GetCurrentResourceName() ~= resourceName then return end
-    for _, record in pairs(bodies) do deletePed(record) end
+    for _, record in pairs(bodies) do deletePed(record, true) end
+    sweepStrandedVehicles(true)
 end)

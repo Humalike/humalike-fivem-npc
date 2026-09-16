@@ -4,6 +4,10 @@ NpcActionSustain = {}
 function NpcActionPedInVehicle(ped)
     return GetVehiclePedIsIn(ped, false) ~= 0
 end
+-- A driver in its own car is never a passenger to send out of it.
+function NpcActionDrivesOwnVehicle(ped)
+    return HumalikeNpcDriving.DrivesOwnVehicle(ped)
+end
 local function nearestPlayerPedWithin(ped, maxDistance)
     local npcCoords = GetEntityCoords(ped)
     local best, bestDistance = nil, maxDistance

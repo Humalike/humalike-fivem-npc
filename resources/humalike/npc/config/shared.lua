@@ -49,8 +49,21 @@ Config.Population = {
     SweepTickMs = 2000,
     SweepMinPlayerDistance = 15.0,
     SweepMaxPerTick = 5,
+    DriverSpawnOffset = 2.5, -- metres beside the car a driver is created before being seated
+    VehicleNodeClearance = 5.0, -- metres: a road node holding a vehicle is not a spawn point
+    FeatureReportTimeoutMs = 20000, -- a capability post with no callback by then is treated as lost
+    VehiclePointReuseMs = 5000, -- two drivers resolving at once must not share a node; the client checks real vehicles
     GtaPopulationTypes = { [4] = true, [5] = true },
     CopPedTypes = { [6] = true, [27] = true }, -- GetPedType cop, swat
+}
+Config.Vehicles = {
+    WarpDistance = 6.0, -- metres: an unseated driver this close to its free car is put straight in
+    DriveSpeed = 12.0, -- m/s for cruising
+    DriveStyle = 786603, -- driving style flags: normal, obey traffic
+    EnterTimeoutMs = 15000, -- the enter-vehicle task timeout; also the gap between attempts
+    BrakeAction = 27, -- TaskVehicleTempAction: brake
+    ReturnDistance = 60.0, -- metres: how far a driver on foot walks back to its own car when told to
+    ReturnTimeoutMs = 45000, -- the whole walk-back-and-board attempt, before the body is given back
 }
 Config.Shove = {
     TickMs = 100,
@@ -78,6 +91,17 @@ Config.Combat = {
 }
 function HumalikeUnsignedHash(value)
     return value < 0 and value + 4294967296 or value
+end
+function HumalikeValidId(value)
+    return type(value) == 'string' and value ~= '' and #value <= 64
+end
+-- Seats -1..7 cover every stock vehicle; both natives exist on client and server.
+function HumalikePlayerInVehicle(vehicle)
+    for seat = -1, 7 do
+        local occupant = GetPedInVehicleSeat(vehicle, seat)
+        if occupant and occupant > 0 and IsPedAPlayer(occupant) then return true end
+    end
+    return false
 end
 function HumalikeValidCoordinate(value)
     return type(value) == 'number' and value == value and math.abs(value) <= 10000
@@ -153,6 +177,7 @@ Config.SupportedActions = {
     'hold_position',
     'release_movement',
     'enter_vehicle',
+    'enter_own_vehicle',
     'exit_vehicle',
     'walk_away',
     'run_away',

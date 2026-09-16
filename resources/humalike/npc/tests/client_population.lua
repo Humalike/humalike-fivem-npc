@@ -178,6 +178,35 @@ assert(HumalikeNpcPopulationClient.SelectSpawnPoint({ { x = 'a', y = 0, z = 0 } 
 assert(HumalikeNpcPopulationClient.SelectSpawnPoint(nil) == nil)
 
 visible[301] = nil
+local nodes = {}
+function GetClosestVehicleNodeWithHeading(x, y, z, nodeType, zTolerance, flags)
+    assert(nodeType == 1 and zTolerance == 3.0 and flags == 0, 'road nodes only')
+    local node = nodes[x]
+    if node then return true, { x = node[1], y = node[2], z = node[3] }, node[4] end
+    return false, nil, 0.0
+end
+local occupiedNodes = {}
+function IsAnyVehicleNearPoint(x, y, z, radius)
+    assert(radius == Config.Population.VehicleNodeClearance)
+    return occupiedNodes[x] == true
+end
+nodes[100] = { 100, 1, 10.5, 270 }
+nodes[300] = { 305, 2, 12, 135 }
+point = HumalikeNpcPopulationClient.SelectSpawnPoint(candidates, 'vehicle')
+assert(point.x == 305 and point.y == 2 and point.z == 12 and point.heading == 135,
+    'vehicle mode picks the road node with its heading; a visible node is skipped')
+occupiedNodes[305] = true
+assert(HumalikeNpcPopulationClient.SelectSpawnPoint(candidates, 'vehicle') == nil,
+    'a road node already holding a vehicle is never a spawn point')
+occupiedNodes[305] = nil
+nodes[300] = { 305, 2, 12 }
+point = HumalikeNpcPopulationClient.SelectSpawnPoint(candidates, 'vehicle')
+assert(point.heading == 0.0, 'a node without a heading falls back to the candidate heading')
+nodes[300] = nil
+assert(HumalikeNpcPopulationClient.SelectSpawnPoint(candidates, 'vehicle') == nil,
+    'no acceptable road node means no spawn point; pavement is never used for a vehicle')
+handlers['humalike:npc:populationSpawnPoint']('req-v', candidates, 'vehicle')
+assert(sent[2] == 'req-v' and sent[3] == nil)
 handlers['humalike:npc:populationSpawnPoint']('req-1', candidates)
 assert(sent[1] == 'humalike:npc:populationSpawnPointResult')
 assert(sent[2] == 'req-1' and sent[3].x == 301, 'the pavement point, not the road node')

@@ -183,6 +183,21 @@ assert(taskClears == 2 and standCalls == 4)
 actionControlled = false
 runHoldIteration()
 assert(taskClears == 2 and standCalls == 5)
+local braking, brakeCalls = false, 0
+HumalikeNpcDriving = { Brake = function(ped)
+    assert(ped == 42)
+    brakeCalls = brakeCalls + 1
+    return braking
+end }
+runHoldIteration()
+assert(brakeCalls == 1 and standCalls == 6, 'a body that does not brake stands still')
+braking = true
+runHoldIteration()
+assert(brakeCalls == 2 and standCalls == 6 and taskClears == 2, 'a seated driver brakes instead')
+braking = false
+HumalikeNpcDriving = nil
+runHoldIteration()
+assert(standCalls == 7)
 
 dead = false
 handlers['humalike:npc:ambientControlChanged']('42', nil)

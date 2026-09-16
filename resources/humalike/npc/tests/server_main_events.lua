@@ -22,12 +22,15 @@ function SyncNpcRoster(callback, repair)
     rosterCallback = callback
 end
 function GetSupportedActions() return { 'wave' } end
+local capabilityOk = true
+local lastFeatures
 HumalikeHttp = {
     PostAction = function(name, body, callback)
         assert(name == 'report_capabilities')
         assert(body.supported_actions[1] == 'wave')
+        lastFeatures = body.features
         capabilityCalls = capabilityCalls + 1
-        callback(true, 200)
+        callback(capabilityOk, capabilityOk and 200 or 500)
     end,
 }
 function RegisterCommand(name, handler, restricted)
@@ -57,3 +60,17 @@ assert(rosterCalls == 2 and capabilityCalls == 2,
 handlers['humalike:runtime:refreshed']({ edgeChanged = false })
 assert(rosterCalls == 3 and capabilityCalls == 3,
     'credential recovery must replay edge state even when the assignment is unchanged')
+assert(lastFeatures == nil, 'without the population module no features are reported')
+
+local posted, reported = 0, {}
+HumalikeNpcPopulation = {
+    Features = function() return { 'npc_vehicles' } end,
+    CapabilitiesPosted = function() posted = posted + 1 end,
+    CapabilitiesReported = function(features, ok) reported[#reported + 1] = { features, ok } end,
+}
+HumalikeNpcReportCapabilities()
+assert(capabilityCalls == 4 and lastFeatures[1] == 'npc_vehicles', 'the population features ride along')
+assert(posted == 1 and #reported == 1 and reported[1][1][1] == 'npc_vehicles' and reported[1][2] == true)
+capabilityOk = false
+handlers['humalike:runtime:edgeChanged']({ generation = 5 })
+assert(posted == 2 and #reported == 2 and reported[2][2] == false, 'a failed post is reported as such')

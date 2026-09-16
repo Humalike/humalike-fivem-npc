@@ -286,11 +286,15 @@ CreateThread(function()
                 if control and control.mode == 'held' and locallyOwned then
                     if not IsActionControlled(ped) and not isDowned(npcId) then
                         setHeldReactionsBlocked(ped, true)
-                        if initializedHoldByPed[ped] ~= key then
+                        local fresh = initializedHoldByPed[ped] ~= key
+                        if fresh then
                             ClearPedTasks(ped)
                             initializedHoldByPed[ped] = key
                         end
-                        if not faceController(ped, control) then
+                        -- A seated driver brakes instead of standing still; a
+                        -- fresh hold brakes even a driver that just drove off.
+                        local braked = HumalikeNpcDriving ~= nil and HumalikeNpcDriving.Brake(ped, fresh)
+                        if not braked and not faceController(ped, control) then
                             TaskStandStill(ped, Config.AmbientControl.StandTaskDurationMs)
                         end
                     end

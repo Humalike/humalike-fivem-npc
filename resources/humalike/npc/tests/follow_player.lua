@@ -88,7 +88,9 @@ end
 local sustainThread
 local function loadClient()
     threads = {}
-    dofile('client/reactions.lua')
+    HumalikeNpcDriving = HumalikeNpcDriving or { DrivesOwnVehicle = function() return false end }
+NpcActionDrivesOwnVehicle = NpcActionDrivesOwnVehicle or function() return false end
+dofile('client/reactions.lua')
     dofile('client/actions/state.lua')
     dofile('client/actions/follow_player.lua')
     dofile('client/actions/stop_following.lua')

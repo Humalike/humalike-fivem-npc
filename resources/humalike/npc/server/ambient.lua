@@ -156,6 +156,7 @@ local MOVEMENT_RELEASE_ACTIONS = {
     stop_following = true,
     release_movement = true,
     enter_vehicle = true,
+    enter_own_vehicle = true,
     walk_away = true,
     run_away = true,
 }
