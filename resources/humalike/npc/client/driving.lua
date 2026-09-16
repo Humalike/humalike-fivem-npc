@@ -49,10 +49,20 @@ end
 
 -- Issues the driver's task from scratch. False leaves the body to the
 -- population's wander: on foot with no vehicle to get back to.
+-- A driver standing (or lying) right by its free car is put in the seat at
+-- once; a warp that missed at spawn is not a walk-and-open-the-door job.
+local function warpIn(ped, vehicle)
+    if #(GetEntityCoords(ped) - GetEntityCoords(vehicle)) > cfg().WarpDistance then return false end
+    local occupant = GetPedInVehicleSeat(vehicle, -1)
+    if (occupant ~= 0 and occupant ~= ped) or HumalikePlayerInVehicle(vehicle) then return false end
+    SetPedIntoVehicle(ped, vehicle, -1)
+    return true
+end
+
 function HumalikeNpcDriving.Apply(ped, state, now)
     local vehicle = vehicleOf(state)
     if not vehicle then return IsPedInAnyVehicle(ped, false) end
-    if IsPedInVehicle(ped, vehicle, false) then
+    if IsPedInVehicle(ped, vehicle, false) or (not lost[ped] and warpIn(ped, vehicle)) then
         drive(ped, vehicle)
         return true
     end

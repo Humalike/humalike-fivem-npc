@@ -55,6 +55,7 @@ Config.Population = {
     CopPedTypes = { [6] = true, [27] = true }, -- GetPedType cop, swat
 }
 Config.Vehicles = {
+    WarpDistance = 6.0, -- metres: an unseated driver this close to its free car is put straight in
     DriveSpeed = 12.0, -- m/s for cruising
     DriveStyle = 786603, -- driving style flags: normal, obey traffic
     EnterTimeoutMs = 15000, -- the enter-vehicle task timeout; also the gap between attempts

@@ -43,6 +43,19 @@ TaskVehicleTempAction = record('temp')
 TaskEnterVehicle = record('enter')
 TaskVehicleDriveWander = record('drive')
 SetVehicleEngineOn = record('engine')
+SetPedIntoVehicle = record('warp')
+-- Entities stand far apart unless a test puts them together.
+local coords = {}
+local function vec(x, y, z)
+    return setmetatable({ x = x, y = y, z = z }, {
+        __sub = function(a, b) return vec(a.x - b.x, a.y - b.y, a.z - b.z) end,
+        __len = function(v) return math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z) end,
+    })
+end
+function GetEntityCoords(entity)
+    local c = coords[entity] or { x = entity * 100.0, y = 0, z = 0 }
+    return vec(c.x, c.y, c.z)
+end
 
 dofile('client/driving.lua')
 assert(#threads == 0)
@@ -83,6 +96,25 @@ taskRunning(20, WANDER, false)
 assert(Driving.Refresh(20, driver, 61000) == true)
 assert(#calls == 4 and calls[3][1] == 'engine' and last()[1] == 'drive', 'no drive task: drive again')
 taskRunning(20, WANDER, true)
+
+-- Lying on the roof (or standing by the door) of a free car: straight into
+-- the seat and off it drives, no walk-and-open-the-door task.
+reset()
+inVehicle[20] = nil
+seats[40] = {}
+coords[20] = { x = 1, y = 0, z = 1.5 }
+coords[40] = { x = 0, y = 0, z = 0 }
+assert(Driving.Apply(20, driver, 60000) == true)
+assert(calls[1][1] == 'warp' and calls[1][2] == 20 and calls[1][3] == 40 and calls[1][4] == -1,
+    'an unseated driver beside its car is put in the seat')
+assert(last()[1] == 'drive', 'and drives at once')
+reset()
+seats[40] = { [-1] = 99 }
+coords[21] = { x = 1, y = 0, z = 1.5 }
+assert(Driving.Apply(21, driver, 60000) == false and named('warp')[1] == nil
+    and last()[1] == 'wander', 'never into a seat someone else holds: the body walks off')
+seats[40] = {}
+coords[20], coords[21], coords[40] = nil, nil, nil
 
 -- Out of the vehicle: one enter attempt per window, never while the task runs.
 reset()
@@ -199,8 +231,8 @@ local nodes = {}
 local fleeing = {}
 function TriggerServerEvent(...) sent = { ... } end
 function PlayerPedId() return 1 end
+coords[1] = { x = 0, y = 0, z = 0 } -- the player stands at the origin for the spawn-point checks
 function IsSphereVisible(x) return visible[x] == true end
-function GetEntityCoords() return { x = 0, y = 0, z = 0 } end
 function GetSafeCoordForPed() return false, nil end
 function IsAnyVehicleNearPoint() return false end
 function GetClosestVehicleNodeWithHeading(x)
