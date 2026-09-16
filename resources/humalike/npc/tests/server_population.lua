@@ -99,14 +99,7 @@ function CreateVehicleServerSetter(hash, spawnType, x, y, z, heading)
     trace[#trace + 1] = { nextVehicle, 'vehicle' }
     return nextVehicle
 end
-function CreatePedInsideVehicle(vehicle, pedType, hash, seat, isNetwork, scriptHost)
-    assert(pedType == 4 and seat == -1 and isNetwork == true and scriptHost == true)
-    if failPed then return 0 end
-    nextPed = nextPed + 1
-    created[nextPed] = { hash = hash, vehicle = vehicle, seat = seat }
-    existing[nextPed] = true
-    return nextPed
-end
+function TaskWarpPedIntoVehicle(ped, vehicle, seat) warps[#warps + 1] = { ped, vehicle, seat } end
 function GetPedInVehicleSeat(_, seat) return (playerSeated and seat == 0) and 700 or 0 end
 function IsPedAPlayer(ped) return ped == 700 end
 function SetEntityRoutingBucket(entity, bucket) (created[entity] or vehicles[entity]).bucket = bucket end
@@ -968,8 +961,9 @@ assert(car.x == 20 and car.y == 5 and car.z == 30 and car.heading == 45, 'the ve
 assert(car.bucket == 2 and car.orphan == 2)
 assert(entityState[501].humalike_npc_kind == 'population_vehicle')
 assert(entityState[501].humalike_body_id == 'drv-1')
-assert(created[drv1.handle].vehicle == 501 and created[drv1.handle].seat == -1
-    and created[drv1.handle].hash == -123, 'the ped is born in the driver seat')
+assert(created[drv1.handle].x == 20 and created[drv1.handle].hash == -123, 'the ped is created at the vehicle')
+assert(#warps == 1 and warps[1][1] == drv1.handle and warps[1][2] == 501 and warps[1][3] == -1,
+    'the ped is warped into the driver seat')
 assert(traceIndex(501, 'netid') < traceIndex(drv1.handle, 'set:humalike_npc_kind'),
     'the vehicle has its network id before the ped exists')
 assert(entityState[drv1.handle].humalike_body_behaviour == 'drive')

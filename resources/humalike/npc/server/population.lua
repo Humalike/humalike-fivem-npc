@@ -373,15 +373,8 @@ end
 -- leaves the record to the caller.
 local function materialise(record, point)
     if record.vehicle and not (createVehicle(record, point) and spawning(record)) then return false end
-    local ped
-    if record.vehicle_handle then
-        -- Born in the seat: a ped created beside the car and warped in
-        -- sometimes lands on its roof instead.
-        ped = CreatePedInsideVehicle(record.vehicle_handle, 4, GetHashKey(record.model), -1, true, true)
-    else
-        ped = CreatePed(4, GetHashKey(record.model), point.x, point.y, point.z,
-            point.heading or 0.0, true, true)
-    end
+    local ped = CreatePed(4, GetHashKey(record.model), point.x, point.y, point.z,
+        point.heading or 0.0, true, true)
     if not ped or ped <= 0 then return false end
     record.ped = ped
     SetEntityRoutingBucket(ped, record.routing_bucket)
@@ -394,7 +387,12 @@ local function materialise(record, point)
     state:set('humalike_body_scenario', record.scenario, true)
     state:set('humalike_walk_rate', record.walk_rate, true)
     if record.kind == 'extra' then state:set('humalike_style_seed', record.style_seed, true) end
-    if record.vehicle_handle then state:set('humalike_vehicle_net', record.vehicle_net, true) end
+    if record.vehicle_handle then
+        state:set('humalike_vehicle_net', record.vehicle_net, true)
+        -- The warp can miss (the ped lands on the roof); the owning client
+        -- seats a driver it finds beside its car (npc/client/driving.lua).
+        TaskWarpPedIntoVehicle(ped, record.vehicle_handle, -1)
+    end
     local networkId = awaitNetworkId(ped)
     if networkId <= 0 or not spawning(record) then return false end
     record.network_id = networkId
