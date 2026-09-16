@@ -371,10 +371,24 @@ end
 -- Creates the record's vehicle (a driver) and ped at `point`, stamps the
 -- state bags, seats the driver and waits for the ped's network id. False
 -- leaves the record to the caller.
+-- A driver is created beside its car, not inside its body: a warp that
+-- misses leaves it standing at the door rather than crushed under the chassis.
+local function besideVehicle(point)
+    local heading = math.rad(point.heading or 0.0)
+    local side = config().DriverSpawnOffset
+    return {
+        x = point.x + math.cos(heading) * side,
+        y = point.y + math.sin(heading) * side,
+        z = point.z,
+        heading = point.heading,
+    }
+end
+
 local function materialise(record, point)
     if record.vehicle and not (createVehicle(record, point) and spawning(record)) then return false end
-    local ped = CreatePed(4, GetHashKey(record.model), point.x, point.y, point.z,
-        point.heading or 0.0, true, true)
+    local at = record.vehicle and besideVehicle(point) or point
+    local ped = CreatePed(4, GetHashKey(record.model), at.x, at.y, at.z,
+        at.heading or 0.0, true, true)
     if not ped or ped <= 0 then return false end
     record.ped = ped
     SetEntityRoutingBucket(ped, record.routing_bucket)

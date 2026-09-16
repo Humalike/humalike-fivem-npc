@@ -53,6 +53,12 @@ function HumalikeNpcDriving.DrivesOwnVehicle(ped)
         and GetPedInVehicleSeat(vehicle, -1) == ped
 end
 
+-- The driver left its car on purpose (got out, took a player's car, went on
+-- foot with a player): the car is done with; it never gets back in.
+function HumalikeNpcDriving.Dismiss(ped)
+    lost[ped] = true
+end
+
 -- Back on the road from wherever it stopped.
 function HumalikeNpcDriving.Resume(ped)
     local vehicle = GetVehiclePedIsIn(ped, false)
@@ -81,11 +87,16 @@ end
 function HumalikeNpcDriving.Apply(ped, state, now)
     local vehicle = vehicleOf(state)
     if not vehicle then return IsPedInAnyVehicle(ped, false) end
-    if IsPedInVehicle(ped, vehicle, false) or (not lost[ped] and warpIn(ped, vehicle)) then
+    if IsPedInVehicle(ped, vehicle, false) then
+        lost[ped] = nil -- back at its own wheel after all
         drive(ped, vehicle)
         return true
     end
-    if lost[ped] then return false end
+    if lost[ped] then return IsPedInAnyVehicle(ped, false) end
+    if warpIn(ped, vehicle) then
+        drive(ped, vehicle)
+        return true
+    end
     return enter(ped, vehicle, now)
 end
 
@@ -99,7 +110,7 @@ function HumalikeNpcDriving.Refresh(ped, state, now)
         if taskDropped(ped, DRIVE_WANDER_TASK) then drive(ped, vehicle) end
         return true
     end
-    if lost[ped] then return false end
+    if lost[ped] then return IsPedInAnyVehicle(ped, false) end
     if not taskDropped(ped, ENTER_TASK) then return true end
     return enter(ped, vehicle, now)
 end

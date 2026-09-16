@@ -21,6 +21,9 @@ NpcActions['exit_vehicle'] = function(ped, _params)
         ReleaseActionControl(ped)
         return
     end
+    if NpcActionDrivesOwnVehicle and NpcActionDrivesOwnVehicle(ped) then
+        HumalikeNpcDriving.Dismiss(ped) -- told to get out: the car stays parked
+    end
     MarkActionControl(ped, 'exit_vehicle')
     deadlines[ped] = GetGameTimer() + timeoutMs()
     TaskLeaveVehicle(ped, vehicle, 0)

@@ -51,4 +51,18 @@ inVehicle = 0
 NpcActionSustain.exit_vehicle(npc)
 assert(releases == 3 and ActionControlledPeds[npc] == nil)
 
+
+-- A population driver told to get out gives its car up for good.
+local dismissed = 0
+HumalikeNpcDriving = { Dismiss = function(ped) assert(ped == npc); dismissed = dismissed + 1 end }
+local ownDriver = true
+function NpcActionDrivesOwnVehicle(ped) return ped == npc and ownDriver end
+inVehicle = vehicle
+now = 30000
+NpcActions.exit_vehicle(npc, {})
+assert(dismissed == 1 and leaves == 4, 'a driver getting out dismisses its own car')
+ownDriver = false
+ActionControlledPeds[npc] = nil
+NpcActions.exit_vehicle(npc, {})
+assert(dismissed == 1, 'a passenger has no car of its own to dismiss')
 print('exit_vehicle: ok')

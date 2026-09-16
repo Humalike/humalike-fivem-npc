@@ -141,6 +141,9 @@ local function sustainVehicleFollow(ped, target)
             return
         end
         updateReservation(ped)
+        if NpcActionDrivesOwnVehicle and NpcActionDrivesOwnVehicle(ped) then
+            HumalikeNpcDriving.Dismiss(ped) -- on foot with the player from here on
+        end
         leaveIfNeeded(ped, pedVehicle, false)
         return
     end

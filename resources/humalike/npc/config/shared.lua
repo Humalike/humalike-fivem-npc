@@ -49,6 +49,7 @@ Config.Population = {
     SweepTickMs = 2000,
     SweepMinPlayerDistance = 15.0,
     SweepMaxPerTick = 5,
+    DriverSpawnOffset = 2.5, -- metres beside the car a driver is created before being seated
     VehicleNodeClearance = 5.0, -- metres: a road node holding a vehicle is not a spawn point
     VehiclePointReuseMs = 5000, -- two drivers resolving at once must not share a node; the client checks real vehicles
     GtaPopulationTypes = { [4] = true, [5] = true },

@@ -39,13 +39,20 @@ local function freeSeat(ped, vehicle)
 end
 
 NpcActions['enter_vehicle'] = function(ped, params)
-    if NpcActionPedInVehicle(ped) then
-        attempts[ped] = nil
-        ReleaseActionControl(ped)
-        return
-    end
     local partner = ActionTargetPed(ped, params, Config.Punch.MaxDistance * 4)
     local partnerVehicle = partner and GetVehiclePedIsIn(partner, false) or 0
+    local current = GetVehiclePedIsIn(ped, false)
+    if current ~= 0 then
+        -- Already there, or a passenger somewhere: nothing to do. A driver
+        -- asked into the partner's car gives its own up and walks over.
+        if partnerVehicle == 0 or partnerVehicle == current
+            or not (NpcActionDrivesOwnVehicle and NpcActionDrivesOwnVehicle(ped)) then
+            attempts[ped] = nil
+            ReleaseActionControl(ped)
+            return
+        end
+        HumalikeNpcDriving.Dismiss(ped)
+    end
     local vehicle = partnerVehicle ~= 0 and networked(partnerVehicle)
         and partnerVehicle or nearestVehicle(ped)
     if not vehicle then

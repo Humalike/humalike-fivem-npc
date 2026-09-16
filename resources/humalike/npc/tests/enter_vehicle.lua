@@ -68,4 +68,28 @@ assert(#enters == 3 and releases == 1)
 timeouts[2]()
 assert(releases == 1, 'completed attempt state must be cleared')
 
+
+-- A driver in its own car asked into the partner's car gives its own up and
+-- goes; asked while already in the partner's car, or with no partner car in
+-- sight, nothing happens.
+local dismissed = 0
+HumalikeNpcDriving = { Dismiss = function(ped) assert(ped == npc); dismissed = dismissed + 1 end }
+local ownDriver = true
+function NpcActionDrivesOwnVehicle(ped) return ped == npc and ownDriver end
+inVehicle[npc] = unrelatedVehicle
+inVehicle[partner] = vehicle
+ActionControlledPeds[npc] = nil
+local entersBefore = #enters
+NpcActions.enter_vehicle(npc, { player_id = 7 })
+assert(dismissed == 1 and #enters == entersBefore + 1 and enters[#enters].target == vehicle,
+    'a driver leaves its own car for the partner\'s')
+inVehicle[npc] = vehicle
+ActionControlledPeds[npc] = nil
+NpcActions.enter_vehicle(npc, { player_id = 7 })
+assert(dismissed == 1 and #enters == entersBefore + 1, 'already in the partner\'s car: nothing to do')
+inVehicle[npc] = unrelatedVehicle
+inVehicle[partner] = nil
+ActionControlledPeds[npc] = nil
+NpcActions.enter_vehicle(npc, { player_id = 7 })
+assert(dismissed == 1 and #enters == entersBefore + 1, 'no partner car: a driver stays in its own')
 print('enter_vehicle: ok')

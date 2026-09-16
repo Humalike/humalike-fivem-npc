@@ -961,7 +961,9 @@ assert(car.x == 20 and car.y == 5 and car.z == 30 and car.heading == 45, 'the ve
 assert(car.bucket == 2 and car.orphan == 2)
 assert(entityState[501].humalike_npc_kind == 'population_vehicle')
 assert(entityState[501].humalike_body_id == 'drv-1')
-assert(created[drv1.handle].x == 20 and created[drv1.handle].hash == -123, 'the ped is created at the vehicle')
+assert(math.abs(created[drv1.handle].x - (20 + math.cos(math.rad(45)) * 2.5)) < 0.01
+    and math.abs(created[drv1.handle].y - (5 + math.sin(math.rad(45)) * 2.5)) < 0.01
+    and created[drv1.handle].hash == -123, 'the ped is created beside the vehicle, not inside it')
 assert(#warps == 1 and warps[1][1] == drv1.handle and warps[1][2] == 501 and warps[1][3] == -1,
     'the ped is warped into the driver seat')
 assert(traceIndex(501, 'netid') < traceIndex(drv1.handle, 'set:humalike_npc_kind'),

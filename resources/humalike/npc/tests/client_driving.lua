@@ -139,6 +139,26 @@ inVehicle[20] = 40
 seats[40] = { [-1] = 20 }
 assert(Driving.Apply(20, driver, 87000) == true and last()[1] == 'drive', 'back in the seat: drive')
 
+-- Dismissed (got out on request, went with a player): on foot it is left to
+-- the population's wander; seated in some other car it is left alone; back at
+-- its own wheel it drives again.
+reset()
+inVehicle[20] = nil
+seats[40] = {}
+coords[20] = { x = 1, y = 0, z = 1.5 }
+coords[40] = { x = 0, y = 0, z = 0 }
+Driving.Dismiss(20)
+assert(Driving.Apply(20, driver, 90000) == false and #calls == 0, 'dismissed: never warped or sent back in')
+assert(Driving.Refresh(20, driver, 91000) == false and #calls == 0)
+inVehicle[20] = 99
+assert(Driving.Refresh(20, driver, 92000) == true and #calls == 0, 'a passenger elsewhere is left alone')
+inVehicle[20] = 40
+seats[40] = { [-1] = 20 }
+taskRunning(20, WANDER, false)
+assert(Driving.Apply(20, driver, 93000) == true and last()[1] == 'drive', 'back at its own wheel: drives')
+taskRunning(20, WANDER, true)
+coords[20], coords[40] = nil, nil
+
 -- Someone in the driver seat, or a player anywhere inside, ends the drive:
 -- the body walks off once and is never sent back.
 reset()
