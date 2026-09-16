@@ -88,9 +88,8 @@ NpcActions.enter_own_vehicle = function(ped, params)
     homeCalls = homeCalls + 1
     ActionControlledPeds[ped] = 'enter_own_vehicle'
 end
-dismissed = 0
 HumalikeNpcDriving.OwnVehicle = function() return ownCar end
-ownDriver = false
+ownDriver = false -- it got out of its OWN car earlier (dismissed) and then rode along
 inVehicle = vehicle
 ActionControlledPeds[npc] = nil
 ActionParams[npc] = { player_id = 7 }
@@ -116,7 +115,7 @@ ownDriver = true
 inVehicle = vehicle
 ActionControlledPeds[npc] = nil
 NpcActions.exit_vehicle(npc, {})
-assert(dismissed == 1)
+assert(dismissed == 2)
 inVehicle = 0
 NpcActionSustain.exit_vehicle(npc)
 assert(homeCalls == 1 and releases == releasesBefore + 2, 'got out of its own car: never sent straight back')

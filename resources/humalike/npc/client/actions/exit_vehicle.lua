@@ -21,9 +21,11 @@ end
 -- whatever the tag was called. "Leave my car and get back to yours" came as
 -- [exit_vehicle] every time in live traces, and a driver left on the
 -- pavement wandered off saying it was walking to its car.
+-- Only THIS exit matters: a driver that earlier got out of its own car on
+-- request, then rode along in the player's, still goes home when sent out of
+-- that one (the dismissal from the first exit is not a reason to stay on foot).
 local function goesHome(ped)
     if fromOwn[ped] or not HumalikeNpcDriving or not NpcActions.enter_own_vehicle then return false end
-    if HumalikeNpcDriving.IsDismissed and HumalikeNpcDriving.IsDismissed(ped) then return false end
     local own = HumalikeNpcDriving.OwnVehicle(ped)
     if not own then return false end
     if #(GetEntityCoords(own) - GetEntityCoords(ped)) > Config.Vehicles.ReturnDistance then return false end
