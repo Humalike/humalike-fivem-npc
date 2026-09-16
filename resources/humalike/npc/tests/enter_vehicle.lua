@@ -31,7 +31,13 @@ function SetTimeout(_delay, callback) timeouts[#timeouts + 1] = callback end
 function GetScriptTaskStatus() return enterTaskStatus end
 function GetHashKey(name) return name end
 function GetEntityVelocity() return { x = 0, y = 0, z = 0 } end
-function GetEntityCoords() return { x = 0, y = 0, z = 0 } end
+local function vec(x, y, z)
+    return setmetatable({ x = x, y = y, z = z }, {
+        __sub = function(a, b) return vec(a.x - b.x, a.y - b.y, a.z - b.z) end,
+        __len = function(v) return math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z) end,
+    })
+end
+function GetEntityCoords() return vec(0, 0, 0) end
 function GetGamePool()
     poolCalls = poolCalls + 1
     return { unrelatedVehicle }
@@ -73,7 +79,10 @@ assert(releases == 1, 'completed attempt state must be cleared')
 -- goes; asked while already in the partner's car, or with no partner car in
 -- sight, nothing happens.
 local dismissed = 0
-HumalikeNpcDriving = { Dismiss = function(ped) assert(ped == npc); dismissed = dismissed + 1 end }
+HumalikeNpcDriving = {
+    Dismiss = function(ped) assert(ped == npc); dismissed = dismissed + 1 end,
+    OwnVehicle = function() return nil end,
+}
 local ownDriver = true
 function NpcActionDrivesOwnVehicle(ped) return ped == npc and ownDriver end
 inVehicle[npc] = unrelatedVehicle
@@ -92,4 +101,19 @@ inVehicle[partner] = nil
 ActionControlledPeds[npc] = nil
 NpcActions.enter_vehicle(npc, { player_id = 7 })
 assert(dismissed == 1 and #enters == entersBefore + 1, 'no partner car: a driver stays in its own')
+
+-- On foot beside its own parked car with no partner car in sight, a lift is
+-- never into its own: that car is enter_own_vehicle's, so nothing happens.
+HumalikeNpcDriving.OwnVehicle = function() return unrelatedVehicle end
+ownDriver = false
+inVehicle[npc] = nil
+inVehicle[partner] = nil
+ActionControlledPeds[npc] = nil
+entersBefore = #enters
+NpcActions.enter_vehicle(npc, { player_id = 7 })
+assert(#enters == entersBefore, 'the nearest car being its own, there is nothing to get into')
+HumalikeNpcDriving.OwnVehicle = function() return nil end
+NpcActions.enter_vehicle(npc, { player_id = 7 })
+assert(#enters == entersBefore + 1 and enters[#enters].target == unrelatedVehicle,
+    'somebody else\'s parked car is a lift as before')
 print('enter_vehicle: ok')

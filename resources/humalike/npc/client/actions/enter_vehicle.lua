@@ -13,11 +13,14 @@ local function networked(vehicle)
     return DoesEntityExist(vehicle) and NetworkGetEntityIsNetworked(vehicle)
 end
 
+-- Somebody else's car: a driver's own is enter_own_vehicle's business, so a
+-- lift offered on foot beside its parked car never sends it back to its own wheel.
 local function nearestVehicle(ped)
     local npcCoords = GetEntityCoords(ped)
+    local own = HumalikeNpcDriving and HumalikeNpcDriving.OwnVehicle(ped) or nil
     local best, bestDistance = nil, MAX_DISTANCE
     for _, vehicle in ipairs(GetGamePool('CVehicle')) do
-        if networked(vehicle) and stationary(vehicle) then
+        if vehicle ~= own and networked(vehicle) and stationary(vehicle) then
             local distance = #(GetEntityCoords(vehicle) - npcCoords)
             if distance < bestDistance
                 or (distance == bestDistance and best and vehicle < best) then

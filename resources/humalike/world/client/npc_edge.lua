@@ -39,6 +39,7 @@ local function npcSample(candidate)
         heading = GetEntityHeading(ped),
         zone_code = GetNameOfZone(position.x, position.y, position.z),
         vehicle = HumalikeWorldVehicle.StreamState(ped),
+        own_vehicle = HumalikeWorldVehicle.OwnState(ped),
     }
 end
 

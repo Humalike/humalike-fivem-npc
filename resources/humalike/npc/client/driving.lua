@@ -54,9 +54,21 @@ function HumalikeNpcDriving.DrivesOwnVehicle(ped)
 end
 
 -- The driver left its car on purpose (got out, took a player's car, went on
--- foot with a player): the car is done with; it never gets back in.
+-- foot with a player): the car is done with; it never gets back in on its own.
 function HumalikeNpcDriving.Dismiss(ped)
     lost[ped] = true
+end
+
+-- Told to get back in: the car is its own again, and once seated the
+-- population's Apply/Refresh put it back on the road.
+function HumalikeNpcDriving.Reclaim(ped)
+    lost[ped] = nil
+end
+
+-- The car this body was spawned driving, wherever it stands now; nil once gone.
+function HumalikeNpcDriving.OwnVehicle(ped)
+    if not DoesEntityExist(ped) then return nil end
+    return vehicleOf(Entity(ped).state)
 end
 
 -- Back on the road from wherever it stopped.

@@ -61,6 +61,8 @@ Config.Vehicles = {
     DriveStyle = 786603, -- driving style flags: normal, obey traffic
     EnterTimeoutMs = 15000, -- the enter-vehicle task timeout; also the gap between attempts
     BrakeAction = 27, -- TaskVehicleTempAction: brake
+    ReturnDistance = 60.0, -- metres: how far a driver on foot walks back to its own car when told to
+    ReturnTimeoutMs = 45000, -- the whole walk-back-and-board attempt, before the body is given back
 }
 Config.Shove = {
     TickMs = 100,
@@ -174,6 +176,7 @@ Config.SupportedActions = {
     'hold_position',
     'release_movement',
     'enter_vehicle',
+    'enter_own_vehicle',
     'exit_vehicle',
     'walk_away',
     'run_away',

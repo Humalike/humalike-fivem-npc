@@ -29,7 +29,12 @@ GetPedInVehicleSeat = function(vehicle, seat) return occupants[vehicle][seat] or
 GetEntityCoords = function(entity) return entities[entity] end
 GetEntityVelocity = function() return vector3(0, 0, 0) end
 GetEntityHeading = function() return 90.0 end
-GetEntityModel = function() return 123 end
+GetEntityModel = function(entity) return entity == 102 and 456 or 123 end
+IsThisModelABike = function(model) return model == 456 end
+local bags = { [2] = { humalike_vehicle_net = 502 } }
+Entity = function(entity) return { state = bags[entity] or {} } end
+NetworkDoesEntityExistWithNetworkId = function(networkId) return networkId == 502 end
+NetworkGetEntityFromNetworkId = function(networkId) return networkId == 502 and 102 or 0 end
 GetNameOfZone = function() return 'TEST' end
 RegisterNetEvent = function() end
 RegisterNUICallback = function() end
@@ -82,6 +87,10 @@ assert(frame.player.vehicle.networkId == nil)
 assert(#frame.npcs == 1)
 assert(frame.npcs[1].vehicle.network_id == 502)
 assert(frame.npcs[1].vehicle.seat == 0)
+assert(frame.player.vehicle.kind == 'car')
+assert(frame.npcs[1].vehicle.kind == 'bike', 'the vehicle kind rides along')
+assert(frame.npcs[1].own_vehicle.network_id == 502 and frame.npcs[1].own_vehicle.kind == 'bike')
+assert(frame.npcs[1].own_vehicle.distance_m == 0, 'seated in it: no distance to its own vehicle')
 
 occupants[101], occupants[102] = { [0] = 1 }, { [-1] = 2 }
 frame = HumalikeWorldNpcEdge.BuildPositionsFrame(player, 1, 8)
@@ -92,6 +101,18 @@ pedVehicles[1], pedVehicles[2] = nil, nil
 frame = HumalikeWorldNpcEdge.BuildPositionsFrame(player, 1, 9)
 assert(frame.player.vehicle == nil)
 assert(frame.npcs[1].vehicle == nil)
+assert(frame.npcs[1].own_vehicle.network_id == 502, 'on foot, its own vehicle is still reported')
+assert(frame.npcs[1].own_vehicle.distance_m == 0)
+entities[2] = vector3(13, 0, 0)
+frame = HumalikeWorldNpcEdge.BuildPositionsFrame(player, 1, 10)
+assert(frame.npcs[1].own_vehicle.distance_m == 12, 'with how far it has walked from it')
+entities[2] = vector3(1, 0, 0)
+bags[2].humalike_vehicle_net = 777
+assert(HumalikeWorldVehicle.OwnState(2) == nil, 'a vehicle that no longer exists is not reported')
+bags[2].humalike_vehicle_net = nil
+assert(HumalikeWorldVehicle.OwnState(2) == nil, 'a body spawned on foot has none')
+assert(HumalikeWorldVehicle.OwnState(1) == nil, 'nor does the player')
+bags[2].humalike_vehicle_net = 502
 
 pedVehicles[1] = 101
 occupants[101] = {}
