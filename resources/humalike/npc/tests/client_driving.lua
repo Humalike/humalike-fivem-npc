@@ -97,6 +97,29 @@ assert(Driving.Refresh(20, driver, 61000) == true)
 assert(#calls == 4 and calls[3][1] == 'engine' and last()[1] == 'drive', 'no drive task: drive again')
 taskRunning(20, WANDER, true)
 
+-- Told to drive off, the hold loop's repeat brake yields for a moment (the
+-- server's release lands a tick later); an explicit stop order still brakes.
+reset()
+GetGameTimer = function() return 100000 end
+GetVehiclePedIsIn = function(ped) return inVehicle[ped] or 0 end
+assert(Driving.Brake(20) == true and last()[1] == 'temp', 'a held driver brakes')
+reset()
+assert(Driving.Resume(20) == true and last()[1] == 'drive')
+reset()
+assert(Driving.Brake(20) == true and #calls == 0, 'right after Resume the loop brake is swallowed')
+GetGameTimer = function() return 104999 end
+assert(Driving.Brake(20) == true and #calls == 0, 'for the whole grace window')
+GetGameTimer = function() return 105000 end
+assert(Driving.Brake(20) == true and last()[1] == 'temp', 'then it brakes again')
+reset()
+assert(Driving.Resume(20) == true)
+reset()
+assert(Driving.Brake(20, true) == true and last()[1] == 'temp', 'a stop order brakes at once')
+reset()
+GetGameTimer = function() return 105100 end
+assert(Driving.Brake(20) == true and last()[1] == 'temp', 'and ends the grace')
+taskRunning(20, WANDER, true)
+
 -- Lying on the roof (or standing by the door) of a free car: straight into
 -- the seat and off it drives, no walk-and-open-the-door task.
 reset()
@@ -398,5 +421,6 @@ HumalikeNpcPopulationClient.Tick(20000, false)
 assert(not walked()[52], 'the idle window applies first')
 HumalikeNpcPopulationClient.Tick(26000, false)
 assert(walked()[52] and not walked()[50], 'on foot with no vehicle: wander; the seated driver stays put')
+
 
 print('client_driving: ok')

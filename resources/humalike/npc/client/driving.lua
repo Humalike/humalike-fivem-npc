@@ -4,6 +4,8 @@ local DRIVE_WANDER_TASK = 'SCRIPT_TASK_VEHICLE_DRIVE_WANDER'
 local ENTER_TASK = 'SCRIPT_TASK_ENTER_VEHICLE'
 local enteredAt = {}
 local lost = {} -- the seat went to someone else: the body walks off and is never sent back
+local resumedAt = {} -- told to drive off: the hold loop must not brake it again for a moment
+local RESUME_GRACE_MS = 5000
 
 local function cfg()
     return Config.Vehicles
@@ -71,10 +73,14 @@ function HumalikeNpcDriving.OwnVehicle(ped)
     return vehicleOf(Entity(ped).state)
 end
 
--- Back on the road from wherever it stopped.
+-- Back on the road from wherever it stopped. The server drops its hold with
+-- the same action, but that news lands a tick later than this call: without
+-- the grace the hold loop braked the car straight after the drive task and
+-- the driver told to leave sat there saying it was halfway down the block.
 function HumalikeNpcDriving.Resume(ped)
     local vehicle = GetVehiclePedIsIn(ped, false)
     if vehicle == 0 then return false end
+    resumedAt[ped] = GetGameTimer()
     drive(ped, vehicle)
     return true
 end
@@ -128,8 +134,9 @@ function HumalikeNpcDriving.Refresh(ped, state, now)
 end
 
 -- Brakes a seated driver; true when it did, so a hold on it (ambient control)
--- leaves the stand-still to us.
-function HumalikeNpcDriving.Brake(ped)
+-- leaves the stand-still to us. The hold loop's repeat brakes yield for a
+-- moment after Resume; an explicit stop order (`force`) never does.
+function HumalikeNpcDriving.Brake(ped, force)
     if not DoesEntityExist(ped) then return false end
     local state = Entity(ped).state
     if state.humalike_body_behaviour ~= 'drive' or not IsPedInAnyVehicle(ped, false) then
@@ -137,12 +144,17 @@ function HumalikeNpcDriving.Brake(ped)
     end
     local vehicle = vehicleOf(state)
     if not vehicle or GetPedInVehicleSeat(vehicle, -1) ~= ped then return false end
+    if force then
+        resumedAt[ped] = nil
+    elseif resumedAt[ped] and GetGameTimer() - resumedAt[ped] < RESUME_GRACE_MS then
+        return true -- just told to drive off: the hold is on its way out, keep rolling
+    end
     TaskVehicleTempAction(ped, vehicle, cfg().BrakeAction, Config.AmbientControl.StandTaskDurationMs)
     return true
 end
 
 function HumalikeNpcDriving.Forget(seen)
-    for _, registry in ipairs({ enteredAt, lost }) do
+    for _, registry in ipairs({ enteredAt, lost, resumedAt }) do
         for ped in pairs(registry) do
             if not seen[ped] then registry[ped] = nil end
         end
@@ -151,5 +163,5 @@ end
 
 AddEventHandler('onResourceStop', function(resourceName)
     if resourceName ~= GetCurrentResourceName() then return end
-    enteredAt, lost = {}, {}
+    enteredAt, lost, resumedAt = {}, {}, {}
 end)
