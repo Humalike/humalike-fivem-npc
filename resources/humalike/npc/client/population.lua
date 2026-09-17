@@ -46,8 +46,7 @@ local function acceptable(x, y, z)
     local coords = GetEntityCoords(playerPed)
     local dx, dy, dz = coords.x - x, coords.y - y, coords.z - z
     local minDistance = config().MinPlayerDistance
-    if dx * dx + dy * dy + dz * dz < minDistance * minDistance then return false end
-    return not IsSphereVisible(x, y, z, 2.0)
+    return dx * dx + dy * dy + dz * dz >= minDistance * minDistance
 end
 
 -- `mode` is `foot` (pavement, the default) or `vehicle` (nearest road node).

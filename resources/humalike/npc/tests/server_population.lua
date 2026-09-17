@@ -328,6 +328,7 @@ assert(HumalikeNpcPopulation.ApplyPlan({ revision = 2.2, enabled = true,
 assert(created[102] == nil and #deleted == deletedBefore, 'no pavement near any candidate: no CreatePed')
 assert(lastAction('release_npc_body').payload.body_id == 'body-2')
 assert(lastAction('release_npc_body').payload.cause == 'spawn_failed')
+assert(lastAction('release_npc_body').payload.reason == 'no_spawn_point', 'the edge is told why')
 assert(lastAction('report_npc_bodies').payload.failed[1] == 'body-2')
 replyPoint = { x = 20, y = 5, z = 30, heading = 45 }
 
@@ -337,6 +338,7 @@ assert(HumalikeNpcPopulation.ApplyPlan({ revision = 2.5, enabled = true,
 assert(created[102].x == 20 and created[102].y == 5 and deleted[#deleted] == 102)
 assert(lastAction('release_npc_body').payload.body_id == 'body-2')
 assert(lastAction('release_npc_body').payload.cause == 'spawn_failed')
+assert(lastAction('release_npc_body').payload.reason == 'bind_server_capacity_reached')
 assert(bodyIds()['body-2'] == nil)
 assert(lastAction('report_npc_bodies').payload.failed[1] == 'body-2')
 

@@ -149,9 +149,12 @@ visible[100] = true
 safeCoords[10] = { x = 10, y = 0, z = 10 }
 safeCoords[200] = { x = 202, y = 1, z = 11 }
 local point = HumalikeNpcPopulationClient.SelectSpawnPoint(candidates)
-assert(point.x == 202 and point.y == 1 and point.z == 11 and point.heading == 180,
-    'visible and near candidates are rejected')
+assert(point.x == 100 and point.y == 0 and point.z == 10 and point.heading == 90,
+    'a point in the player\'s sight is fine; only distance is checked')
 safeCoords[100] = nil
+point = HumalikeNpcPopulationClient.SelectSpawnPoint(candidates)
+assert(point.x == 202 and point.y == 1 and point.z == 11 and point.heading == 180,
+    'near candidates are rejected')
 safeCoords[10] = nil
 
 for _, call in ipairs(safeFlags) do
@@ -172,8 +175,8 @@ assert(HumalikeNpcPopulationClient.SelectSpawnPoint(candidates) == nil,
 
 safeCoords[300] = { x = 301, y = 2, z = 12.5 }
 visible[301] = true
-assert(HumalikeNpcPopulationClient.SelectSpawnPoint(candidates) == nil,
-    'a pavement point in the player\'s sight is rejected')
+assert(HumalikeNpcPopulationClient.SelectSpawnPoint(candidates).x == 301,
+    'a pavement point in the player\'s sight is still a spawn point')
 assert(HumalikeNpcPopulationClient.SelectSpawnPoint({ { x = 'a', y = 0, z = 0 } }) == nil)
 assert(HumalikeNpcPopulationClient.SelectSpawnPoint(nil) == nil)
 
@@ -190,11 +193,11 @@ function IsAnyVehicleNearPoint(x, y, z, radius)
     assert(radius == Config.Population.VehicleNodeClearance)
     return occupiedNodes[x] == true
 end
-nodes[100] = { 100, 1, 10.5, 270 }
+nodes[10] = { 12, 1, 10.5, 270 }
 nodes[300] = { 305, 2, 12, 135 }
 point = HumalikeNpcPopulationClient.SelectSpawnPoint(candidates, 'vehicle')
 assert(point.x == 305 and point.y == 2 and point.z == 12 and point.heading == 135,
-    'vehicle mode picks the road node with its heading; a visible node is skipped')
+    'vehicle mode picks the road node with its heading; a node too near the player is skipped')
 occupiedNodes[305] = true
 assert(HumalikeNpcPopulationClient.SelectSpawnPoint(candidates, 'vehicle') == nil,
     'a road node already holding a vehicle is never a spawn point')
@@ -213,7 +216,7 @@ assert(sent[2] == 'req-1' and sent[3].x == 301, 'the pavement point, not the roa
 sent = nil
 handlers['humalike:npc:populationSpawnPoint'](7, candidates)
 assert(sent == nil, 'a non-string request id is ignored')
-visible[301] = true
+safeCoords[300] = nil
 handlers['humalike:npc:populationSpawnPoint']('req-2', candidates)
 assert(sent[2] == 'req-2' and sent[3] == nil, 'no acceptable point replies nil')
 
