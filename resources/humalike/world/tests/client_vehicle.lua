@@ -31,7 +31,6 @@ GetEntityVelocity = function() return vector3(0, 0, 0) end
 GetEntityHeading = function() return 90.0 end
 GetEntityModel = function(entity) return entity == 102 and 456 or 123 end
 IsThisModelABike = function(model) return model == 456 end
-IsThisModelABicycle = function(model) return model == 789 end
 local bags = { [2] = { humalike_vehicle_net = 502 } }
 Entity = function(entity) return { state = bags[entity] or {} } end
 NetworkDoesEntityExistWithNetworkId = function(networkId) return networkId == 502 end
@@ -91,10 +90,6 @@ assert(frame.npcs[1].vehicle.network_id == 502)
 assert(frame.npcs[1].vehicle.seat == 0)
 assert(frame.player.vehicle.kind == 'car')
 assert(frame.npcs[1].vehicle.kind == 'bike', 'the vehicle kind rides along')
-GetEntityModel = function(entity) return entity == 101 and 789 or 123 end
-assert(HumalikeWorldNpcEdge.BuildPositionsFrame(player, 1, 8).player.vehicle.kind == 'bicycle',
-    'a bicycle is reported as its own kind')
-GetEntityModel = function(entity) return entity == 102 and 456 or 123 end
 assert(frame.npcs[1].own_vehicle.network_id == 502 and frame.npcs[1].own_vehicle.kind == 'bike')
 assert(frame.npcs[1].own_vehicle.distance_m == 0, 'seated in it: no distance to its own vehicle')
 assert(frame.npcs[1].own_vehicle.in_reach == true)

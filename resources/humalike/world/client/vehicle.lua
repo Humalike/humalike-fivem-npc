@@ -1,11 +1,7 @@
 HumalikeWorldVehicle = {}
 
--- A bicycle is its own kind: the edge plans for a cyclist as for a
--- pedestrian, for a car or motorbike as for a motorist.
 local function kindOf(vehicle)
-    local model = GetEntityModel(vehicle)
-    if IsThisModelABicycle(model) then return 'bicycle' end
-    return IsThisModelABike(model) and 'bike' or 'car'
+    return IsThisModelABike(GetEntityModel(vehicle)) and 'bike' or 'car'
 end
 
 local function networkIdOf(vehicle)
