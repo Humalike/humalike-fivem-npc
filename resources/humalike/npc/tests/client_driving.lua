@@ -379,10 +379,11 @@ local point = HumalikeNpcPopulationClient.SelectSpawnPoint(candidates, 'vehicle'
 assert(point.x == 60 and point.y == 1 and point.z == 30.5 and point.heading == 270,
     'vehicle mode returns the road node with its heading')
 visible[60] = true
-assert(HumalikeNpcPopulationClient.SelectSpawnPoint(candidates, 'vehicle') == nil, 'a visible node is rejected')
+assert(HumalikeNpcPopulationClient.SelectSpawnPoint(candidates, 'vehicle').x == 60,
+    'a node in sight is fine; only distance is checked')
 visible[60] = nil
 nodes[10] = { 3, 0, 30, 0 }
-assert(HumalikeNpcPopulationClient.SelectSpawnPoint(candidates, 'vehicle') == nil, 'a node near the player too')
+assert(HumalikeNpcPopulationClient.SelectSpawnPoint(candidates, 'vehicle') == nil, 'a node near the player is rejected')
 assert(HumalikeNpcPopulationClient.SelectSpawnPoint(candidates, 'foot') == nil, 'foot mode never uses nodes')
 nodes[10] = { 60, 1, 30.5, 270 }
 handlers['humalike:npc:populationSpawnPoint']('req-v', candidates, 'vehicle')

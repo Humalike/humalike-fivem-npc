@@ -239,6 +239,7 @@ local function release(record, cause, bestEffort)
         body_id = record.body_id,
         npc_id = record.npc_id,
         cause = cause,
+        reason = record.failure_reason,
     }, function(ok, _, body)
         record.releasing = false
         local finished = ok and type(body) == 'table'
@@ -284,9 +285,11 @@ local function noteFailed(bodyId)
     if #failedBodies < 512 then failedBodies[#failedBodies + 1] = bodyId end
 end
 
-local function spawnFailed(record)
+-- `reason` rides on the release so the edge can count why bodies fail.
+local function spawnFailed(record, reason)
     deletePed(record)
     if record.status == 'released' then return end
+    record.failure_reason = reason
     noteFailed(record.body_id)
     reportDirty = true
     if bodies[record.body_id] == record then retire(record, 'spawn_failed') end
@@ -327,9 +330,9 @@ local function bind(record)
             return
         end
         if not ok or type(body) ~= 'table' or body.status ~= 'bound' then
-            HumalikeDebug('population body %s bind failed: %s', record.body_id,
-                tostring(type(body) == 'table' and (body.reason or body.status) or status))
-            spawnFailed(record)
+            local why = tostring(type(body) == 'table' and (body.reason or body.status) or status)
+            HumalikeDebug('population body %s bind failed: %s', record.body_id, why)
+            spawnFailed(record, 'bind_' .. why)
             return
         end
         contact(GetGameTimer())
@@ -449,11 +452,11 @@ function HumalikeNpcPopulation.Spawn(wanted)
         end
         if not point then
             HumalikeDebug('population body %s has no ground near any candidate', record.body_id)
-            spawnFailed(record)
+            spawnFailed(record, 'no_spawn_point')
             return
         end
         if not materialise(record, point) then
-            spawnFailed(record)
+            spawnFailed(record, record.vehicle and 'vehicle_or_ped_create' or 'ped_create')
             return
         end
         if record.kind == 'extra' then
@@ -595,7 +598,7 @@ function HumalikeNpcPopulation.Reconcile()
                 retire(record, record.release_requested)
                 reportDirty = true
             elseif now - record.started_at > cfg.SpawnTimeoutMs then
-                spawnFailed(record)
+                spawnFailed(record, 'spawn_timeout')
             end
         elseif record.status == 'bound' or record.status == 'extra' then
             if not ownsPed(record, record.ped) then
