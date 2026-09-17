@@ -285,7 +285,6 @@ local function noteFailed(bodyId)
     if #failedBodies < 512 then failedBodies[#failedBodies + 1] = bodyId end
 end
 
--- `reason` rides on the release so the edge can count why bodies fail.
 local function spawnFailed(record, reason)
     deletePed(record)
     if record.status == 'released' then return end

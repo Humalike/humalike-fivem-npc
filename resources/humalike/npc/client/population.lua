@@ -46,10 +46,6 @@ local function acceptable(x, y, z)
     local coords = GetEntityCoords(playerPed)
     local dx, dy, dz = coords.x - x, coords.y - y, coords.z - z
     local minDistance = config().MinPlayerDistance
-    -- Distance only. The out-of-sight test that used to follow rejected most
-    -- points in open ground (beach, plazas, wide streets) and was the main
-    -- reason bodies never appeared; 40 m of pavement is enough to keep a
-    -- spawn from popping in someone's face.
     return dx * dx + dy * dy + dz * dz >= minDistance * minDistance
 end
 
