@@ -292,6 +292,43 @@ ok, err = acting({ name = 'n', description = 'd', params = 'copies' })
 assert(not ok and err == 'invalid params in action give_map')
 ok, err = acting({ name = 'n', description = 'd', requires = true })
 assert(not ok and err == 'invalid requires in action give_map')
+-- A map or a hole would walk as fewer rules than written: an ungated deed.
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { amulet = { observation = 'item_given' } } })
+assert(not ok and err == 'requires must be a list in action give_map', tostring(err))
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { nil, { observation = 'item_given' } } })
+assert(not ok and err == 'requires must be a list in action give_map', tostring(err))
+ok, err = acting({ name = 'n', description = 'd',
+    params = { copies = { type = 'integer', enum = { one = 1 } } } })
+assert(not ok and err == 'invalid enum for copies in action give_map')
+-- The backend's caps and number rules, refused here with the field named.
+local wide = { fields = { a = 'integer', b = 'integer', c = 'integer', d = 'integer', e = 'integer' },
+               template = { en = 'x' } }
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { { observation = 'wide', where = { a = 1, b = 1, c = 1, d = 1, e = 1 } } } },
+    { Observations = { wide = wide } })
+assert(not ok and err == 'too many fields in where of requirement 1 of action give_map', tostring(err))
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { { observation = 'wide', consume = true } },
+    params_from = { a = 'wide.a', b = 'wide.b', c = 'wide.c', d = 'wide.d', e = 'wide.e' } },
+    { Observations = { wide = wide } })
+assert(not ok and err == 'too many params_from in action give_map', tostring(err))
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { { observation = 'item_given', where = { quantity = { gte = math.huge } } } } })
+assert(not ok and err == 'invalid bound on quantity in requirement 1 of action give_map')
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { { observation = 'item_given', where = { quantity = 1.5 } } } })
+assert(not ok and err == 'invalid value for quantity in requirement 1 of action give_map')
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { { observation = 'item_given', where = { quantity = 2.0 } } } })
+assert(ok, err)
+assert(math.type(HumalikeSelectedProvider('actions').Actions.give_map.requires[1].where.quantity) == 'integer')
+assert(exported.UnregisterProvider('actions', 'observer'))
+ok, err = acting({ name = 'n', description = 'd', fixed = { player_id = 3 } })
+assert(not ok and err == 'invalid fixed param player_id in action give_map')
+ok, err = acting({ name = 'n', description = 'd', fixed = { ['Item-Name'] = 'x' } })
+assert(not ok and err == 'invalid fixed param Item-Name in action give_map')
 ok, err = acting({ name = 'n', description = 'd',
     requires = { { observation = 'item_given', where = 'item' } } })
 assert(not ok and err == 'invalid where in requirement 1 of action give_map')
@@ -354,7 +391,7 @@ assert(declaredObservations[1].fields.quantity == 'integer')
 assert(exported.UnregisterProvider('actions', 'observer'))
 
 -- A shop: prices in a declared payment observation; deliver/refund are
--- declared for the script, hidden from the model.
+-- declared for the script, never offered to the model.
 local function selling(catalog, overrides)
     local descriptor = {
         name = 'shop', apiVersion = 1, priority = 50, SupportedActions = {}, Namespace = 'srp',

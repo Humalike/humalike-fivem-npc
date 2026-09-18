@@ -36,7 +36,7 @@ local OBSERVATION_FIELD_TYPES = { string = true, integer = true, number = true, 
 local OBSERVATION_LANGUAGES = { en = true, pl = true }
 local ACTION_LIMITS = {
     actions = 32, name = 80, description = 400, params = 4, enum = 16, fixed = 16,
-    requires = 4, hint = 300, withinMin = 5, withinMax = 3600,
+    requires = 4, where = 4, paramsFrom = 4, hint = 300, withinMin = 5, withinMax = 3600,
 }
 local ACTION_PARAM_TYPES = { string = true, integer = true, boolean = true }
 
@@ -251,7 +251,7 @@ local function normalizedCatalog(descriptor, observations)
     local observation = type(payment) == 'string' and observations[payment] or nil
     if not observation or observation.fields.item ~= 'string'
         or (observation.fields.quantity ~= 'integer' and observation.fields.quantity ~= 'number') then
-        return nil, 'Catalog payment must be a declared observation with item (string) and quantity (integer)'
+        return nil, 'Catalog payment must be a declared observation with item (string) and quantity (integer or number)'
     end
     if type(catalog.items) ~= 'table' or next(catalog.items) == nil then
         return nil, 'invalid Catalog items'
@@ -282,20 +282,18 @@ end
 
 -- The two deeds a shop needs from the script, declared for it: the basket
 -- and the money come from HumaLike, never from the model.
-local function counterActions()
-    return {
-        deliver = {
-            name = 'Fill the order', description = 'Hand over what the customer ordered and paid for.',
-            params = {}, fixed = {}, requires = {}, params_from = {}, hidden = true,
-            passthrough = { items = true, total = true, paid = true, change = true, currency = true },
-        },
-        refund = {
-            name = 'Give money back', description = 'Return money from the counter to the customer.',
-            params = {}, fixed = {}, requires = {}, params_from = {}, hidden = true,
-            passthrough = { amount = true, currency = true },
-        },
-    }
-end
+local COUNTER_ACTIONS = {
+    deliver = {
+        name = 'Fill the order', description = 'Hand over what the customer ordered and paid for.',
+        params = {}, fixed = {}, requires = {}, params_from = {},
+        passthrough = { items = true, total = true, paid = true, change = true, currency = true },
+    },
+    refund = {
+        name = 'Give money back', description = 'Return money from the counter to the customer.',
+        params = {}, fixed = {}, requires = {}, params_from = {},
+        passthrough = { amount = true, currency = true },
+    },
+}
 
 local function cleanTemplate(value, maxLength)
     if type(value) ~= 'string' or value:find('%c') then return nil end
@@ -360,6 +358,20 @@ local function scalar(value)
     return kind == 'string' or kind == 'number' or kind == 'boolean'
 end
 
+local function finite(value)
+    return type(value) == 'number' and value == value
+        and value ~= math.huge and value ~= -math.huge
+end
+
+-- { a, b, c } and nothing else: a map or a hole would be walked as fewer
+-- entries than the author wrote, or none.
+local function sequence(value)
+    local count = 0
+    for _ in pairs(value) do count = count + 1 end
+    for index = 1, count do if value[index] == nil then return false end end
+    return true
+end
+
 -- A server-defined action: what the model reads, what it may fill in, what
 -- the script fixes, and which reported facts must precede it. Mirrors the
 -- backend contract so a mistake is refused here, at RegisterProvider, in the
@@ -390,7 +402,7 @@ local function normalizedAction(key, definition, observations)
         end
         local param = { type = spec.type, required = spec.required == true }
         if spec.enum ~= nil then
-            if type(spec.enum) ~= 'table' or #spec.enum == 0
+            if type(spec.enum) ~= 'table' or not sequence(spec.enum) or #spec.enum == 0
                 or #spec.enum > ACTION_LIMITS.enum or spec.type == 'boolean' then
                 return nil, ('invalid enum for %s in action %s'):format(paramName, key)
             end
@@ -419,7 +431,9 @@ local function normalizedAction(key, definition, observations)
     end
     local fixed, fixedCount = {}, 0
     for fixedName, value in pairs(definition.fixed or {}) do
-        if type(fixedName) ~= 'string' or params[fixedName] or not scalar(value) then
+        if type(fixedName) ~= 'string' or not fixedName:match('^[a-z][a-z0-9_]*$')
+            or #fixedName > 32 or fixedName == 'player_id' or params[fixedName]
+            or not scalar(value) then
             return nil, ('invalid fixed param %s in action %s'):format(tostring(fixedName), key)
         end
         fixed[fixedName] = value
@@ -427,6 +441,9 @@ local function normalizedAction(key, definition, observations)
         if fixedCount > ACTION_LIMITS.fixed then
             return nil, ('too many fixed params in action %s'):format(key)
         end
+    end
+    if definition.requires ~= nil and not sequence(definition.requires) then
+        return nil, ('requires must be a list in action %s'):format(key)
     end
     local requires = {}
     for index, rule in ipairs(definition.requires or {}) do
@@ -440,8 +457,13 @@ local function normalizedAction(key, definition, observations)
         if rule.where ~= nil and type(rule.where) ~= 'table' then
             return nil, ('invalid where in requirement %d of action %s'):format(index, key)
         end
-        local where = {}
+        local where, whereCount = {}, 0
         for field, value in pairs(rule.where or {}) do
+            whereCount = whereCount + 1
+            if whereCount > ACTION_LIMITS.where then
+                return nil, ('too many fields in where of requirement %d of action %s'):format(
+                    index, key)
+            end
             local fieldType = observation.fields[field]
             if not fieldType then
                 return nil, ('unknown field %s in requirement %d of action %s'):format(
@@ -454,7 +476,7 @@ local function normalizedAction(key, definition, observations)
                 local bounded = numeric and next(value) ~= nil
                 for bound, limit in pairs(value) do
                     if (bound ~= 'gte' and bound ~= 'lte' and bound ~= 'sum_gte')
-                        or type(limit) ~= 'number' or limit ~= limit then bounded = false end
+                        or not finite(limit) then bounded = false end
                 end
                 if bounded and value.sum_gte and (value.gte or value.lte or value.sum_gte <= 0) then
                     bounded = false
@@ -468,15 +490,16 @@ local function normalizedAction(key, definition, observations)
                 end
                 where[field] = { gte = value.gte, lte = value.lte, sum_gte = value.sum_gte }
             else
+                -- An exact match on a numeric field is a whole number: the
+                -- backend takes no fraction there.
                 local fits = (fieldType == 'string' and type(value) == 'string')
                     or (fieldType == 'boolean' and type(value) == 'boolean')
-                    or (fieldType == 'integer' and math.type(value) == 'integer')
-                    or (fieldType == 'number' and type(value) == 'number' and value == value)
+                    or (numeric and finite(value) and value % 1 == 0)
                 if not fits then
                     return nil, ('invalid value for %s in requirement %d of action %s'):format(
                         field, index, key)
                 end
-                where[field] = value
+                where[field] = numeric and math.tointeger(value) or value
             end
         end
         local within = rule.within_s == nil and 600 or rule.within_s
@@ -529,8 +552,12 @@ local function normalizedAction(key, definition, observations)
     end
     -- Values the deed takes from the facts that unlocked it, never from the
     -- model: { amount = 'item_given.quantity' }.
-    local paramsFrom = {}
+    local paramsFrom, paramsFromCount = {}, 0
     for name, source in pairs(definition.params_from or {}) do
+        paramsFromCount = paramsFromCount + 1
+        if paramsFromCount > ACTION_LIMITS.paramsFrom then
+            return nil, ('too many params_from in action %s'):format(key)
+        end
         local observationKey, fieldName
         if type(source) == 'string' then
             observationKey, fieldName = source:match('^([a-z][a-z0-9_]*)%.([a-z][a-z0-9_]*)$')
@@ -566,7 +593,7 @@ local function normalizedAction(key, definition, observations)
     }
 end
 
-local function normalizedCustomActions(descriptor, observations)
+local function normalizedActions(descriptor, observations)
     local actions, count = {}, 0
     for key, definition in pairs(descriptor.Actions or {}) do
         local action, err = normalizedAction(key, definition, observations)
@@ -590,7 +617,7 @@ local function normalizedObservations(descriptor)
     return observations
 end
 
-local function normalizedActions(descriptor)
+local function normalizedSupportedActions(descriptor)
     local actions, seen = {}, {}
     for _, action in ipairs(descriptor.SupportedActions) do
         if type(action) ~= 'string' or not action:match('^[a-z][a-z0-9_]*$')
@@ -616,16 +643,16 @@ local function register(domain, descriptor, owner)
     local provider = {}
     for key, value in pairs(descriptor) do provider[key] = value end
     if domain == 'actions' then
-        provider.SupportedActions, err = normalizedActions(descriptor)
+        provider.SupportedActions, err = normalizedSupportedActions(descriptor)
         if not provider.SupportedActions then return false, err end
         provider.Observations, err = normalizedObservations(descriptor)
         if not provider.Observations then return false, err end
-        provider.Actions, err = normalizedCustomActions(descriptor, provider.Observations)
+        provider.Actions, err = normalizedActions(descriptor, provider.Observations)
         if not provider.Actions then return false, err end
         provider.Catalog, err = normalizedCatalog(descriptor, provider.Observations)
         if err then return false, err end
         if provider.Catalog then
-            for key, action in pairs(counterActions()) do
+            for key, action in pairs(COUNTER_ACTIONS) do
                 if provider.Actions[key] then
                     return false, ('action %s is reserved for the Catalog'):format(key)
                 end
