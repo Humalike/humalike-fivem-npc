@@ -50,7 +50,8 @@ local function dispatchStaticAction(target, actionKey, params)
         if delivered and SERVER_ACTION_ANIMATIONS[actionKey] then
             TriggerClientEvent('humalike:npc:playAction', -1, target.npc_id, actionKey, params or {})
         end
-        return delivered, delivered and nil or 'action_rejected'
+        if not delivered then return false, 'action_rejected' end
+        return true
     end
     TriggerClientEvent('humalike:npc:playAction', -1, target.npc_id, actionKey, params or {})
     RecordNpcPose(target.npc_id, actionKey, target)
@@ -75,7 +76,8 @@ local function dispatchAmbientAction(target, actionKey, params)
         if delivered and SERVER_ACTION_ANIMATIONS[actionKey] then
             SendAmbientActionToOwner(target, entity, actionKey, params)
         end
-        return delivered, delivered and nil or 'action_rejected'
+        if not delivered then return false, 'action_rejected' end
+        return true
     end
     if not SendAmbientActionToOwner(target, entity, actionKey, params)
         and movementApplied ~= true then
@@ -154,8 +156,10 @@ local function dispatchCustomAction(target, localKey, definition, params)
     if not withinReach(playerId, coords) then return false, 'action_player_out_of_reach' end
     local merged, paramsReason = customParams(definition, params or {})
     if not merged then return false, paramsReason end
-    local ran = HumalikeActions.Run(localKey, playerId, coords, merged)
-    return ran, ran and nil or 'action_rejected'
+    if not HumalikeActions.Run(localKey, playerId, coords, merged) then
+        return false, 'action_rejected'
+    end
+    return true
 end
 
 local completedInvocations = {}
@@ -271,9 +275,7 @@ HumaLike.RegisterCallback('/action', function(body)
         target.kind, body.action, json.encode(body.params or {}))
     local delivered, reason = dispatchAction(target, body.action, body.params,
         body.invocation_id)
-    return 200, {
-        ok = delivered,
-        invocation_id = body.invocation_id,
-        reason = delivered and nil or reason,
-    }
+    local response = { ok = delivered == true, invocation_id = body.invocation_id }
+    if not delivered then response.reason = reason end
+    return 200, response
 end)

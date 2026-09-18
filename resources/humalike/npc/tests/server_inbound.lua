@@ -268,7 +268,9 @@ local robbery = {
     action = 'hand_over_money',
     params = { player_id = 7, robber_description = 'czarna kominiarka' },
 }
-assert(request(robbery) == 200)
+local robberyStatus, robberyBody = request(robbery)
+assert(robberyStatus == 200 and robberyBody.ok == true)
+assert(robberyBody.reason == nil, 'a delivered payout carries no reason: ' .. tostring(robberyBody.reason))
 assert(handOverCalls == 1, 'payout dispatched once')
 assert(#clientEvents == ceBefore + 1)
 assert(clientEvents[#clientEvents].name == 'humalike:npc:playAction')
@@ -328,6 +330,7 @@ end
 assert(select(2, give('map-0', { player_id = 7, copies = 2, note = 'here' })).reason == 'missing_param:paid')
 local status, body = give('map-1', { player_id = 7, copies = 2, note = 'here', paid = 50 })
 assert(status == 200 and body.ok == true, tostring(body.reason))
+assert(body.reason == nil, 'a delivered deed carries no reason: ' .. tostring(body.reason))
 assert(runCalls[1].params.paid == 50)
 assert(#runCalls == 1 and runCalls[1].action == 'give_map' and runCalls[1].source == 7)
 assert(runCalls[1].coords.x == 4)
