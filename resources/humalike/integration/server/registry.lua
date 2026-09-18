@@ -367,7 +367,14 @@ exports('RegisterProvider', function(domain, descriptor)
     if not owner or owner == GetCurrentResourceName() then
         return false, 'external provider resource required'
     end
-    return register(domain, descriptor, owner)
+    local ok, err = register(domain, descriptor, owner)
+    -- An export carries one return value across resources, so the reason a
+    -- descriptor was refused would otherwise never reach its author.
+    if not ok then
+        print(('[humalike] %s provider from %s rejected: %s'):format(
+            tostring(domain), owner, tostring(err)))
+    end
+    return ok, err
 end)
 
 exports('UnregisterProvider', function(domain, name)
