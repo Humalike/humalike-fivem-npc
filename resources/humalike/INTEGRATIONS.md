@@ -421,6 +421,13 @@ the customer backs out, the NPC's `[srp:cancel_order]` calls
 what is on the counter. `deliver` and `refund` are declared for you, never
 offered to the model, and the model never authors a number.
 
+A server with its own shop menu places the order directly instead of
+through conversation: `exports.humalike:PlaceOrder(npcId, playerId, { water
+= 2, burger = 1 })` sends the picked lines; HumaLike checks and prices them
+the same way and the NPC announces the total (or why a line cannot be
+filled). Returns the export envelope with `no_catalog`, `unknown_item:<name>`,
+`invalid_quantity:<name>`, `too_many_lines` or the usual player/NPC codes.
+
 Client integrations can subscribe to
 `humalike:voice:transmittingChanged(active)` to update a custom HUD.
 

@@ -104,4 +104,24 @@ result = report('ambient-1', 7, 'item_given', full)
 assert(result.ok and posted[4][2].lease_token == 'lease-1')
 assert(posted[4][2].text:match('^postać'))
 
+-- PlaceOrder: the menu's lines, checked against the catalogue, posted as an
+-- order request for HumaLike to price.
+local place = exported.PlaceOrder
+assert(place('npc-en', 7, { water = 2 }).error == 'no_catalog')
+HumalikeActions.Catalog = function()
+    return { currency = 'money', payment = 'srp:item_given',
+             items = { water = { price = 5 }, burger = { price = 12 } } }
+end
+assert(place('npc-en', 0, { water = 2 }).error == 'invalid_player')
+assert(place('npc-missing', 7, { water = 2 }).error == 'npc_not_found')
+assert(place('npc-en', 7, {}).error == 'invalid_lines')
+assert(place('npc-en', 7, { bread = 1 }).error == 'unknown_item:bread')
+assert(place('npc-en', 7, { water = 0 }).error == 'invalid_quantity:water')
+assert(place('npc-en', 7, { water = 1.5 }).error == 'invalid_quantity:water')
+local order = place('ambient-1', 7, { water = 2, burger = 1 })
+assert(order.ok and order.value.lines.water == 2)
+local posted_order = posted[#posted][2]
+assert(posted_order.type == 'order_requested' and posted_order.npc_id == 'ambient-1')
+assert(posted_order.lease_token == 'lease-1' and posted_order.lines.burger == 1)
+
 print('observations: ok')
