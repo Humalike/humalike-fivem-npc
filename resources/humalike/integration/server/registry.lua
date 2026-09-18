@@ -31,7 +31,7 @@ local DOMAINS = {
     actions = { required = {}, optional = { 'RunAction' } },
 }
 
-local OBSERVATION_LIMITS = { observations = 32, fields = 8, template = 400, description = 200 }
+local OBSERVATION_LIMITS = { observations = 32, fields = 8, template = 400 }
 local OBSERVATION_FIELD_TYPES = { string = true, integer = true, number = true, boolean = true }
 local OBSERVATION_LANGUAGES = { en = true, pl = true }
 
@@ -264,12 +264,7 @@ local function normalizedObservation(key, definition)
         end
         template[language] = text
     end
-    local description = definition.description
-    if description ~= nil
-        and not HumaLike.CleanText(description, OBSERVATION_LIMITS.description) then
-        return nil, ('invalid description in observation %s'):format(key)
-    end
-    return { fields = fields, template = template, description = description }
+    return { fields = fields, template = template }
 end
 
 local function normalizedObservations(descriptor)
