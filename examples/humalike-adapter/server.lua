@@ -25,8 +25,9 @@ local function registerProviders()
         end,
     })
 
-    -- Facts only this server knows. Declare them once; report each occurrence
-    -- from the hook that makes it true (see below).
+    -- Facts only this server knows, and deeds of its own gated on them.
+    -- Declare once; report each fact from the hook that makes it true (see
+    -- below); perform each deed in RunAction.
     exports.humalike:RegisterProvider('actions', {
         name = 'example_actions',
         apiVersion = 1,
@@ -42,6 +43,28 @@ local function registerProviders()
                 },
             },
         },
+        Actions = {
+            give_map = {
+                name = 'Give the treasure map',
+                description = 'Hand the player the map to the hidden chest.',
+                fixed = { item = 'treasure_map' },
+                requires = {
+                    { observation = 'item_given', where = { item = 'amulet' }, consume = true },
+                },
+                locked_hint = {
+                    en = 'Only once the amulet is in your hands.',
+                    pl = 'Dopiero gdy amulet będzie w twoich rękach.',
+                },
+            },
+        },
+        RunAction = function(action, source, _npcCoords, params)
+            if action ~= 'give_map' then return false end
+            -- Replace with your inventory: params.item is the fixed value above.
+            TriggerClientEvent('chat:addMessage', source, {
+                args = { 'HumaLike', ('You received: %s'):format(params.item) },
+            })
+            return true
+        end,
     })
 end
 

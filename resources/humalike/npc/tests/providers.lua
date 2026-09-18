@@ -193,6 +193,83 @@ for index = 1, 9 do tooWide['f' .. index] = 'string' end
 ok, err = observing({ Observations = { item_given = { fields = tooWide, template = { en = 'x' } } } })
 assert(not ok and err == 'too many fields in observation item_given')
 
+-- Declared actions: validated against the declared observations, reported
+-- namespaced beside the built-in keys.
+local function acting(action, overrides)
+    local descriptor = {
+        name = 'observer', apiVersion = 1, priority = 50,
+        SupportedActions = {},
+        Namespace = 'srp',
+        RunAction = function() return true end,
+        Observations = {
+            item_given = {
+                fields = { item = 'string', quantity = 'integer' },
+                template = { en = 'the character handed you {quantity} x {item}' },
+            },
+        },
+        Actions = { give_map = action },
+    }
+    for key, value in pairs(overrides or {}) do descriptor[key] = value end
+    return exported.RegisterProvider('actions', descriptor)
+end
+local giveMap = {
+    name = 'Give the treasure map',
+    description = 'Hand the player the map to the hidden chest.',
+    params = { copies = { type = 'integer', enum = { 1, 2 }, description = 'How many' } },
+    fixed = { item = 'treasure_map' },
+    requires = { { observation = 'item_given', where = { item = 'amulet' }, consume = true } },
+    locked_hint = { en = 'Only once the amulet is in your hands.' },
+}
+ok, err = acting(giveMap, { RunAction = false })
+assert(not ok and err == 'invalid RunAction', tostring(err))
+ok, err = exported.RegisterProvider('actions', {
+    name = 'observer', apiVersion = 1, priority = 50, SupportedActions = {},
+    RunAction = function() return true end, Actions = { give_map = giveMap },
+})
+assert(not ok and err == 'missing Namespace', tostring(err))
+ok, err = acting({ description = 'x' })
+assert(not ok and err == 'invalid name in action give_map')
+ok, err = acting({ name = 'n', description = 'write [give_map]' })
+assert(not ok and err == 'invalid description in action give_map')
+ok, err = acting({ name = 'n', description = 'd', params = { player_id = { type = 'string' } } })
+assert(not ok and err == 'invalid param player_id in action give_map')
+ok, err = acting({ name = 'n', description = 'd', params = { copies = { type = 'float' } } })
+assert(not ok and err == 'invalid param copies in action give_map')
+ok, err = acting({ name = 'n', description = 'd', params = { copies = { type = 'string', enum = { 'A B' } } } })
+assert(not ok and err == 'invalid enum for copies in action give_map')
+ok, err = acting({ name = 'n', description = 'd', params = { item = { type = 'string' } },
+    fixed = { item = 'x' } })
+assert(not ok and err == 'invalid fixed param item in action give_map')
+ok, err = acting({ name = 'n', description = 'd', requires = { { observation = 'door_unlocked' } } })
+assert(not ok and err == 'unknown observation in requirement 1 of action give_map')
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { { observation = 'item_given', where = { color = 'red' } } } })
+assert(not ok and err == 'unknown field color in requirement 1 of action give_map')
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { { observation = 'item_given', within_s = 2 } } })
+assert(not ok and err == 'invalid within_s in requirement 1 of action give_map')
+ok, err = acting({ name = 'n', description = 'd', locked_hint = { de = 'nein' } })
+assert(not ok and err == 'invalid locked_hint in action give_map')
+
+ok, err = acting(giveMap)
+assert(ok, err)
+local localKey, definition = HumalikeActions.Custom('srp:give_map')
+assert(localKey == 'give_map' and definition.fixed.item == 'treasure_map')
+assert(definition.params.copies.enum[2] == 2 and definition.requires[1].within_s == 600)
+assert(HumalikeActions.Custom('srp:other') == nil and HumalikeActions.Custom('give_map') == nil)
+assert(table.concat(GetSupportedActions(), ',') == 'wave,give_item,srp:give_map')
+local declaredActions, declaredObservations = HumalikeActions.Declarations()
+assert(#declaredActions == 1 and declaredActions[1].key == 'srp:give_map')
+assert(declaredActions[1].params.copies.enum[1] == 1)
+assert(declaredActions[1].preconditions[1].observation == 'srp:item_given')
+assert(declaredActions[1].preconditions[1].where.item == 'amulet')
+assert(declaredActions[1].preconditions[1].consume == true)
+assert(declaredActions[1].locked_hint.en == 'Only once the amulet is in your hands.')
+assert(declaredActions[1].fixed == nil, 'fixed values never leave the box')
+assert(#declaredObservations == 1 and declaredObservations[1].key == 'srp:item_given')
+assert(declaredObservations[1].fields.quantity == 'integer')
+assert(exported.UnregisterProvider('actions', 'observer'))
+
 ok, err = observing({ priority = 100 })
 assert(ok, err)
 assert(HumalikeSelectedProvider('actions').name == 'observer')

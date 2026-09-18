@@ -34,6 +34,11 @@ local DOMAINS = {
 local OBSERVATION_LIMITS = { observations = 32, fields = 8, template = 400, description = 200 }
 local OBSERVATION_FIELD_TYPES = { string = true, integer = true, number = true, boolean = true }
 local OBSERVATION_LANGUAGES = { en = true, pl = true }
+local ACTION_LIMITS = {
+    actions = 32, name = 80, description = 400, params = 4, enum = 16, fixed = 16,
+    requires = 4, hint = 300, withinMin = 5, withinMax = 3600,
+}
+local ACTION_PARAM_TYPES = { string = true, integer = true, boolean = true }
 
 for domain in pairs(DOMAINS) do HumalikeProviders.registered[domain] = {} end
 
@@ -217,6 +222,13 @@ local function validateDescriptor(domain, descriptor)
                 return false, 'missing Namespace'
             end
         end
+        if descriptor.Actions ~= nil then
+            if type(descriptor.Actions) ~= 'table' then return false, 'invalid Actions' end
+            if next(descriptor.Actions) ~= nil then
+                if not descriptor.Namespace then return false, 'missing Namespace' end
+                if not callable(descriptor.RunAction) then return false, 'invalid RunAction' end
+            end
+        end
     end
     return true
 end
@@ -279,6 +291,129 @@ local function normalizedObservation(key, definition)
     return { fields = fields, template = template, description = description }
 end
 
+local function scalar(value)
+    local kind = type(value)
+    return kind == 'string' or kind == 'number' or kind == 'boolean'
+end
+
+-- A server-defined action: what the model reads, what it may fill in, what
+-- the script fixes, and which reported facts must precede it. Mirrors the
+-- backend contract so a mistake is refused here, at RegisterProvider, in the
+-- integration's own console.
+local function normalizedAction(key, definition, observations)
+    if type(key) ~= 'string' or not key:match('^[a-z][a-z0-9_]*$') or #key > 32 then
+        return nil, 'invalid action key'
+    end
+    if type(definition) ~= 'table' then return nil, ('invalid action %s'):format(key) end
+    local name = cleanTemplate(definition.name, ACTION_LIMITS.name)
+    local description = cleanTemplate(definition.description, ACTION_LIMITS.description)
+    if not name then return nil, ('invalid name in action %s'):format(key) end
+    if not description or description:find('[%[%]]') then
+        return nil, ('invalid description in action %s'):format(key)
+    end
+    local params, paramCount = {}, 0
+    for paramName, spec in pairs(definition.params or {}) do
+        if type(paramName) ~= 'string' or not paramName:match('^[a-z][a-z0-9_]*$')
+            or #paramName > 32 or paramName == 'player_id' or type(spec) ~= 'table'
+            or not ACTION_PARAM_TYPES[spec.type] then
+            return nil, ('invalid param %s in action %s'):format(tostring(paramName), key)
+        end
+        local param = { type = spec.type, required = spec.required == true }
+        if spec.enum ~= nil then
+            if type(spec.enum) ~= 'table' or #spec.enum == 0
+                or #spec.enum > ACTION_LIMITS.enum then
+                return nil, ('invalid enum for %s in action %s'):format(paramName, key)
+            end
+            param.enum = {}
+            for index, choice in ipairs(spec.enum) do
+                local valid = (type(choice) == 'string' and choice:match('^[a-z0-9_.-]+$')
+                    and #choice <= 32) or math.type(choice) == 'integer'
+                if not valid then
+                    return nil, ('invalid enum for %s in action %s'):format(paramName, key)
+                end
+                param.enum[index] = choice
+            end
+        end
+        if spec.description ~= nil then
+            param.description = cleanTemplate(spec.description, 120)
+            if not param.description then
+                return nil, ('invalid description for %s in action %s'):format(paramName, key)
+            end
+        end
+        params[paramName] = param
+        paramCount = paramCount + 1
+        if paramCount > ACTION_LIMITS.params then
+            return nil, ('too many params in action %s'):format(key)
+        end
+    end
+    local fixed, fixedCount = {}, 0
+    for fixedName, value in pairs(definition.fixed or {}) do
+        if type(fixedName) ~= 'string' or params[fixedName] or not scalar(value) then
+            return nil, ('invalid fixed param %s in action %s'):format(tostring(fixedName), key)
+        end
+        fixed[fixedName] = value
+        fixedCount = fixedCount + 1
+        if fixedCount > ACTION_LIMITS.fixed then
+            return nil, ('too many fixed params in action %s'):format(key)
+        end
+    end
+    local requires = {}
+    for index, rule in ipairs(definition.requires or {}) do
+        if index > ACTION_LIMITS.requires then
+            return nil, ('too many requirements in action %s'):format(key)
+        end
+        local observation = type(rule) == 'table' and observations[rule.observation] or nil
+        if not observation then
+            return nil, ('unknown observation in requirement %d of action %s'):format(index, key)
+        end
+        local where = {}
+        for field, value in pairs(rule.where or {}) do
+            if not observation.fields[field] or not scalar(value) then
+                return nil, ('unknown field %s in requirement %d of action %s'):format(
+                    tostring(field), index, key)
+            end
+            where[field] = value
+        end
+        local within = rule.within_s == nil and 600 or rule.within_s
+        if math.type(within) ~= 'integer' or within < ACTION_LIMITS.withinMin
+            or within > ACTION_LIMITS.withinMax then
+            return nil, ('invalid within_s in requirement %d of action %s'):format(index, key)
+        end
+        requires[index] = {
+            observation = rule.observation, where = where, within_s = within,
+            consume = rule.consume == true,
+        }
+    end
+    local hint
+    if definition.locked_hint ~= nil then
+        if type(definition.locked_hint) ~= 'table' or next(definition.locked_hint) == nil then
+            return nil, ('invalid locked_hint in action %s'):format(key)
+        end
+        hint = {}
+        for language, text in pairs(definition.locked_hint) do
+            text = OBSERVATION_LANGUAGES[language] and cleanTemplate(text, ACTION_LIMITS.hint)
+            if not text then return nil, ('invalid locked_hint in action %s'):format(key) end
+            hint[language] = text
+        end
+    end
+    return {
+        name = name, description = description, params = params, fixed = fixed,
+        requires = requires, locked_hint = hint,
+    }
+end
+
+local function normalizedCustomActions(descriptor, observations)
+    local actions, count = {}, 0
+    for key, definition in pairs(descriptor.Actions or {}) do
+        local action, err = normalizedAction(key, definition, observations)
+        if not action then return nil, err end
+        actions[key] = action
+        count = count + 1
+        if count > ACTION_LIMITS.actions then return nil, 'too many actions' end
+    end
+    return actions
+end
+
 local function normalizedObservations(descriptor)
     local observations, count = {}, 0
     for key, definition in pairs(descriptor.Observations or {}) do
@@ -321,6 +456,8 @@ local function register(domain, descriptor, owner)
         if not provider.SupportedActions then return false, err end
         provider.Observations, err = normalizedObservations(descriptor)
         if not provider.Observations then return false, err end
+        provider.Actions, err = normalizedCustomActions(descriptor, provider.Observations)
+        if not provider.Actions then return false, err end
     end
     provider.ownerResource = owner
     provider.priority = descriptor.priority

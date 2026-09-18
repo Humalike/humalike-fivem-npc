@@ -23,7 +23,23 @@ function HumalikeDebug() end
 function IsSupportedAction(action)
     return action == 'wave' or action == 'give_item' or action == 'hand_over_money'
         or action == 'hold_position' or action == 'release_movement'
+        or action == 'srp:give_map'
 end
+local runCalls, runResult = {}, true
+HumalikeActions = {
+    Custom = function(wireKey)
+        if wireKey ~= 'srp:give_map' then return nil end
+        return 'give_map', {
+            params = { copies = { type = 'integer', enum = { 1, 2 } },
+                       note = { type = 'string', required = true } },
+            fixed = { item = 'treasure_map' },
+        }
+    end,
+    Run = function(action, source, coords, params)
+        runCalls[#runCalls + 1] = { action = action, source = source, coords = coords, params = params }
+        return runResult
+    end,
+}
 function TriggerClientEvent(name, playerId, npcId, action, params)
     clientEvents[#clientEvents + 1] = {
         name = name,
@@ -271,6 +287,53 @@ assert(request({
 assert(handOverCalls == 3)
 assert(#clientEvents == ceAmbient + 1)
 assert(clientEvents[#clientEvents].name == 'humalike:npc:playAmbientAction')
+
+-- A server-defined action: the model's values checked against the
+-- declaration, the script's fixed values under them, one RunAction per
+-- invocation id, and never the client animation path.
+local ceCustom = #clientEvents
+local function give(invocationId, params, target)
+    return request({
+        invocation_id = invocationId,
+        target = target or { kind = 'static', npc_id = 'static-1' },
+        action = 'srp:give_map',
+        params = params,
+    })
+end
+local status, body = give('map-1', { player_id = 7, copies = 2, note = 'here' })
+assert(status == 200 and body.ok == true, tostring(body.reason))
+assert(#runCalls == 1 and runCalls[1].action == 'give_map' and runCalls[1].source == 7)
+assert(runCalls[1].coords.x == 4)
+assert(runCalls[1].params.player_id == 7 and runCalls[1].params.copies == 2)
+assert(runCalls[1].params.note == 'here' and runCalls[1].params.item == 'treasure_map')
+assert(#clientEvents == ceCustom, 'no client animation for a server-defined action')
+-- At-least-once delivery: the same invocation runs once.
+assert(select(2, give('map-1', { player_id = 7, copies = 2, note = 'here' })).ok == true)
+assert(#runCalls == 1)
+local _, conflict = give('map-1', { player_id = 7, copies = 1, note = 'here' })
+assert(conflict.reason == 'invocation_conflict')
+-- Declared shape or nothing: a wrong enum value, a wrong type, a missing
+-- required value, and a value the script never declared.
+assert(select(2, give('map-2', { player_id = 7, copies = 3, note = 'x' })).reason == 'invalid_param:copies')
+assert(select(2, give('map-3', { player_id = 7, copies = '2', note = 'x' })).reason == 'invalid_param:copies')
+assert(select(2, give('map-4', { player_id = 7 })).reason == 'missing_param:note')
+local _, extra = give('map-5', { player_id = 7, note = 'x', item = 'gold', hacked = true })
+assert(extra.ok == true and runCalls[#runCalls].params.hacked == nil)
+assert(runCalls[#runCalls].params.item == 'treasure_map', 'fixed values always win')
+assert(select(2, give('map-6', { player_id = 99, note = 'x' })).reason == 'invalid_action_player')
+-- The script may still refuse.
+runResult = false
+assert(select(2, give('map-7', { player_id = 7, note = 'x' })).reason == 'action_rejected')
+runResult = true
+-- An ambient body needs its live lease like any other deed.
+assert(select(2, give('map-8', { player_id = 7, note = 'x' }, {
+    kind = 'ambient', npc_id = 'ambient-1', entity_id = 101, routing_bucket = 2,
+    lease_token = 'stale',
+})).reason == 'ambient_lease_expired')
+assert(select(2, give('map-9', { player_id = 7, note = 'x' }, {
+    kind = 'ambient', npc_id = 'ambient-1', entity_id = 101, routing_bucket = 2,
+    lease_token = 'lease-token',
+})).ok == true)
 
 assert(request({}, nil, '/clear-roster') == 202)
 assert(populationCleared == 1, 'clearing the roster clears the population too')

@@ -7,7 +7,67 @@ function HumalikeActions.Supported()
     for _, action in ipairs(provider.SupportedActions or {}) do
         result[#result + 1] = action
     end
+    -- The server's own actions, namespaced, in a stable order.
+    local custom = {}
+    for key in pairs(provider.Actions or {}) do custom[#custom + 1] = key end
+    table.sort(custom)
+    for _, key in ipairs(custom) do result[#result + 1] = provider.Namespace .. ':' .. key end
     return result
+end
+
+-- The local key and definition behind a namespaced action key the backend
+-- pushes, or nil for a catalogue action.
+function HumalikeActions.Custom(wireKey)
+    local provider = HumalikeSelectedProvider('actions')
+    if not provider or not provider.Namespace or type(wireKey) ~= 'string' then return nil end
+    local key = wireKey:match('^' .. provider.Namespace .. ':([a-z][a-z0-9_]*)$')
+    local definition = key and provider.Actions[key] or nil
+    if not definition then return nil end
+    return key, definition
+end
+
+-- nil for an empty table: it would encode as a JSON array where the backend
+-- expects an object, and every such field defaults there anyway.
+local function mapOrNil(value)
+    if next(value) == nil then return nil end
+    return value
+end
+
+-- What report_capabilities sends beside the keys: the server's declarations
+-- in the backend's wire shape. Fixed params stay here -- the model never
+-- sees them and the backend has no use for them.
+function HumalikeActions.Declarations()
+    local provider = HumalikeSelectedProvider('actions')
+    local actions, observations = {}, {}
+    if not provider or not provider.Namespace then return actions, observations end
+    local prefix = provider.Namespace .. ':'
+    local keys = {}
+    for key in pairs(provider.Actions or {}) do keys[#keys + 1] = key end
+    table.sort(keys)
+    for _, key in ipairs(keys) do
+        local action = provider.Actions[key]
+        local requires = {}
+        for index, rule in ipairs(action.requires) do
+            requires[index] = {
+                observation = prefix .. rule.observation, where = mapOrNil(rule.where),
+                within_s = rule.within_s, consume = rule.consume,
+            }
+        end
+        actions[#actions + 1] = {
+            key = prefix .. key, name = action.name, description = action.description,
+            params = mapOrNil(action.params), preconditions = requires,
+            locked_hint = action.locked_hint,
+        }
+    end
+    keys = {}
+    for key in pairs(provider.Observations or {}) do keys[#keys + 1] = key end
+    table.sort(keys)
+    for _, key in ipairs(keys) do
+        observations[#observations + 1] = {
+            key = prefix .. key, fields = mapOrNil(provider.Observations[key].fields),
+        }
+    end
+    return actions, observations
 end
 
 -- The wire key and definition of a declared observation, or nil when the

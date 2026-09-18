@@ -290,6 +290,63 @@ and returns the export envelope: `value.key` and `value.text` on success, or an
 reaction. With `humalike_developer_tools 1`, `/humalike_dev observe <npc_uuid>
 <key> [field=value ...]` reports one by hand.
 
+## Server-defined actions
+
+Beside reporting facts, the same provider can declare deeds of its own. The
+model chooses them like any catalogue action, HumaLike gates each one on the
+facts the server has reported, and the server's `RunAction` performs it:
+
+```lua
+exports.humalike:RegisterProvider('actions', {
+    name = 'my_actions', apiVersion = 1, priority = 100,
+    SupportedActions = {},
+    Namespace = 'srp',
+    Observations = {
+        item_given = {
+            fields = { item = 'string', quantity = 'integer' },
+            template = { en = 'the character handed you {quantity} x {item}' },
+        },
+    },
+    Actions = {
+        give_map = {
+            name = 'Give the treasure map',
+            description = 'Hand the player the map to the hidden chest.',
+            params = { copies = { type = 'integer', enum = { 1, 2 } } },   -- the model fills these
+            fixed = { item = 'treasure_map' },                             -- the script fixes these
+            requires = {
+                { observation = 'item_given', where = { item = 'amulet' }, within_s = 600,
+                  consume = true },
+            },
+            locked_hint = { en = 'Only once the amulet is in your hands.' },
+        },
+    },
+    RunAction = function(action, source, npcCoords, params)
+        if action ~= 'give_map' then return false end
+        return exports.ox_inventory:AddItem(source, params.item, params.copies or 1)
+    end,
+})
+```
+
+The key reaches the model as `srp:give_map` and comes back to `RunAction` as
+`give_map`. `description` (≤ 400 characters, no square brackets) is the line
+the model reads. `params` (≤ 4) are values the model writes inline in its tag
+-- `[srp:give_map copies=2]` -- typed `string`, `integer` or `boolean`, with an
+optional `enum` (≤ 16 bare words or integers) and `required`; `player_id` is
+always filled by HumaLike with the addressee. `fixed` values (≤ 16) never leave
+the server: they are merged under the model's values before `RunAction`, and
+always win. `requires` (≤ 4, all must hold) name declared observations that
+must have been reported for this NPC and the player it is answering, matching
+`where` on declared fields, within `within_s` (5–3600, default 600) seconds;
+`consume` spends the fact once the deed is done, so one amulet buys one map.
+`locked_hint` is what the NPC is told, per language, while a requirement is
+unmet; a player saying it happened never unlocks anything.
+
+Admins enable a declared action per NPC in the dashboard like any other. The
+resource re-declares everything on every `report_capabilities`, so a changed
+or removed action takes effect on the next resource start. `RunAction`
+returning `false` marks the invocation rejected; prefer expressing state as
+observations over refusing at run time, since the NPC has already spoken.
+
 Client integrations can subscribe to
 `humalike:voice:transmittingChanged(active)` to update a custom HUD.
 

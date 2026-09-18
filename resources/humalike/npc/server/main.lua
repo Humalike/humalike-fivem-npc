@@ -3,9 +3,12 @@ function HumalikeNpcReportCapabilities()
     local population = HumalikeNpcPopulation
     local features = population and population.Features() or nil
     if population then population.CapabilitiesPosted() end
+    local actions, observations = HumalikeActions.Declarations()
     HumalikeHttp.PostAction('report_capabilities', {
         supported_actions = GetSupportedActions(),
         features = features,
+        actions = actions,
+        observations = observations,
     }, function(ok, status)
         if population then population.CapabilitiesReported(features, ok) end
         if not ok then

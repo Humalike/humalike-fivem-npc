@@ -75,6 +75,61 @@ local function dispatchAmbientAction(target, actionKey, params)
     return true
 end
 
+-- A server-defined action: the values the model filled in, checked against
+-- the declaration, under the script's own fixed values, to the provider's
+-- RunAction. The catalogue paths above never see a namespaced key.
+local function customParams(definition, params)
+    local merged = { player_id = params.player_id }
+    for name, spec in pairs(definition.params) do
+        local value = params[name]
+        if value ~= nil then
+            local valid = (spec.type == 'string' and type(value) == 'string')
+                or (spec.type == 'integer' and math.type(value) == 'integer')
+                or (spec.type == 'boolean' and type(value) == 'boolean')
+            if valid and spec.enum then
+                valid = false
+                for _, choice in ipairs(spec.enum) do
+                    if choice == value then valid = true break end
+                end
+            end
+            if not valid then return nil, ('invalid_param:%s'):format(name) end
+            merged[name] = value
+        elseif spec.required then
+            return nil, ('missing_param:%s'):format(name)
+        end
+    end
+    for name, value in pairs(definition.fixed) do merged[name] = value end
+    return merged
+end
+
+local function dispatchCustomAction(target, localKey, definition, params)
+    params = params or {}
+    local playerId = params.player_id
+    if type(playerId) ~= 'number' or playerId % 1 ~= 0 or playerId < 1
+        or not GetPlayerName(playerId) then return false, 'invalid_action_player' end
+    local entity, bucket
+    if target.kind == 'static' then
+        local npc = NpcRegistry[target.npc_id]
+        if not npc then return false, 'unknown_static_npc' end
+        entity = npc.entity_id
+        if type(entity) ~= 'number' or entity <= 0 or not DoesEntityExist(entity) then
+            return false, 'static_entity_unavailable'
+        end
+        bucket = GetEntityRoutingBucket(entity)
+    elseif target.kind == 'ambient' then
+        local lease, ambientEntity, reason = ValidateAmbientActionTarget(target)
+        if not lease then return false, reason end
+        entity, bucket = ambientEntity, target.routing_bucket
+    else
+        return false, 'invalid_target_kind'
+    end
+    if GetPlayerRoutingBucket(playerId) ~= bucket then return false, 'action_player_wrong_bucket' end
+    local merged, reason = customParams(definition, params)
+    if not merged then return false, reason end
+    local ran = HumalikeActions.Run(localKey, playerId, GetEntityCoords(entity), merged)
+    return ran, ran and nil or 'action_rejected'
+end
+
 local completedInvocations = {}
 local MAX_COMPLETED_INVOCATIONS = 1024
 local INVOCATION_TTL_SECONDS = 600
@@ -82,7 +137,7 @@ local INVOCATION_TTL_SECONDS = 600
 -- State-changing callbacks are at-least-once, so deduplicate by invocation ID.
 
 local function invocationFingerprint(actionKey, target, params)
-    return table.concat({
+    local parts = {
         actionKey,
         target.kind,
         target.npc_id,
@@ -92,7 +147,13 @@ local function invocationFingerprint(actionKey, target, params)
         tostring(params.player_id or ''),
         tostring(params.item_name or ''),
         tostring(params.quantity or ''),
-    }, '\0')
+    }
+    -- A server-defined action's values, in a stable order.
+    local names = {}
+    for name in pairs(params) do names[#names + 1] = name end
+    table.sort(names)
+    for _, name in ipairs(names) do parts[#parts + 1] = name .. '=' .. tostring(params[name]) end
+    return table.concat(parts, '\0')
 end
 
 local function pruneInvocations(now)
@@ -115,7 +176,8 @@ end
 
 local function dispatchAction(target, actionKey, params, invocationId)
     if not IsSupportedAction(actionKey) then return false, 'unsupported_action' end
-    local deduped = SERVER_ACTION_EVENTS[actionKey] ~= nil
+    local customKey, customDefinition = HumalikeActions.Custom(actionKey)
+    local deduped = SERVER_ACTION_EVENTS[actionKey] ~= nil or customKey ~= nil
     local fingerprint
     if deduped then
         local now = os.time()
@@ -134,7 +196,9 @@ local function dispatchAction(target, actionKey, params, invocationId)
     end
 
     local delivered, reason
-    if target.kind == 'static' then
+    if customKey then
+        delivered, reason = dispatchCustomAction(target, customKey, customDefinition, params)
+    elseif target.kind == 'static' then
         delivered, reason = dispatchStaticAction(target, actionKey, params)
     elseif target.kind == 'ambient' then
         delivered, reason = dispatchAmbientAction(target, actionKey, params)
