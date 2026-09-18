@@ -265,7 +265,12 @@ local function observe(playerId, npcId, key, pairsList)
         local name, raw = pair:match('^([^=]+)=(.*)$')
         local fieldType = name and definition.fields[name]
         if fieldType == 'integer' or fieldType == 'number' then fields[name] = tonumber(raw)
-        elseif fieldType == 'boolean' then fields[name] = raw == 'true'
+        elseif fieldType == 'boolean' then
+            if raw ~= 'true' and raw ~= 'false' then
+                reply(playerId, ('%s must be true or false'):format(name))
+                return
+            end
+            fields[name] = raw == 'true'
         else fields[name or pair] = raw end
     end
     local result = HumalikeReportObservation(npcId, playerId, key, fields)

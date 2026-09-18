@@ -236,7 +236,10 @@ local function normalizedObservation(key, definition)
     if type(key) ~= 'string' or not key:match('^[a-z][a-z0-9_]*$') or #key > 32 then
         return nil, 'invalid observation key'
     end
-    if type(definition) ~= 'table' then return nil, ('invalid observation %s'):format(key) end
+    if type(definition) ~= 'table' or (definition.fields ~= nil
+        and type(definition.fields) ~= 'table') then
+        return nil, ('invalid observation %s'):format(key)
+    end
     local fields, fieldCount = {}, 0
     for name, fieldType in pairs(definition.fields or {}) do
         if type(name) ~= 'string' or not name:match('^[a-z][a-z0-9_]*$') or #name > 32
@@ -260,6 +263,11 @@ local function normalizedObservation(key, definition)
             if not fields[placeholder] then
                 return nil, ('unknown placeholder {%s} in observation %s'):format(placeholder, key)
             end
+        end
+        -- A brace left over once every {placeholder} is taken out is a typo
+        -- that would otherwise reach the NPC verbatim.
+        if text:gsub('{[^{}]*}', ''):find('[{}]') then
+            return nil, ('invalid template in observation %s'):format(key)
         end
         template[language] = text
     end

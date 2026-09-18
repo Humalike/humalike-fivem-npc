@@ -179,4 +179,6 @@ assert(reported[1].fields.item == 'amulet' and reported[1].fields.quantity == 2
 assert(lastReply() == '[humalike-dev] reported srp:item_given: handed you amulet', lastReply())
 command(7, { 'observe', npcId, 'item_given', 'quantity=2' })
 assert(lastReply() == '[humalike-dev] observation rejected: invalid_field:item')
+command(7, { 'observe', npcId, 'item_given', 'item=amulet', 'stolen=tru' })
+assert(#reported == 2 and lastReply() == '[humalike-dev] stolen must be true or false')
 print('developer_tools_server (observe): ok')

@@ -177,6 +177,13 @@ ok, err = observing({ Observations = { item_given = { template = { en = 'got {it
 assert(not ok and err == 'unknown placeholder {item} in observation item_given')
 ok, err = observing({ Observations = { item_given = { template = { en = ('x'):rep(401) } } } })
 assert(not ok and err == 'invalid template in observation item_given')
+ok, err = observing({ Observations = { item_given = { template = { en = 'x' }, fields = 'item' } } })
+assert(not ok and err == 'invalid observation item_given')
+for _, broken in ipairs({ 'got {item', 'got item}', 'got {{item}}', 'got }{' }) do
+    ok, err = observing({ Observations = { item_given = { template = { en = broken },
+        fields = { item = 'string' } } } })
+    assert(not ok and err == 'invalid template in observation item_given', broken)
+end
 local tooMany = {}
 for index = 1, 33 do tooMany['fact_' .. index] = { template = { en = 'x' } } end
 ok, err = observing({ Observations = tooMany })
