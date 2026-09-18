@@ -10,6 +10,9 @@ Config = {
     SupportedActions = { 'wave' },
 }
 
+-- The console: a refused descriptor is printed for its author.
+local printed, consolePrint = {}, print
+function print(line) printed[#printed + 1] = line end
 function GetCurrentResourceName() return 'humalike' end
 function GetInvokingResource() return owner end
 function GetResourceState(resource) return started[resource] and 'started' or 'stopped' end
@@ -326,6 +329,34 @@ ok, err = acting({ name = 'n', description = 'd',
 assert(ok, err)
 assert(math.type(HumalikeSelectedProvider('actions').Actions.give_map.requires[1].where.quantity) == 'integer')
 assert(exported.UnregisterProvider('actions', 'observer'))
+-- Past 2^53 an integral float has no integer to become and would go out as
+-- 1e+19: refused, exact match and bound alike, at the bound observations
+-- report under.
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { { observation = 'item_given', where = { quantity = 2 ^ 63 } } } })
+assert(not ok and err == 'invalid value for quantity in requirement 1 of action give_map', tostring(err))
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { { observation = 'item_given', where = { quantity = -(2 ^ 53) - 2 } } } })
+assert(not ok and err == 'invalid value for quantity in requirement 1 of action give_map', tostring(err))
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { { observation = 'item_given', where = { quantity = { gte = 2 ^ 53 + 2 } } } } })
+assert(not ok and err == 'invalid bound on quantity in requirement 1 of action give_map', tostring(err))
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { { observation = 'item_given', where = { quantity = { lte = -(2 ^ 63) } } } } })
+assert(not ok and err == 'invalid bound on quantity in requirement 1 of action give_map', tostring(err))
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { { observation = 'item_given', where = { quantity = { sum_gte = 1e19 } } } } })
+assert(not ok and err == 'invalid bound on quantity in requirement 1 of action give_map', tostring(err))
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { { observation = 'item_given', where = { quantity = 2 ^ 53, } } } })
+assert(ok, err)
+assert(HumalikeSelectedProvider('actions').Actions.give_map.requires[1].where.quantity == 9007199254740992)
+assert(math.type(HumalikeSelectedProvider('actions').Actions.give_map.requires[1].where.quantity) == 'integer')
+assert(exported.UnregisterProvider('actions', 'observer'))
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { { observation = 'item_given', where = { quantity = { gte = -(2 ^ 53), lte = 2 ^ 53 } } } } })
+assert(ok, err)
+assert(exported.UnregisterProvider('actions', 'observer'))
 ok, err = acting({ name = 'n', description = 'd', fixed = { player_id = 3 } })
 assert(not ok and err == 'invalid fixed param player_id in action give_map')
 ok, err = acting({ name = 'n', description = 'd', fixed = { ['Item-Name'] = 'x' } })
@@ -491,4 +522,4 @@ handlers.onResourceStart('humalike')
 assert(ready.apiVersion == 1)
 assert(ready.runtimeEpoch == exported.GetProviderStatus().runtimeEpoch)
 
-print('providers: ok')
+consolePrint('providers: ok')

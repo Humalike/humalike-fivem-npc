@@ -353,6 +353,15 @@ local function finite(value)
         and value ~= math.huge and value ~= -math.huge
 end
 
+-- A number in a `where`: within the magnitude the backend takes for a
+-- reported numeric field (2^53, the same bound observations report under),
+-- so an integral float past it is never sent as 1e+19. Two comparisons
+-- rather than math.abs: math.abs(math.mininteger) wraps to itself.
+local WHERE_NUMBER_LIMIT = 2 ^ 53
+local function bounded(value)
+    return finite(value) and value >= -WHERE_NUMBER_LIMIT and value <= WHERE_NUMBER_LIMIT
+end
+
 -- { a, b, c } and nothing else: a map or a hole would be walked as fewer
 -- entries than the author wrote, or none.
 local function sequence(value)
@@ -463,18 +472,18 @@ local function normalizedAction(key, definition, observations)
             if type(value) == 'table' then
                 -- A bound on a numeric field: { gte = 500 }, { lte = 3 }, both, or
                 -- { sum_gte = 2 } added up across hand-overs.
-                local bounded = numeric and next(value) ~= nil
+                local valid = numeric and next(value) ~= nil
                 for bound, limit in pairs(value) do
                     if (bound ~= 'gte' and bound ~= 'lte' and bound ~= 'sum_gte')
-                        or not finite(limit) then bounded = false end
+                        or not bounded(limit) then valid = false end
                 end
-                if bounded and value.sum_gte and (value.gte or value.lte or value.sum_gte <= 0) then
-                    bounded = false
+                if valid and value.sum_gte and (value.gte or value.lte or value.sum_gte <= 0) then
+                    valid = false
                 end
-                if bounded and value.gte and value.lte and value.gte > value.lte then
-                    bounded = false
+                if valid and value.gte and value.lte and value.gte > value.lte then
+                    valid = false
                 end
-                if not bounded then
+                if not valid then
                     return nil, ('invalid bound on %s in requirement %d of action %s'):format(
                         field, index, key)
                 end
@@ -484,7 +493,7 @@ local function normalizedAction(key, definition, observations)
                 -- backend takes no fraction there.
                 local fits = (fieldType == 'string' and type(value) == 'string')
                     or (fieldType == 'boolean' and type(value) == 'boolean')
-                    or (numeric and finite(value) and value % 1 == 0)
+                    or (numeric and bounded(value) and value % 1 == 0)
                 if not fits then
                     return nil, ('invalid value for %s in requirement %d of action %s'):format(
                         field, index, key)
