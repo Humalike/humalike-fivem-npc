@@ -592,14 +592,25 @@ local function normalizedAction(key, definition, observations)
     }
 end
 
-local function normalizedActions(descriptor, observations)
+-- The backend's report takes ACTION_LIMITS.actions in all, and a Catalog
+-- adds its counter deeds to the declared ones: 31 declared + deliver +
+-- refund is a report refused whole, so it is refused here, by name.
+local function normalizedActions(descriptor, observations, catalog)
+    local reserved = 0
+    if catalog then for _ in pairs(COUNTER_ACTIONS) do reserved = reserved + 1 end end
     local actions, count = {}, 0
     for key, definition in pairs(descriptor.Actions or {}) do
         local action, err = normalizedAction(key, definition, observations)
         if not action then return nil, err end
         actions[key] = action
         count = count + 1
-        if count > ACTION_LIMITS.actions then return nil, 'too many actions' end
+        if count + reserved > ACTION_LIMITS.actions then
+            if reserved > 0 then
+                return nil, ('too many actions: at most %d with the Catalog\'s %d'):format(
+                    ACTION_LIMITS.actions - reserved, reserved)
+            end
+            return nil, ('too many actions: at most %d'):format(ACTION_LIMITS.actions)
+        end
     end
     return actions
 end
@@ -646,10 +657,11 @@ local function register(domain, descriptor, owner)
         if not provider.SupportedActions then return false, err end
         provider.Observations, err = normalizedObservations(descriptor)
         if not provider.Observations then return false, err end
-        provider.Actions, err = normalizedActions(descriptor, provider.Observations)
-        if not provider.Actions then return false, err end
         provider.Catalog, err = normalizedCatalog(descriptor, provider.Observations)
         if err then return false, err end
+        provider.Actions, err = normalizedActions(descriptor, provider.Observations,
+            provider.Catalog)
+        if not provider.Actions then return false, err end
         if provider.Catalog then
             for key, action in pairs(COUNTER_ACTIONS) do
                 if provider.Actions[key] then

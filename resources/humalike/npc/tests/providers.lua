@@ -466,6 +466,32 @@ local _, deliverDef = HumalikeActions.Custom('srp:deliver')
 assert(deliverDef.passthrough.items and deliverDef.passthrough.change)
 assert(exported.UnregisterProvider('actions', 'shop'))
 assert(HumalikeActions.Catalog() == nil)
+-- The backend's report takes 32 actions in all, the Catalog's deliver and
+-- refund among them: 31 declared beside a Catalog is refused at
+-- registration rather than as a whole report refused later.
+local function manyActions(count)
+    local actions = {}
+    for index = 1, count do
+        actions['deed_' .. index] = { name = 'Deed ' .. index, description = 'One of many.' }
+    end
+    return actions
+end
+local shelf = { currency = 'cash', payment = 'item_given', items = { water = { price = 5 } } }
+ok, err = selling(shelf, { Actions = manyActions(31) })
+assert(not ok and err == "too many actions: at most 30 with the Catalog's 2", tostring(err))
+assert(printed[#printed]:find("rejected: too many actions: at most 30 with the Catalog's 2", 1, true),
+    printed[#printed])
+ok, err = selling(shelf, { Actions = manyActions(30) })
+assert(ok, err)
+local reported = HumalikeActions.Declarations()
+assert(#reported == 32 and reported[#reported].key == 'srp:refund')
+assert(exported.UnregisterProvider('actions', 'shop'))
+ok, err = selling(nil, { Actions = manyActions(33) })
+assert(not ok and err == 'too many actions: at most 32', tostring(err))
+ok, err = selling(nil, { Actions = manyActions(32) })
+assert(ok, err)
+assert(#HumalikeActions.Declarations() == 32)
+assert(exported.UnregisterProvider('actions', 'shop'))
 
 ok, err = observing({ priority = 100 })
 assert(ok, err)
