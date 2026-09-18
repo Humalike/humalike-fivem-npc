@@ -10,11 +10,19 @@ function HumalikeNpcReportCapabilities()
         actions = actions,
         observations = observations,
         catalog = HumalikeActions.Catalog(),
-    }, function(ok, status)
+    }, function(ok, status, body)
         if population then population.CapabilitiesReported(features, ok) end
-        if not ok then
-            print(('[humalike-npc] report_capabilities failed (HTTP %s)'):format(tostring(status)))
+        if ok then return end
+        -- The backend's refusal names the field, so a bad declaration is
+        -- readable in the console instead of a bare status.
+        local failure = type(body) == 'table' and type(body.error) == 'table' and body.error or {}
+        local details = {}
+        for _, detail in ipairs(failure.details or {}) do
+            details[#details + 1] = ('%s: %s'):format(tostring(detail.field), tostring(detail.message))
         end
+        print(('[humalike-npc] report_capabilities failed (HTTP %s%s)%s'):format(
+            tostring(status), failure.code and ' ' .. tostring(failure.code) or '',
+            #details > 0 and ': ' .. table.concat(details, '; ') or ''))
     end)
 end
 local reportCapabilities = HumalikeNpcReportCapabilities
