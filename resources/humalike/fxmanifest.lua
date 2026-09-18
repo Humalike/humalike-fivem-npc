@@ -25,6 +25,7 @@ server_scripts {
     'server/core/status.lua',
     'server/core/retries.lua',
     'server/core/export_result.lua',
+    'server/core/text.lua',
     'server/core/credentials.lua',
     'server/core/http.lua',
     'server/core/callbacks.lua',

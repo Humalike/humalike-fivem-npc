@@ -30,6 +30,7 @@ function GetCurrentResourceName() return 'humalike' end
 function AddEventHandler() end
 function exports() end
 HumalikeInventory = { Available = function() return true end }
+dofile('../server/core/text.lua')
 dofile('../integration/server/registry.lua')
 dofile('../integration/server/actions.lua')
 -- The real actions provider: a declared deed and a shop, run by RunAction.

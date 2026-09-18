@@ -97,6 +97,7 @@ exports = setmetatable(resourceExports, {
     __call = function(_, name, callback) exported[name] = callback end,
 })
 
+dofile('../server/core/text.lua')
 dofile('../integration/server/registry.lua')
 dofile('../integration/server/player.lua')
 dofile('../integration/server/inventory.lua')

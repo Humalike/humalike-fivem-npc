@@ -31,8 +31,10 @@ local DOMAINS = {
     actions = { required = {}, optional = { 'RunAction' } },
 }
 
-local OBSERVATION_LIMITS = { observations = 32, fields = 8, template = 400, description = 200 }
+local OBSERVATION_LIMITS = { observations = 32, fields = 8, template = 400 }
 local OBSERVATION_FIELD_TYPES = { string = true, integer = true, number = true, boolean = true }
+-- Mirrors the edge's NpcLanguage enum; Config.NpcLabels.LanguageLabels is
+-- label text for the client and lists languages no NPC can speak yet.
 local OBSERVATION_LANGUAGES = { en = true, pl = true }
 local ACTION_LIMITS = {
     actions = 32, name = 80, description = 400, params = 4, enum = 16, fixed = 16,
@@ -295,14 +297,6 @@ local COUNTER_ACTIONS = {
     },
 }
 
-local function cleanTemplate(value, maxLength)
-    if type(value) ~= 'string' or value:find('%c') then return nil end
-    value = value:match('^%s*(.-)%s*$')
-    local length = utf8.len(value)
-    if value == '' or not length or length > maxLength then return nil end
-    return value
-end
-
 -- A declared observation: the fields the script will report and the line the
 -- NPC reads, per language. Validated here, at RegisterProvider, so a typo
 -- surfaces in the integration's own console instead of as a silent drop later.
@@ -331,7 +325,8 @@ local function normalizedObservation(key, definition)
     end
     local template = {}
     for language, text in pairs(definition.template) do
-        text = OBSERVATION_LANGUAGES[language] and cleanTemplate(text, OBSERVATION_LIMITS.template)
+        text = OBSERVATION_LANGUAGES[language]
+            and HumaLike.CleanText(text, OBSERVATION_LIMITS.template)
         if not text then return nil, ('invalid template in observation %s'):format(key) end
         for placeholder in text:gmatch('{([^{}]*)}') do
             if not fields[placeholder] then
@@ -345,12 +340,7 @@ local function normalizedObservation(key, definition)
         end
         template[language] = text
     end
-    local description = definition.description
-    if description ~= nil
-        and not cleanTemplate(description, OBSERVATION_LIMITS.description) then
-        return nil, ('invalid description in observation %s'):format(key)
-    end
-    return { fields = fields, template = template, description = description }
+    return { fields = fields, template = template }
 end
 
 local function scalar(value)
@@ -381,8 +371,8 @@ local function normalizedAction(key, definition, observations)
         return nil, 'invalid action key'
     end
     if type(definition) ~= 'table' then return nil, ('invalid action %s'):format(key) end
-    local name = cleanTemplate(definition.name, ACTION_LIMITS.name)
-    local description = cleanTemplate(definition.description, ACTION_LIMITS.description)
+    local name = HumaLike.CleanText(definition.name, ACTION_LIMITS.name)
+    local description = HumaLike.CleanText(definition.description, ACTION_LIMITS.description)
     if not name then return nil, ('invalid name in action %s'):format(key) end
     if not description or description:find('[%[%]]') then
         return nil, ('invalid description in action %s'):format(key)
@@ -418,7 +408,7 @@ local function normalizedAction(key, definition, observations)
             end
         end
         if spec.description ~= nil then
-            param.description = cleanTemplate(spec.description, 120)
+            param.description = HumaLike.CleanText(spec.description, 120)
             if not param.description then
                 return nil, ('invalid description for %s in action %s'):format(paramName, key)
             end
@@ -526,7 +516,7 @@ local function normalizedAction(key, definition, observations)
             end
             limit.hint = {}
             for language, text in pairs(definition.limit.hint) do
-                text = OBSERVATION_LANGUAGES[language] and cleanTemplate(text, ACTION_LIMITS.hint)
+                text = OBSERVATION_LANGUAGES[language] and HumaLike.CleanText(text, ACTION_LIMITS.hint)
                 if not text then return nil, ('invalid limit hint in action %s'):format(key) end
                 limit.hint[language] = text
             end
@@ -581,7 +571,7 @@ local function normalizedAction(key, definition, observations)
         end
         hint = {}
         for language, text in pairs(definition.locked_hint) do
-            text = OBSERVATION_LANGUAGES[language] and cleanTemplate(text, ACTION_LIMITS.hint)
+            text = OBSERVATION_LANGUAGES[language] and HumaLike.CleanText(text, ACTION_LIMITS.hint)
             if not text then return nil, ('invalid locked_hint in action %s'):format(key) end
             hint[language] = text
         end

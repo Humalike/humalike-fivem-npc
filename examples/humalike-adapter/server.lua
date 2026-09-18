@@ -25,14 +25,18 @@ local function registerProviders()
         end,
     })
 
-    -- Facts only this server knows, and deeds of its own gated on them.
-    -- Declare once; report each fact from the hook that makes it true (see
-    -- below); perform each deed in RunAction.
+    -- The server's one actions provider carries what the NPC can ask it to
+    -- run (built-in deeds, its own deeds) and what it can observe. One
+    -- provider owns all of it: HumaLike consults only the selected actions
+    -- provider, so a second one registered just for observations or actions
+    -- would shadow this one or leave the domain ambiguous.
     exports.humalike:RegisterProvider('actions', {
         name = 'example_actions',
         apiVersion = 1,
         priority = 100,
-        SupportedActions = {},
+        SupportedActions = { 'hand_over_money' },
+        -- Facts only this server knows. Declare them once; report each
+        -- occurrence from the hook that makes it true (see below).
         Namespace = 'example',
         Observations = {
             item_given = {
@@ -58,12 +62,22 @@ local function registerProviders()
             },
         },
         RunAction = function(action, source, _npcCoords, params)
-            if action ~= 'give_map' then return false end
-            -- Replace with your inventory: params.item is the fixed value above.
-            TriggerClientEvent('chat:addMessage', source, {
-                args = { 'HumaLike', ('You received: %s'):format(params.item) },
-            })
-            return true
+            if action == 'give_map' then
+                -- Replace with your inventory: params.item is the fixed value above.
+                TriggerClientEvent('chat:addMessage', source, {
+                    args = { 'HumaLike', ('You received: %s'):format(params.item) },
+                })
+                return true
+            end
+            if action == 'hand_over_money' then
+                -- Replace with your economy's "give cash to player" call and
+                -- return true only once the cash really moved; the NPC treats
+                -- the return value as what happened.
+                print(('example adapter: no economy wired, %s for player %s (%s) not delivered'):format(
+                    action, tostring(source), tostring(params.robber_description)))
+                return false
+            end
+            return false
         end,
     })
 end

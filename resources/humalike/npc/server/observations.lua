@@ -8,16 +8,8 @@
 
 local STRING_LIMIT = 64
 
-local function cleanString(value)
-    if type(value) ~= 'string' or value:find('%c') then return nil end
-    value = value:match('^%s*(.-)%s*$')
-    local length = utf8.len(value)
-    if value == '' or not length or length > STRING_LIMIT then return nil end
-    return value
-end
-
 local FIELD_CHECKS = {
-    string = cleanString,
+    string = function(value) return HumaLike.CleanText(value, STRING_LIMIT) end,
     integer = function(value)
         if type(value) ~= 'number' or value % 1 ~= 0 or value ~= value then return nil end
         return math.tointeger(value)
@@ -50,8 +42,10 @@ local function validatedFields(definition, raw)
     return fields
 end
 
+-- An integral float reads as an integer (2 kg, not 2.0 kg); `%.0f` rather
+-- than `%d` because a float past 2^63 has no integer representation.
 local function formatValue(value)
-    if math.type(value) == 'float' and value % 1 == 0 then return ('%d'):format(value) end
+    if math.type(value) == 'float' and value % 1 == 0 then return ('%.0f'):format(value) end
     return tostring(value)
 end
 
@@ -64,16 +58,16 @@ local function render(definition, language, fields)
     return (template:gsub('{([^{}]*)}', function(name) return formatValue(fields[name]) end))
 end
 
--- Whose fact this is: a roster NPC (static, or external and bound) or an
--- ambient body the server currently leases. The backend re-checks ownership;
--- this only spares the round trip for an NPC nobody here has heard of.
+-- Whose fact this is: a live roster NPC (static, or external and bound) or an
+-- ambient body the server currently leases, resolved exactly as runtime
+-- control resolves it. A roster NPC with no live body is refused here; the
+-- edge would drop the report after an ok otherwise.
 local function resolveTarget(npcId)
-    if type(npcId) ~= 'string' then return nil end
-    local entry = NpcRegistry and NpcRegistry[npcId]
-    if entry then return { language = entry.language } end
-    local lease = HumalikeFindAmbientLease and HumalikeFindAmbientLease(npcId) or nil
-    if lease then return { language = lease.language, lease_token = lease.lease_token } end
-    return nil
+    if type(npcId) ~= 'string' then return nil, 'npc_not_found' end
+    local kind, target, leaseToken = HumalikeNpcRuntimeControl.Target(npcId)
+    if kind then return { language = target.language, lease_token = leaseToken } end
+    if NpcRegistry and NpcRegistry[npcId] then return nil, 'npc_not_bound' end
+    return nil, 'npc_not_found'
 end
 
 function HumalikeReportObservation(npcId, playerId, key, rawFields, options)
@@ -84,8 +78,8 @@ function HumalikeReportObservation(npcId, playerId, key, rawFields, options)
     if not HumalikePlayer.IsCharacterLoaded(playerId) then
         return HumalikeExportResult.Failure('character_not_loaded')
     end
-    local target = resolveTarget(npcId)
-    if not target then return HumalikeExportResult.Failure('npc_not_found') end
+    local target, targetError = resolveTarget(npcId)
+    if not target then return HumalikeExportResult.Failure(targetError) end
     local wireKey, definition = HumalikeActions.Observation(key)
     if not definition then return HumalikeExportResult.Failure('unknown_observation') end
     local fields, err = validatedFields(definition, rawFields)
