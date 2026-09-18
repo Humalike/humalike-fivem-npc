@@ -368,11 +368,30 @@ local function normalizedAction(key, definition, observations)
         end
         local where = {}
         for field, value in pairs(rule.where or {}) do
-            if not observation.fields[field] or not scalar(value) then
+            local fieldType = observation.fields[field]
+            if not fieldType then
                 return nil, ('unknown field %s in requirement %d of action %s'):format(
                     tostring(field), index, key)
             end
-            where[field] = value
+            if type(value) == 'table' then
+                -- A bound on a numeric field: { gte = 500 }, { lte = 3 }, or both.
+                local numeric = fieldType == 'integer' or fieldType == 'number'
+                local bounded = (value.gte ~= nil and type(value.gte) == 'number')
+                    or (value.lte ~= nil and type(value.lte) == 'number')
+                for bound in pairs(value) do
+                    if bound ~= 'gte' and bound ~= 'lte' then bounded = false end
+                end
+                if not numeric or not bounded then
+                    return nil, ('invalid bound on %s in requirement %d of action %s'):format(
+                        field, index, key)
+                end
+                where[field] = { gte = value.gte, lte = value.lte }
+            elseif scalar(value) then
+                where[field] = value
+            else
+                return nil, ('invalid value for %s in requirement %d of action %s'):format(
+                    field, index, key)
+            end
         end
         local within = rule.within_s == nil and 600 or rule.within_s
         if math.type(within) ~= 'integer' or within < ACTION_LIMITS.withinMin

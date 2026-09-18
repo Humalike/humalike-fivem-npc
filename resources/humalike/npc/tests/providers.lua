@@ -217,7 +217,10 @@ local giveMap = {
     description = 'Hand the player the map to the hidden chest.',
     params = { copies = { type = 'integer', enum = { 1, 2 }, description = 'How many' } },
     fixed = { item = 'treasure_map' },
-    requires = { { observation = 'item_given', where = { item = 'amulet' }, consume = true } },
+    requires = {
+        { observation = 'item_given', where = { item = 'cash', quantity = { gte = 500 } },
+          consume = true },
+    },
     locked_hint = { en = 'Only once the amulet is in your hands.' },
 }
 ok, err = acting(giveMap, { RunAction = false })
@@ -246,6 +249,18 @@ ok, err = acting({ name = 'n', description = 'd',
     requires = { { observation = 'item_given', where = { color = 'red' } } } })
 assert(not ok and err == 'unknown field color in requirement 1 of action give_map')
 ok, err = acting({ name = 'n', description = 'd',
+    requires = { { observation = 'item_given', where = { item = { gte = 1 } } } } })
+assert(not ok and err == 'invalid bound on item in requirement 1 of action give_map')
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { { observation = 'item_given', where = { quantity = { gte = 'x' } } } } })
+assert(not ok and err == 'invalid bound on quantity in requirement 1 of action give_map')
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { { observation = 'item_given', where = { quantity = { above = 5 } } } } })
+assert(not ok and err == 'invalid bound on quantity in requirement 1 of action give_map')
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { { observation = 'item_given', where = { item = {} } } } })
+assert(not ok and err == 'invalid bound on item in requirement 1 of action give_map')
+ok, err = acting({ name = 'n', description = 'd',
     requires = { { observation = 'item_given', within_s = 2 } } })
 assert(not ok and err == 'invalid within_s in requirement 1 of action give_map')
 ok, err = acting({ name = 'n', description = 'd', locked_hint = { de = 'nein' } })
@@ -262,7 +277,8 @@ local declaredActions, declaredObservations = HumalikeActions.Declarations()
 assert(#declaredActions == 1 and declaredActions[1].key == 'srp:give_map')
 assert(declaredActions[1].params.copies.enum[1] == 1)
 assert(declaredActions[1].preconditions[1].observation == 'srp:item_given')
-assert(declaredActions[1].preconditions[1].where.item == 'amulet')
+assert(declaredActions[1].preconditions[1].where.item == 'cash')
+assert(declaredActions[1].preconditions[1].where.quantity.gte == 500)
 assert(declaredActions[1].preconditions[1].consume == true)
 assert(declaredActions[1].locked_hint.en == 'Only once the amulet is in your hands.')
 assert(declaredActions[1].fixed == nil, 'fixed values never leave the box')

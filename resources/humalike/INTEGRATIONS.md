@@ -336,7 +336,9 @@ always filled by HumaLike with the addressee. `fixed` values (≤ 16) never leav
 the server: they are merged under the model's values before `RunAction`, and
 always win. `requires` (≤ 4, all must hold) name declared observations that
 must have been reported for this NPC and the player it is answering, matching
-`where` on declared fields, within `within_s` (5–3600, default 600) seconds;
+`where` on declared fields -- a scalar exactly, or a bound on a numeric field
+(`quantity = { gte = 500 }`, `{ lte = 3 }`, or both) -- within `within_s`
+(5–3600, default 600) seconds;
 `consume` spends the fact once the deed is done, so one amulet buys one map.
 `locked_hint` is what the NPC is told, per language, while a requirement is
 unmet; a player saying it happened never unlocks anything.
