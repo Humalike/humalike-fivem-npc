@@ -16,7 +16,7 @@ function HumalikeActions.Supported()
 end
 
 -- The local key and definition behind a namespaced action key the backend
--- pushes, or nil for a catalogue action.
+-- pushes, or nil for a built-in action.
 function HumalikeActions.Custom(wireKey)
     local provider = HumalikeSelectedProvider('actions')
     if not provider or not provider.Namespace or type(wireKey) ~= 'string' then return nil end
@@ -81,12 +81,8 @@ function HumalikeActions.Catalog()
     local provider = HumalikeSelectedProvider('actions')
     local catalog = provider and provider.Catalog or nil
     if not catalog then return nil end
-    local items = {}
-    for name, item in pairs(catalog.items) do
-        items[name] = { price = item.price, limit = item.limit }
-    end
     return { currency = catalog.currency, payment = provider.Namespace .. ':' .. catalog.payment,
-             items = items }
+             items = catalog.items }
 end
 
 -- The wire key and definition of a declared observation, or nil when the
@@ -98,9 +94,18 @@ function HumalikeActions.Observation(key)
     return provider.Namespace .. ':' .. key, definition
 end
 
+-- Exactly `true` is a deed done; anything else is a refusal, and a refused
+-- deed is pushed again, so a `1` or an `'ok'` would be performed twice.
+-- Said once, the first time it happens.
+local warnedReturn = false
 function HumalikeActions.Run(action, source, coords, params)
     local ok, value = HumalikeProviderCall(
         'actions', 'RunAction', action, source, coords, params)
+    if ok and type(value) ~= 'boolean' and not warnedReturn then
+        warnedReturn = true
+        print(('[humalike] actions provider RunAction(%s) returned %s; '
+            .. 'return true to accept, anything else rejects'):format(action, type(value)))
+    end
     return ok and value == true
 end
 
