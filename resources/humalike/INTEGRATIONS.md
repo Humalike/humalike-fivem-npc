@@ -449,7 +449,12 @@ change, currency })` itself and records the sale; every line leaves the
 NPC's stock. Return `false` when the hand-over cannot happen (the customer
 cannot carry it): nothing is recorded, the order and the money stay on the
 counter, the NPC is told the hand-over failed, and HumaLike tries again on
-the next turn -- so hand over everything or nothing, never a part.
+the next turn -- so hand over everything or nothing, never a part. The same
+holds for a payment reported for a player who is not at the counter: it
+unlocks a delivery that is refused with `action_player_out_of_reach` (or
+`action_player_wrong_bucket` from another routing bucket) on every turn
+until the player is back within `Config.ServerActions.MaxDistance` of the
+NPC, so report a payment only for a player standing there.
 Underpaid, nothing happens and the NPC is told what is owed. If
 the customer backs out, the NPC's `[srp:cancel_order]` calls
 `RunAction('refund', source, coords, { amount, currency })` with exactly
