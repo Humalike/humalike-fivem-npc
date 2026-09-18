@@ -33,6 +33,8 @@ local DOMAINS = {
 
 local OBSERVATION_LIMITS = { observations = 32, fields = 8, template = 400 }
 local OBSERVATION_FIELD_TYPES = { string = true, integer = true, number = true, boolean = true }
+-- Mirrors the edge's NpcLanguage enum; Config.NpcLabels.LanguageLabels is
+-- label text for the client and lists languages no NPC can speak yet.
 local OBSERVATION_LANGUAGES = { en = true, pl = true }
 
 for domain in pairs(DOMAINS) do HumalikeProviders.registered[domain] = {} end
