@@ -7,24 +7,38 @@ local SERVER_ACTION_ANIMATIONS = {
     hand_over_money = true,
 }
 
+-- A static NPC's live body, or why there is none.
+local function staticEntity(npcId)
+    local npc = NpcRegistry[npcId]
+    if not npc then return nil, 'unknown_static_npc' end
+    local entity = npc.entity_id
+    if type(entity) ~= 'number' or entity <= 0 or not DoesEntityExist(entity)
+        or GetEntityType(entity) ~= 1 or IsPedAPlayer(entity)
+        or GetEntityHealth(entity) <= 0 then return nil, 'static_entity_unavailable' end
+    return entity
+end
+
+-- The addressee of a server-run deed: named by HumaLike, online, in the
+-- body's routing bucket.
+local function actionPlayer(params, bucket)
+    local playerId = params and params.player_id
+    if type(playerId) ~= 'number' or playerId % 1 ~= 0 or playerId < 1
+        or not GetPlayerName(playerId) then return nil, 'invalid_action_player' end
+    if GetPlayerRoutingBucket(playerId) ~= bucket then return nil, 'action_player_wrong_bucket' end
+    return playerId
+end
+
 local function dispatchStaticAction(target, actionKey, params)
-    local npc = NpcRegistry[target.npc_id]
-    if not npc then
+    if not NpcRegistry[target.npc_id] then
         HumalikeDebug('inbound push: unknown static npc %s, ignoring', target.npc_id)
         return false, 'unknown_static_npc'
     end
     local serverActionEvent = SERVER_ACTION_EVENTS[actionKey]
     if serverActionEvent then
-        local entity = npc.entity_id
-        if type(entity) ~= 'number' or entity <= 0 or not DoesEntityExist(entity)
-            or GetEntityType(entity) ~= 1 or IsPedAPlayer(entity)
-            or GetEntityHealth(entity) <= 0 then return false, 'static_entity_unavailable' end
-        local playerId = params and params.player_id
-        if type(playerId) ~= 'number' or playerId % 1 ~= 0 or playerId < 1
-            or not GetPlayerName(playerId) then return false, 'invalid_action_player' end
-        if GetPlayerRoutingBucket(playerId) ~= GetEntityRoutingBucket(entity) then
-            return false, 'action_player_wrong_bucket'
-        end
+        local entity, reason = staticEntity(target.npc_id)
+        if not entity then return false, reason end
+        local playerId, playerReason = actionPlayer(params, GetEntityRoutingBucket(entity))
+        if not playerId then return false, playerReason end
         local delivered = nil
         TriggerEvent(serverActionEvent, GetEntityCoords(entity), params or {}, function(result)
             delivered = result == true
@@ -51,12 +65,8 @@ local function dispatchAmbientAction(target, actionKey, params)
     if movementApplied == false then return false, movementReason end
     local serverActionEvent = SERVER_ACTION_EVENTS[actionKey]
     if serverActionEvent then
-        local playerId = params and params.player_id
-        if type(playerId) ~= 'number' or playerId % 1 ~= 0 or playerId < 1
-            or not GetPlayerName(playerId) then return false, 'invalid_action_player' end
-        if GetPlayerRoutingBucket(playerId) ~= target.routing_bucket then
-            return false, 'action_player_wrong_bucket'
-        end
+        local playerId, playerReason = actionPlayer(params, target.routing_bucket)
+        if not playerId then return false, playerReason end
         local delivered = nil
         TriggerEvent(serverActionEvent, GetEntityCoords(entity), params or {}, function(result)
             delivered = result == true
@@ -77,7 +87,7 @@ end
 
 -- A server-defined action: the values the model filled in, checked against
 -- the declaration, under the script's own fixed values, to the provider's
--- RunAction. The catalogue paths above never see a namespaced key.
+-- RunAction. The built-in paths above never see a namespaced key.
 local function customParams(definition, params)
     local merged = { player_id = params.player_id }
     -- The counter's values (a basket, a total, an amount): as HumaLike sent them.
@@ -115,31 +125,36 @@ local function customParams(definition, params)
     return merged
 end
 
+-- Within arm's reach of the body, as the built-in hand-overs demand.
+local function withinReach(playerId, npcCoords)
+    local ped = GetPlayerPed(playerId)
+    if not ped or ped == 0 or not DoesEntityExist(ped) then return false end
+    local at = GetEntityCoords(ped)
+    local dx, dy, dz = at.x - npcCoords.x, at.y - npcCoords.y, at.z - npcCoords.z
+    return dx * dx + dy * dy + dz * dz <= Config.ServerActions.MaxDistance ^ 2
+end
+
 local function dispatchCustomAction(target, localKey, definition, params)
-    params = params or {}
-    local playerId = params.player_id
-    if type(playerId) ~= 'number' or playerId % 1 ~= 0 or playerId < 1
-        or not GetPlayerName(playerId) then return false, 'invalid_action_player' end
-    local entity, bucket
+    local entity, bucket, reason
     if target.kind == 'static' then
-        local npc = NpcRegistry[target.npc_id]
-        if not npc then return false, 'unknown_static_npc' end
-        entity = npc.entity_id
-        if type(entity) ~= 'number' or entity <= 0 or not DoesEntityExist(entity)
-            or GetEntityType(entity) ~= 1 or IsPedAPlayer(entity)
-            or GetEntityHealth(entity) <= 0 then return false, 'static_entity_unavailable' end
+        entity, reason = staticEntity(target.npc_id)
+        if not entity then return false, reason end
         bucket = GetEntityRoutingBucket(entity)
     elseif target.kind == 'ambient' then
-        local lease, ambientEntity, reason = ValidateAmbientActionTarget(target)
+        local lease
+        lease, entity, reason = ValidateAmbientActionTarget(target)
         if not lease then return false, reason end
-        entity, bucket = ambientEntity, target.routing_bucket
+        bucket = target.routing_bucket
     else
         return false, 'invalid_target_kind'
     end
-    if GetPlayerRoutingBucket(playerId) ~= bucket then return false, 'action_player_wrong_bucket' end
-    local merged, reason = customParams(definition, params)
-    if not merged then return false, reason end
-    local ran = HumalikeActions.Run(localKey, playerId, GetEntityCoords(entity), merged)
+    local playerId, playerReason = actionPlayer(params, bucket)
+    if not playerId then return false, playerReason end
+    local coords = GetEntityCoords(entity)
+    if not withinReach(playerId, coords) then return false, 'action_player_out_of_reach' end
+    local merged, paramsReason = customParams(definition, params or {})
+    if not merged then return false, paramsReason end
+    local ran = HumalikeActions.Run(localKey, playerId, coords, merged)
     return ran, ran and nil or 'action_rejected'
 end
 
@@ -147,32 +162,9 @@ local completedInvocations = {}
 local MAX_COMPLETED_INVOCATIONS = 1024
 local INVOCATION_TTL_SECONDS = 600
 
--- State-changing callbacks are at-least-once, so deduplicate by invocation ID.
-
--- Length-prefixed so no value can forge a field boundary.
-local function framed(value)
-    local text = tostring(value)
-    return #text .. ':' .. text
-end
-
-local function invocationFingerprint(actionKey, target, params)
-    local parts = {
-        framed(actionKey),
-        framed(target.kind),
-        framed(target.npc_id),
-        framed(target.entity_id or ''),
-        framed(target.routing_bucket or ''),
-        framed(target.lease_token or ''),
-    }
-    local names = {}
-    for name in pairs(params) do names[#names + 1] = name end
-    table.sort(names)
-    for _, name in ipairs(names) do
-        local value = params[name]
-        parts[#parts + 1] = framed(name) .. framed(type(value)) .. framed(value)
-    end
-    return table.concat(parts)
-end
+-- State-changing callbacks are at-least-once, so deduplicate by invocation
+-- ID: the backend re-pushes a deed under the same ID until it lands. Only a
+-- done deed is remembered; a refusal is answered afresh on every attempt.
 
 local function pruneInvocations(now)
     local count = 0
@@ -196,16 +188,9 @@ local function dispatchAction(target, actionKey, params, invocationId)
     if not IsSupportedAction(actionKey) then return false, 'unsupported_action' end
     local customKey, customDefinition = HumalikeActions.Custom(actionKey)
     local deduped = SERVER_ACTION_EVENTS[actionKey] ~= nil or customKey ~= nil
-    local fingerprint
     if deduped then
-        local now = os.time()
-        pruneInvocations(now)
-        fingerprint = invocationFingerprint(actionKey, target, params or {})
-        local completed = completedInvocations[invocationId]
-        if completed then
-            if completed.fingerprint ~= fingerprint then return false, 'invocation_conflict' end
-            return completed.result
-        end
+        pruneInvocations(os.time())
+        if completedInvocations[invocationId] then return true end
     end
     if HumalikeNpcRuntimeControl then
         local allowed, controlReason = HumalikeNpcRuntimeControl.AllowsAction(
@@ -224,11 +209,7 @@ local function dispatchAction(target, actionKey, params, invocationId)
         return false, 'invalid_target_kind'
     end
     if deduped and delivered then
-        completedInvocations[invocationId] = {
-            result = true,
-            fingerprint = fingerprint,
-            expires_at = os.time() + INVOCATION_TTL_SECONDS,
-        }
+        completedInvocations[invocationId] = { expires_at = os.time() + INVOCATION_TTL_SECONDS }
     end
     return delivered, reason
 end

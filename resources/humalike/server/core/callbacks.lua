@@ -92,7 +92,8 @@ SetHttpHandler(function(request, response)
         end
         status = type(status) == 'number' and status or 200
         body = type(body) == 'table' and body or { ok = true }
-        remember(payload.request_id, status, body)
+        -- A refusal is retriable: the same request asked again runs again.
+        if body.ok ~= false then remember(payload.request_id, status, body) end
         sendJson(response, status, body)
     end)
 end)
