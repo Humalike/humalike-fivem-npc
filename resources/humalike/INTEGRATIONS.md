@@ -364,6 +364,63 @@ or removed action takes effect on the next resource start. `RunAction`
 returning `false` marks the invocation rejected; prefer expressing state as
 observations over refusing at run time, since the NPC has already spoken.
 
+## A shop counter
+
+For NPCs that sell, declare a `Catalog` instead of one action per product.
+HumaLike then runs the sale end to end -- the order, the price, the payment,
+the change -- and the script only hands things over and returns money:
+
+```lua
+exports.humalike:RegisterProvider('actions', {
+    name = 'my_shop', apiVersion = 1, priority = 100,
+    SupportedActions = {},
+    Namespace = 'srp',
+    Observations = {
+        item_given = {
+            fields = { item = 'string', quantity = 'integer' },
+            template = { en = 'the character handed you {quantity} x {item}' },
+        },
+    },
+    Catalog = {
+        currency = 'cash',          -- the item_given `item` that counts as payment
+        payment = 'item_given',     -- the observation your inventory hook reports
+        items = {
+            water = { price = 5 },
+            bread = { price = 3 },
+            pistol = { price = 150, limit = { per_player = 1, every_s = 86400 } },
+        },
+    },
+    RunAction = function(action, source, npcCoords, params)
+        if action == 'deliver' then
+            for item, quantity in pairs(params.items) do
+                exports.ox_inventory:AddItem(source, item, quantity)
+            end
+            if params.change > 0 then
+                exports.ox_inventory:AddItem(source, params.currency, params.change)
+            end
+            return true
+        elseif action == 'refund' then
+            return exports.ox_inventory:AddItem(source, params.currency, params.amount)
+        end
+        return false
+    end,
+})
+```
+
+An NPC sells whatever of the catalogue the admin stocked it with (the
+dashboard's "What the NPC has to give"), at these prices. The model takes the
+order as one tag with every line (`[srp:order water=10 pistol=1]`); HumaLike
+checks each line against the shelf and the per-item limits, prices it, and
+tells the NPC the total. Payment is your reported `item_given` of the
+currency. The moment the money on the counter covers the total, HumaLike
+calls `RunAction('deliver', source, coords, { items = {...}, total, paid,
+change, currency })` itself and records the sale; every line leaves the
+NPC's stock. Underpaid, nothing happens and the NPC is told what is owed. If
+the customer backs out, the NPC's `[srp:cancel_order]` calls
+`RunAction('refund', source, coords, { amount, currency })` with exactly
+what is on the counter. `deliver` and `refund` are declared for you, never
+offered to the model, and the model never authors a number.
+
 Client integrations can subscribe to
 `humalike:voice:transmittingChanged(active)` to update a custom HUD.
 

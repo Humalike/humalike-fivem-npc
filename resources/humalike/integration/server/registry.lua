@@ -229,8 +229,72 @@ local function validateDescriptor(domain, descriptor)
                 if not callable(descriptor.RunAction) then return false, 'invalid RunAction' end
             end
         end
+        if descriptor.Catalog ~= nil then
+            if type(descriptor.Catalog) ~= 'table' then return false, 'invalid Catalog' end
+            if not descriptor.Namespace then return false, 'missing Namespace' end
+            if not callable(descriptor.RunAction) then return false, 'invalid RunAction' end
+        end
     end
     return true
+end
+
+-- The shop: what the server's NPCs may sell, at what unit price, paid in
+-- which reported item. HumaLike runs the sale; the script gets `deliver`
+-- (the basket, the total, the change) and `refund` (an amount).
+local function normalizedCatalog(descriptor, observations)
+    local catalog = descriptor.Catalog
+    if catalog == nil then return nil end
+    local currency, payment = catalog.currency, catalog.payment
+    if type(currency) ~= 'string' or not currency:match('^[a-z0-9_.-]+$') or #currency > 48 then
+        return nil, 'invalid Catalog currency'
+    end
+    local observation = type(payment) == 'string' and observations[payment] or nil
+    if not observation or observation.fields.item ~= 'string'
+        or (observation.fields.quantity ~= 'integer' and observation.fields.quantity ~= 'number') then
+        return nil, 'Catalog payment must be a declared observation with item (string) and quantity (integer)'
+    end
+    if type(catalog.items) ~= 'table' or next(catalog.items) == nil then
+        return nil, 'invalid Catalog items'
+    end
+    local items, count = {}, 0
+    for name, spec in pairs(catalog.items) do
+        if type(name) ~= 'string' or not name:match('^[a-z0-9_.-]+$') or #name > 48
+            or type(spec) ~= 'table' or math.type(spec.price) ~= 'integer'
+            or spec.price < 0 or spec.price > 10000000 then
+            return nil, ('invalid Catalog item %s'):format(tostring(name))
+        end
+        local item = { price = spec.price }
+        if spec.limit ~= nil then
+            local per, every = type(spec.limit) == 'table' and spec.limit.per_player or nil,
+                type(spec.limit) == 'table' and spec.limit.every_s or nil
+            if math.type(per) ~= 'integer' or per < 1 or per > 1000
+                or math.type(every) ~= 'integer' or every < 1 or every > 604800 then
+                return nil, ('invalid limit for Catalog item %s'):format(name)
+            end
+            item.limit = { per_player = per, every_s = every }
+        end
+        items[name] = item
+        count = count + 1
+        if count > 64 then return nil, 'too many Catalog items' end
+    end
+    return { currency = currency, payment = payment, items = items }
+end
+
+-- The two deeds a shop needs from the script, declared for it: the basket
+-- and the money come from HumaLike, never from the model.
+local function counterActions()
+    return {
+        deliver = {
+            name = 'Fill the order', description = 'Hand over what the customer ordered and paid for.',
+            params = {}, fixed = {}, requires = {}, params_from = {}, hidden = true,
+            passthrough = { items = true, total = true, paid = true, change = true, currency = true },
+        },
+        refund = {
+            name = 'Give money back', description = 'Return money from the counter to the customer.',
+            params = {}, fixed = {}, requires = {}, params_from = {}, hidden = true,
+            passthrough = { amount = true, currency = true },
+        },
+    }
 end
 
 local function cleanTemplate(value, maxLength)
@@ -558,6 +622,16 @@ local function register(domain, descriptor, owner)
         if not provider.Observations then return false, err end
         provider.Actions, err = normalizedCustomActions(descriptor, provider.Observations)
         if not provider.Actions then return false, err end
+        provider.Catalog, err = normalizedCatalog(descriptor, provider.Observations)
+        if err then return false, err end
+        if provider.Catalog then
+            for key, action in pairs(counterActions()) do
+                if provider.Actions[key] then
+                    return false, ('action %s is reserved for the Catalog'):format(key)
+                end
+                provider.Actions[key] = action
+            end
+        end
     end
     provider.ownerResource = owner
     provider.priority = descriptor.priority

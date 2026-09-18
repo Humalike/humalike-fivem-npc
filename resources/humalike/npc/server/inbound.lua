@@ -80,6 +80,10 @@ end
 -- RunAction. The catalogue paths above never see a namespaced key.
 local function customParams(definition, params)
     local merged = { player_id = params.player_id }
+    -- The counter's values (a basket, a total, an amount): as HumaLike sent them.
+    for name in pairs(definition.passthrough or {}) do
+        if params[name] ~= nil then merged[name] = params[name] end
+    end
     -- Values HumaLike read from the reported facts: scalar, as reported.
     for name in pairs(definition.params_from or {}) do
         local value = params[name]

@@ -353,6 +353,51 @@ assert(#declaredObservations == 1 and declaredObservations[1].key == 'srp:item_g
 assert(declaredObservations[1].fields.quantity == 'integer')
 assert(exported.UnregisterProvider('actions', 'observer'))
 
+-- A shop: prices in a declared payment observation; deliver/refund are
+-- declared for the script, hidden from the model.
+local function selling(catalog, overrides)
+    local descriptor = {
+        name = 'shop', apiVersion = 1, priority = 50, SupportedActions = {}, Namespace = 'srp',
+        RunAction = function() return true end,
+        Observations = {
+            item_given = {
+                fields = { item = 'string', quantity = 'integer' },
+                template = { en = 'the character handed you {quantity} x {item}' },
+            },
+        },
+        Catalog = catalog,
+    }
+    for key, value in pairs(overrides or {}) do descriptor[key] = value end
+    return exported.RegisterProvider('actions', descriptor)
+end
+ok, err = selling('water')
+assert(not ok and err == 'invalid Catalog')
+ok, err = selling({ currency = 'cash', payment = 'door_unlocked', items = { water = { price = 5 } } })
+assert(not ok and err:match('^Catalog payment must'))
+ok, err = selling({ currency = 'cash', payment = 'item_given', items = {} })
+assert(not ok and err == 'invalid Catalog items')
+ok, err = selling({ currency = 'cash', payment = 'item_given', items = { water = { price = 1.5 } } })
+assert(not ok and err == 'invalid Catalog item water')
+ok, err = selling({ currency = 'cash', payment = 'item_given',
+    items = { pistol = { price = 150, limit = { per_player = 0, every_s = 60 } } } })
+assert(not ok and err == 'invalid limit for Catalog item pistol')
+ok, err = selling({ currency = 'cash', payment = 'item_given', items = { water = { price = 5 } } },
+    { Actions = { deliver = { name = 'x', description = 'y' } } })
+assert(not ok and err == 'action deliver is reserved for the Catalog')
+ok, err = selling({ currency = 'cash', payment = 'item_given',
+    items = { water = { price = 5 }, pistol = { price = 150, limit = { per_player = 1, every_s = 86400 } } } })
+assert(ok, err)
+local wire = HumalikeActions.Catalog()
+assert(wire.currency == 'cash' and wire.payment == 'srp:item_given')
+assert(wire.items.pistol.price == 150 and wire.items.pistol.limit.per_player == 1)
+assert(table.concat(GetSupportedActions(), ',') == 'wave,give_item,srp:deliver,srp:refund')
+local declaredShop = HumalikeActions.Declarations()
+assert(#declaredShop == 2 and declaredShop[1].key == 'srp:deliver' and declaredShop[2].key == 'srp:refund')
+local _, deliverDef = HumalikeActions.Custom('srp:deliver')
+assert(deliverDef.passthrough.items and deliverDef.passthrough.change)
+assert(exported.UnregisterProvider('actions', 'shop'))
+assert(HumalikeActions.Catalog() == nil)
+
 ok, err = observing({ priority = 100 })
 assert(ok, err)
 assert(HumalikeSelectedProvider('actions').name == 'observer')

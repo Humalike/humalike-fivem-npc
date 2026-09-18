@@ -23,11 +23,15 @@ function HumalikeDebug() end
 function IsSupportedAction(action)
     return action == 'wave' or action == 'give_item' or action == 'hand_over_money'
         or action == 'hold_position' or action == 'release_movement'
-        or action == 'srp:give_map'
+        or action == 'srp:give_map' or action == 'srp:deliver'
 end
 local runCalls, runResult = {}, true
 HumalikeActions = {
     Custom = function(wireKey)
+        if wireKey == 'srp:deliver' then
+            return 'deliver', { params = {}, fixed = {},
+                passthrough = { items = true, total = true, paid = true, change = true, currency = true } }
+        end
         if wireKey ~= 'srp:give_map' then return nil end
         return 'give_map', {
             params = { copies = { type = 'integer', enum = { 1, 2 } },
@@ -346,6 +350,19 @@ assert(select(2, give('map-9', { player_id = 7, note = 'x', paid = 50 }, {
     kind = 'ambient', npc_id = 'ambient-1', entity_id = 101, routing_bucket = 2,
     lease_token = 'lease-token',
 })).ok == true)
+
+-- The counter's basket reaches the script as HumaLike sent it.
+local _, basket = request({
+    invocation_id = 'order-1', target = { kind = 'static', npc_id = 'static-1' },
+    action = 'srp:deliver',
+    params = { player_id = 7, items = { water = 2, bread = 1 }, total = 13, paid = 15, change = 2,
+               currency = 'cash', hacked = true },
+})
+assert(basket.ok == true, tostring(basket.reason))
+local delivered = runCalls[#runCalls]
+assert(delivered.action == 'deliver' and delivered.params.items.water == 2)
+assert(delivered.params.change == 2 and delivered.params.currency == 'cash')
+assert(delivered.params.hacked == nil)
 
 assert(request({}, nil, '/clear-roster') == 202)
 assert(populationCleared == 1, 'clearing the roster clears the population too')
