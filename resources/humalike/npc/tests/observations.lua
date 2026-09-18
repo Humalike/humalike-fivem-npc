@@ -1,12 +1,20 @@
 -- ReportObservation: declared facts only, rendered in the NPC's language,
--- addressed to a roster NPC or a leased ambient body, posted as a
+-- addressed to a live roster NPC or a leased ambient body, posted as a
 -- server_observation world event.
 local exported, posted = {}, {}
 local loaded = { [7] = true, [8] = false }
 local selectedProvider
 
 function exports(name, callback) exported[name] = callback end
+function RegisterNetEvent() end
+function AddEventHandler() end
+function CreateThread() end
+function DoesEntityExist(entity) return entity == 101 or entity == 303 end
+function NetworkGetNetworkIdFromEntity(entity) return entity == 303 and 53 or 0 end
 function HumalikeDebug() end
+HumalikeNpcEntityOwnership = {
+    ExternalEntity = function(npcId) return npcId == 'npc-en' and 303 or nil end,
+}
 HumalikePlayer = { IsCharacterLoaded = function(playerId) return loaded[playerId] == true end }
 HumalikeSelectedProvider = function(domain)
     assert(domain == 'actions')
@@ -15,7 +23,9 @@ end
 function HumalikePostPlayerEvent(playerId, event) posted[#posted + 1] = { playerId, event } end
 NpcRegistry = {
     ['npc-en'] = { npc_id = 'npc-en', type = 'external', language = 'en' },
-    ['npc-pl'] = { npc_id = 'npc-pl', type = 'static', language = 'pl' },
+    ['npc-pl'] = { npc_id = 'npc-pl', type = 'static', entity_id = 101, language = 'pl' },
+    ['npc-unbound'] = { npc_id = 'npc-unbound', type = 'external', language = 'en' },
+    ['npc-despawned'] = { npc_id = 'npc-despawned', type = 'static', entity_id = 102, language = 'en' },
 }
 function HumalikeFindAmbientLease(npcId)
     if npcId == 'ambient-1' then
@@ -27,6 +37,7 @@ end
 dofile('../server/core/export_result.lua')
 dofile('../server/core/text.lua')
 dofile('../integration/server/actions.lua')
+dofile('server/runtime_control.lua')
 dofile('server/observations.lua')
 
 local report = exported.ReportObservation
@@ -55,6 +66,9 @@ assert(report('npc-en', 7.5, 'item_given').error == 'invalid_player')
 assert(report('npc-en', 8, 'item_given').error == 'character_not_loaded')
 assert(report('npc-missing', 7, 'item_given').error == 'npc_not_found')
 assert(report(42, 7, 'item_given').error == 'npc_not_found')
+-- On the roster but with no live body: the edge would refuse it after an ok.
+assert(report('npc-unbound', 7, 'item_given').error == 'npc_not_bound')
+assert(report('npc-despawned', 7, 'item_given').error == 'npc_not_bound')
 assert(report('npc-en', 7, 'srp:item_given').error == 'unknown_observation')
 assert(report('npc-en', 7, 'item_given', 'amulet').error == 'invalid_fields')
 assert(report('npc-en', 7, 'item_given', { item = 'amulet' }).error:match('^invalid_field:'))
