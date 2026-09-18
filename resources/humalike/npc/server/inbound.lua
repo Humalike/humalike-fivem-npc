@@ -18,12 +18,14 @@ local function staticEntity(npcId)
     return entity
 end
 
--- The addressee of a server-run deed: named by HumaLike, online, in the
--- body's routing bucket.
+-- The addressee of a server-run deed: named by HumaLike, online, with a
+-- character loaded (the built-in hand-overs demand one), in the body's
+-- routing bucket.
 local function actionPlayer(params, bucket)
     local playerId = params and params.player_id
     if type(playerId) ~= 'number' or playerId % 1 ~= 0 or playerId < 1
         or not GetPlayerName(playerId) then return nil, 'invalid_action_player' end
+    if not HumalikePlayer.IsCharacterLoaded(playerId) then return nil, 'character_not_loaded' end
     if GetPlayerRoutingBucket(playerId) ~= bucket then return nil, 'action_player_wrong_bucket' end
     return playerId
 end

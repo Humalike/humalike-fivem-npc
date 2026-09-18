@@ -30,6 +30,8 @@ function GetCurrentResourceName() return 'humalike' end
 function AddEventHandler() end
 function exports() end
 HumalikeInventory = { Available = function() return true end }
+local characterLoaded = true
+HumalikePlayer = { IsCharacterLoaded = function(playerId) return characterLoaded end }
 -- The dedupe cache's clock, so a test can move past its TTL.
 local clock, osTime = 1000000, os.time
 os.time = function(...) if ... then return osTime(...) end return clock end
@@ -352,6 +354,12 @@ local _, extra = give('map-5', { player_id = 7, note = 'x', item = 'gold', hacke
 assert(extra.ok == true and runCalls[#runCalls].params.hacked == nil)
 assert(runCalls[#runCalls].params.item == 'treasure_map', 'fixed values always win')
 assert(select(2, give('map-6', { player_id = 99, note = 'x', paid = 50 })).reason == 'invalid_action_player')
+-- Online but between characters: no deed, like the built-in hand-overs.
+characterLoaded = false
+local runsLoaded = #runCalls
+assert(select(2, give('map-unloaded', { player_id = 7, note = 'x', paid = 50 })).reason == 'character_not_loaded')
+assert(#runCalls == runsLoaded, 'no RunAction for a player without a character')
+characterLoaded = true
 -- A stale static handle that now points at something else is no target.
 staticEntityIsPed = false
 assert(select(2, give('map-vehicle', { player_id = 7, note = 'x', paid = 50 })).reason == 'static_entity_unavailable')
