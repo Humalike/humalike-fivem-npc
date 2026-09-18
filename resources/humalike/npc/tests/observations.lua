@@ -93,8 +93,11 @@ assert(result.value.text == 'postać wręczyła ci 1 x amulet (2 kg)', result.va
 assert(posted[2][2].react == false)
 
 -- A language with no template falls back to English, then to whatever exists.
+-- No declared fields: the key is omitted rather than sent as an empty table,
+-- which would encode as a JSON array and fail the contract.
 result = report('npc-en', 7, 'door_unlocked')
 assert(result.value.text == 'ktoś otworzył drzwi')
+assert(posted[3][2].fields == nil)
 
 -- A leased ambient body carries its lease token so the edge can authorize it.
 result = report('ambient-1', 7, 'item_given', full)

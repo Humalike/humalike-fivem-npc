@@ -101,7 +101,9 @@ function HumalikeReportObservation(npcId, playerId, key, rawFields, options)
         lease_token = target.lease_token,
         key = wireKey,
         text = text,
-        fields = fields,
+        -- An empty Lua table encodes as a JSON array; the contract defaults
+        -- the field, so an observation without fields simply omits it.
+        fields = next(fields) ~= nil and fields or nil,
         react = options.react ~= false,
     })
     HumalikeDebug('observation %s for npc %s from player %d: %s', wireKey, npcId, playerId, text)
