@@ -8,16 +8,8 @@
 
 local STRING_LIMIT = 64
 
-local function cleanString(value)
-    if type(value) ~= 'string' or value:find('%c') then return nil end
-    value = value:match('^%s*(.-)%s*$')
-    local length = utf8.len(value)
-    if value == '' or not length or length > STRING_LIMIT then return nil end
-    return value
-end
-
 local FIELD_CHECKS = {
-    string = cleanString,
+    string = function(value) return HumaLike.CleanText(value, STRING_LIMIT) end,
     integer = function(value)
         if type(value) ~= 'number' or value % 1 ~= 0 or value ~= value then return nil end
         return math.tointeger(value)

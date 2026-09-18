@@ -25,6 +25,7 @@ function HumalikeFindAmbientLease(npcId)
 end
 
 dofile('../server/core/export_result.lua')
+dofile('../server/core/text.lua')
 dofile('../integration/server/actions.lua')
 dofile('server/observations.lua')
 

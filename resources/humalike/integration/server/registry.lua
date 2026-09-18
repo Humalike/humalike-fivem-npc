@@ -221,14 +221,6 @@ local function validateDescriptor(domain, descriptor)
     return true
 end
 
-local function cleanTemplate(value, maxLength)
-    if type(value) ~= 'string' or value:find('%c') then return nil end
-    value = value:match('^%s*(.-)%s*$')
-    local length = utf8.len(value)
-    if value == '' or not length or length > maxLength then return nil end
-    return value
-end
-
 -- A declared observation: the fields the script will report and the line the
 -- NPC reads, per language. Validated here, at RegisterProvider, so a typo
 -- surfaces in the integration's own console instead of as a silent drop later.
@@ -257,7 +249,8 @@ local function normalizedObservation(key, definition)
     end
     local template = {}
     for language, text in pairs(definition.template) do
-        text = OBSERVATION_LANGUAGES[language] and cleanTemplate(text, OBSERVATION_LIMITS.template)
+        text = OBSERVATION_LANGUAGES[language]
+            and HumaLike.CleanText(text, OBSERVATION_LIMITS.template)
         if not text then return nil, ('invalid template in observation %s'):format(key) end
         for placeholder in text:gmatch('{([^{}]*)}') do
             if not fields[placeholder] then
@@ -273,7 +266,7 @@ local function normalizedObservation(key, definition)
     end
     local description = definition.description
     if description ~= nil
-        and not cleanTemplate(description, OBSERVATION_LIMITS.description) then
+        and not HumaLike.CleanText(description, OBSERVATION_LIMITS.description) then
         return nil, ('invalid description in observation %s'):format(key)
     end
     return { fields = fields, template = template, description = description }
