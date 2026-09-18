@@ -162,13 +162,17 @@ local function dispatchCustomAction(target, localKey, definition, params)
     return true
 end
 
+-- State-changing callbacks are at-least-once and an invocation id names the
+-- deed, not the attempt: the edge re-pushes a refused deed under the same id
+-- until it lands (a counter hand-over on every turn, an order or limit
+-- window of up to 3600 s, a player who frees inventory much later), so an
+-- accepted id must answer true without running RunAction again. Only a done
+-- deed is remembered; a refusal is answered afresh on every attempt. The TTL
+-- outlasts the longest backend window several times over; the cap is a
+-- memory guard that evicts the soonest-to-expire only once it is exceeded.
 local completedInvocations = {}
-local MAX_COMPLETED_INVOCATIONS = 1024
-local INVOCATION_TTL_SECONDS = 600
-
--- State-changing callbacks are at-least-once, so deduplicate by invocation
--- ID: the backend re-pushes a deed under the same ID until it lands. Only a
--- done deed is remembered; a refusal is answered afresh on every attempt.
+local MAX_COMPLETED_INVOCATIONS = 4096
+local INVOCATION_TTL_SECONDS = 6 * 3600
 
 local function pruneInvocations(now)
     local count = 0
@@ -183,7 +187,7 @@ local function pruneInvocations(now)
             end
         end
     end
-    if count >= MAX_COMPLETED_INVOCATIONS and oldestId then
+    if count > MAX_COMPLETED_INVOCATIONS and oldestId then
         completedInvocations[oldestId] = nil
     end
 end

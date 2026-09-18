@@ -30,6 +30,9 @@ function GetCurrentResourceName() return 'humalike' end
 function AddEventHandler() end
 function exports() end
 HumalikeInventory = { Available = function() return true end }
+-- The dedupe cache's clock, so a test can move past its TTL.
+local clock, osTime = 1000000, os.time
+os.time = function(...) if ... then return osTime(...) end return clock end
 dofile('../server/core/text.lua')
 dofile('../integration/server/registry.lua')
 dofile('../integration/server/actions.lua')
@@ -381,6 +384,14 @@ runResult = true
 assert(select(2, give('map-7', map7)).ok == true)
 assert(select(2, give('map-7', map7)).ok == true and #runCalls == runsBefore + 6,
     'once done, the id is remembered')
+-- The edge may re-push the same id long after (an order window of up to an
+-- hour, a player who frees inventory later): still answered from the cache.
+clock = clock + 3601
+assert(select(2, give('map-7', map7)).ok == true and #runCalls == runsBefore + 6,
+    'a done id is remembered past the longest backend window')
+clock = clock + 6 * 3600
+local retired = give('map-7', map7)
+assert(retired == 200 and #runCalls == runsBefore + 7, 'past the TTL the id is forgotten')
 -- An ambient body needs its live lease like any other deed.
 assert(select(2, give('map-8', { player_id = 7, note = 'x', paid = 50 }, {
     kind = 'ambient', npc_id = 'ambient-1', entity_id = 101, routing_bucket = 2,
