@@ -53,11 +53,16 @@ function HumalikeActions.Declarations()
                 within_s = rule.within_s, consume = rule.consume,
             }
         end
+        local paramsFrom = {}
+        for name, source in pairs(action.params_from) do
+            paramsFrom[name] = prefix .. source.observation .. '.' .. source.field
+        end
         actions[#actions + 1] = {
             key = prefix .. key, name = action.name, description = action.description,
             params = mapOrNil(action.params), preconditions = requires,
             locked_hint = action.locked_hint, limit = action.limit,
-            uses_stock = action.uses_stock,
+            uses_stock = action.uses_stock, auto = action.auto or nil,
+            params_from = mapOrNil(paramsFrom),
         }
     end
     keys = {}

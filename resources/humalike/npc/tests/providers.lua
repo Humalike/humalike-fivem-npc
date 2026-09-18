@@ -225,6 +225,28 @@ local giveMap = {
     limit = { per_player = 1, every_s = 86400, hint = { en = 'One a day.' } },
     uses_stock = { item = 'map' },
 }
+ok, err = acting({ name = 'n', description = 'd', auto = true,
+    requires = { { observation = 'item_given' } } })
+assert(not ok and err == 'auto action give_map needs a requirement with consume = true')
+ok, err = acting({ name = 'n', description = 'd',
+    params_from = { amount = 'item_given.quantity' } })
+assert(not ok and err == 'invalid params_from amount in action give_map', tostring(err))
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { { observation = 'item_given', consume = true } },
+    params_from = { amount = 'item_given.weight' } })
+assert(not ok and err == 'invalid params_from amount in action give_map')
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { { observation = 'item_given', consume = true } },
+    params = { amount = { type = 'integer' } },
+    params_from = { amount = 'item_given.quantity' } })
+assert(not ok and err == 'invalid params_from amount in action give_map')
+ok, err = acting({ name = 'n', description = 'd', auto = true,
+    requires = { { observation = 'item_given', where = { item = 'cash' }, consume = true } },
+    params_from = { amount = 'item_given.quantity' } })
+assert(ok, err)
+local declared = HumalikeActions.Declarations()
+assert(declared[1].auto == true and declared[1].params_from.amount == 'srp:item_given.quantity')
+assert(exported.UnregisterProvider('actions', 'observer'))
 ok, err = acting({ name = 'n', description = 'd', uses_stock = { item = 'Map!' } })
 assert(not ok and err == 'invalid uses_stock in action give_map')
 ok, err = acting({ name = 'n', description = 'd', uses_stock = { item = 'map', quantity = 0 } })

@@ -349,7 +349,14 @@ quantity = 1 }` ties the deed to the NPC's stock, which the admin sets per NPC
 in the dashboard (`map: 50`, `bread: unlimited`): the NPC reads its exact
 counts, the action locks at zero, and each delivered deed takes its share. In
 `where`, `quantity = { sum_gte = 2 }` adds matching hand-overs up, so one
-bottle and one bottle make two; paying spends them all.
+bottle and one bottle make two; paying spends them all. `auto = true` makes
+HumaLike perform the deed as soon as its requirements hold, the next time the
+NPC answers that player -- paid means served, whether or not the model writes
+the tag (needs a `consume = true` requirement). `params_from = { amount =
+'item_given.quantity' }` hands `RunAction` values read from the facts that
+unlocked the deed, never from the model -- numbers summed over the consumed
+hand-overs, so a refund is for exactly the cash received and can never be
+talked up or paid twice.
 
 Admins enable a declared action per NPC in the dashboard like any other. The
 resource re-declares everything on every `report_capabilities`, so a changed

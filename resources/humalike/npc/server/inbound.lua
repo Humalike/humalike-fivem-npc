@@ -80,6 +80,15 @@ end
 -- RunAction. The catalogue paths above never see a namespaced key.
 local function customParams(definition, params)
     local merged = { player_id = params.player_id }
+    -- Values HumaLike read from the reported facts: scalar, as reported.
+    for name in pairs(definition.params_from or {}) do
+        local value = params[name]
+        if value == nil or not (type(value) == 'string' or type(value) == 'number'
+            or type(value) == 'boolean') then
+            return nil, ('missing_param:%s'):format(name)
+        end
+        merged[name] = value
+    end
     for name, spec in pairs(definition.params) do
         local value = params[name]
         if value ~= nil then

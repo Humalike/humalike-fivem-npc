@@ -33,6 +33,7 @@ HumalikeActions = {
             params = { copies = { type = 'integer', enum = { 1, 2 } },
                        note = { type = 'string', required = true } },
             fixed = { item = 'treasure_map' },
+            params_from = { paid = { observation = 'item_given', field = 'quantity' } },
         }
     end,
     Run = function(action, source, coords, params)
@@ -301,45 +302,47 @@ local function give(invocationId, params, target)
         params = params,
     })
 end
-local status, body = give('map-1', { player_id = 7, copies = 2, note = 'here' })
+assert(select(2, give('map-0', { player_id = 7, copies = 2, note = 'here' })).reason == 'missing_param:paid')
+local status, body = give('map-1', { player_id = 7, copies = 2, note = 'here', paid = 50 })
 assert(status == 200 and body.ok == true, tostring(body.reason))
+assert(runCalls[1].params.paid == 50)
 assert(#runCalls == 1 and runCalls[1].action == 'give_map' and runCalls[1].source == 7)
 assert(runCalls[1].coords.x == 4)
 assert(runCalls[1].params.player_id == 7 and runCalls[1].params.copies == 2)
 assert(runCalls[1].params.note == 'here' and runCalls[1].params.item == 'treasure_map')
 assert(#clientEvents == ceCustom, 'no client animation for a server-defined action')
 -- At-least-once delivery: the same invocation runs once.
-assert(select(2, give('map-1', { player_id = 7, copies = 2, note = 'here' })).ok == true)
+assert(select(2, give('map-1', { player_id = 7, copies = 2, note = 'here', paid = 50 })).ok == true)
 assert(#runCalls == 1)
-local _, conflict = give('map-1', { player_id = 7, copies = 1, note = 'here' })
+local _, conflict = give('map-1', { player_id = 7, copies = 1, note = 'here', paid = 50 })
 assert(conflict.reason == 'invocation_conflict')
 -- Declared shape or nothing: a wrong enum value, a wrong type, a missing
 -- required value, and a value the script never declared.
-assert(select(2, give('map-2', { player_id = 7, copies = 3, note = 'x' })).reason == 'invalid_param:copies')
-assert(select(2, give('map-3', { player_id = 7, copies = '2', note = 'x' })).reason == 'invalid_param:copies')
-assert(select(2, give('map-4', { player_id = 7 })).reason == 'missing_param:note')
-local _, extra = give('map-5', { player_id = 7, note = 'x', item = 'gold', hacked = true })
+assert(select(2, give('map-2', { player_id = 7, copies = 3, note = 'x', paid = 50 })).reason == 'invalid_param:copies')
+assert(select(2, give('map-3', { player_id = 7, copies = '2', note = 'x', paid = 50 })).reason == 'invalid_param:copies')
+assert(select(2, give('map-4', { player_id = 7, paid = 50 })).reason == 'missing_param:note')
+local _, extra = give('map-5', { player_id = 7, note = 'x', item = 'gold', hacked = true, paid = 50 })
 assert(extra.ok == true and runCalls[#runCalls].params.hacked == nil)
 assert(runCalls[#runCalls].params.item == 'treasure_map', 'fixed values always win')
-assert(select(2, give('map-6', { player_id = 99, note = 'x' })).reason == 'invalid_action_player')
+assert(select(2, give('map-6', { player_id = 99, note = 'x', paid = 50 })).reason == 'invalid_action_player')
 -- Two different value sets are two different deeds, whatever the bytes.
-local _, forgedA = give('map-frame-1', { player_id = 7, note = 'x\0b=y' })
-local _, forgedB = give('map-frame-1', { player_id = 7, note = 'x', copies = 1 })
+local _, forgedA = give('map-frame-1', { player_id = 7, note = 'x\0b=y', paid = 50 })
+local _, forgedB = give('map-frame-1', { player_id = 7, note = 'x', copies = 1, paid = 50 })
 assert(forgedA.ok == true and forgedB.reason == 'invocation_conflict')
 -- A stale static handle that now points at something else is no target.
 staticEntityIsPed = false
-assert(select(2, give('map-vehicle', { player_id = 7, note = 'x' })).reason == 'static_entity_unavailable')
+assert(select(2, give('map-vehicle', { player_id = 7, note = 'x', paid = 50 })).reason == 'static_entity_unavailable')
 staticEntityIsPed = true
 -- The script may still refuse.
 runResult = false
-assert(select(2, give('map-7', { player_id = 7, note = 'x' })).reason == 'action_rejected')
+assert(select(2, give('map-7', { player_id = 7, note = 'x', paid = 50 })).reason == 'action_rejected')
 runResult = true
 -- An ambient body needs its live lease like any other deed.
-assert(select(2, give('map-8', { player_id = 7, note = 'x' }, {
+assert(select(2, give('map-8', { player_id = 7, note = 'x', paid = 50 }, {
     kind = 'ambient', npc_id = 'ambient-1', entity_id = 101, routing_bucket = 2,
     lease_token = 'stale',
 })).reason == 'ambient_lease_expired')
-assert(select(2, give('map-9', { player_id = 7, note = 'x' }, {
+assert(select(2, give('map-9', { player_id = 7, note = 'x', paid = 50 }, {
     kind = 'ambient', npc_id = 'ambient-1', entity_id = 101, routing_bucket = 2,
     lease_token = 'lease-token',
 })).ok == true)

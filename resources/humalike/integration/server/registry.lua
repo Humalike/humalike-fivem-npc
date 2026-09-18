@@ -312,7 +312,7 @@ local function normalizedAction(key, definition, observations)
         return nil, ('invalid description in action %s'):format(key)
     end
     for _, collection in ipairs({ 'params', 'fixed', 'requires', 'locked_hint', 'limit',
-        'uses_stock' }) do
+        'uses_stock', 'params_from' }) do
         if definition[collection] ~= nil and type(definition[collection]) ~= 'table' then
             return nil, ('invalid %s in action %s'):format(collection, key)
         end
@@ -455,6 +455,34 @@ local function normalizedAction(key, definition, observations)
         end
         usesStock = { item = item, quantity = quantity }
     end
+    if definition.auto ~= nil and type(definition.auto) ~= 'boolean' then
+        return nil, ('invalid auto in action %s'):format(key)
+    end
+    local spends = false
+    for _, rule in ipairs(requires) do if rule.consume then spends = true end end
+    if definition.auto == true and not spends then
+        return nil, ('auto action %s needs a requirement with consume = true'):format(key)
+    end
+    -- Values the deed takes from the facts that unlocked it, never from the
+    -- model: { amount = 'item_given.quantity' }.
+    local paramsFrom = {}
+    for name, source in pairs(definition.params_from or {}) do
+        local observationKey, fieldName
+        if type(source) == 'string' then
+            observationKey, fieldName = source:match('^([a-z][a-z0-9_]*)%.([a-z][a-z0-9_]*)$')
+        end
+        local observation = observationKey and observations[observationKey]
+        local required = false
+        for _, rule in ipairs(requires) do
+            if rule.observation == observationKey then required = true end
+        end
+        if type(name) ~= 'string' or not name:match('^[a-z][a-z0-9_]*$') or #name > 32
+            or name == 'player_id' or params[name] or fixed[name]
+            or not observation or not required or not observation.fields[fieldName] then
+            return nil, ('invalid params_from %s in action %s'):format(tostring(name), key)
+        end
+        paramsFrom[name] = { observation = observationKey, field = fieldName }
+    end
     local hint
     if definition.locked_hint ~= nil then
         if type(definition.locked_hint) ~= 'table' or next(definition.locked_hint) == nil then
@@ -470,6 +498,7 @@ local function normalizedAction(key, definition, observations)
     return {
         name = name, description = description, params = params, fixed = fixed,
         requires = requires, locked_hint = hint, limit = limit, uses_stock = usesStock,
+        auto = definition.auto == true, params_from = paramsFrom,
     }
 end
 
