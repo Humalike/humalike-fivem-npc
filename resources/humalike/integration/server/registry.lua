@@ -311,7 +311,8 @@ local function normalizedAction(key, definition, observations)
     if not description or description:find('[%[%]]') then
         return nil, ('invalid description in action %s'):format(key)
     end
-    for _, collection in ipairs({ 'params', 'fixed', 'requires', 'locked_hint', 'limit' }) do
+    for _, collection in ipairs({ 'params', 'fixed', 'requires', 'locked_hint', 'limit',
+        'uses_stock' }) do
         if definition[collection] ~= nil and type(definition[collection]) ~= 'table' then
             return nil, ('invalid %s in action %s'):format(collection, key)
         end
@@ -384,11 +385,15 @@ local function normalizedAction(key, definition, observations)
             end
             local numeric = fieldType == 'integer' or fieldType == 'number'
             if type(value) == 'table' then
-                -- A bound on a numeric field: { gte = 500 }, { lte = 3 }, or both.
+                -- A bound on a numeric field: { gte = 500 }, { lte = 3 }, both, or
+                -- { sum_gte = 2 } added up across hand-overs.
                 local bounded = numeric and next(value) ~= nil
                 for bound, limit in pairs(value) do
-                    if (bound ~= 'gte' and bound ~= 'lte') or type(limit) ~= 'number'
-                        or limit ~= limit then bounded = false end
+                    if (bound ~= 'gte' and bound ~= 'lte' and bound ~= 'sum_gte')
+                        or type(limit) ~= 'number' or limit ~= limit then bounded = false end
+                end
+                if bounded and value.sum_gte and (value.gte or value.lte or value.sum_gte <= 0) then
+                    bounded = false
                 end
                 if bounded and value.gte and value.lte and value.gte > value.lte then
                     bounded = false
@@ -397,7 +402,7 @@ local function normalizedAction(key, definition, observations)
                     return nil, ('invalid bound on %s in requirement %d of action %s'):format(
                         field, index, key)
                 end
-                where[field] = { gte = value.gte, lte = value.lte }
+                where[field] = { gte = value.gte, lte = value.lte, sum_gte = value.sum_gte }
             else
                 local fits = (fieldType == 'string' and type(value) == 'string')
                     or (fieldType == 'boolean' and type(value) == 'boolean')
@@ -440,6 +445,16 @@ local function normalizedAction(key, definition, observations)
             end
         end
     end
+    local usesStock
+    if definition.uses_stock ~= nil then
+        local item, quantity = definition.uses_stock.item, definition.uses_stock.quantity
+        if quantity == nil then quantity = 1 end
+        if type(item) ~= 'string' or not item:match('^[a-z0-9_.-]+$') or #item > 48
+            or math.type(quantity) ~= 'integer' or quantity < 1 or quantity > 1000 then
+            return nil, ('invalid uses_stock in action %s'):format(key)
+        end
+        usesStock = { item = item, quantity = quantity }
+    end
     local hint
     if definition.locked_hint ~= nil then
         if type(definition.locked_hint) ~= 'table' or next(definition.locked_hint) == nil then
@@ -454,7 +469,7 @@ local function normalizedAction(key, definition, observations)
     end
     return {
         name = name, description = description, params = params, fixed = fixed,
-        requires = requires, locked_hint = hint, limit = limit,
+        requires = requires, locked_hint = hint, limit = limit, uses_stock = usesStock,
     }
 end
 

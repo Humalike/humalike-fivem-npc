@@ -57,6 +57,7 @@ function HumalikeActions.Declarations()
             key = prefix .. key, name = action.name, description = action.description,
             params = mapOrNil(action.params), preconditions = requires,
             locked_hint = action.locked_hint, limit = action.limit,
+            uses_stock = action.uses_stock,
         }
     end
     keys = {}
