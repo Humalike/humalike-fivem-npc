@@ -63,6 +63,7 @@ server_scripts {
     'npc/server/wounds.lua',
     'npc/server/world_events.lua',
     'npc/server/observations.lua',
+    'npc/server/orders.lua',
     'integration/providers/esx/world_events.lua',
     'integration/providers/qbcore/world_events.lua',
     'integration/providers/qbox/world_events.lua',
