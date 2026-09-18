@@ -392,6 +392,12 @@ exports.humalike:RegisterProvider('actions', {
     },
     RunAction = function(action, source, npcCoords, params)
         if action == 'deliver' then
+            -- All or nothing: refuse before anything moves, or the sale stands.
+            for item, quantity in pairs(params.items) do
+                if not exports.ox_inventory:CanCarryItem(source, item, quantity) then
+                    return false
+                end
+            end
             for item, quantity in pairs(params.items) do
                 exports.ox_inventory:AddItem(source, item, quantity)
             end
@@ -415,7 +421,11 @@ tells the NPC the total. Payment is your reported `item_given` of the
 currency. The moment the money on the counter covers the total, HumaLike
 calls `RunAction('deliver', source, coords, { items = {...}, total, paid,
 change, currency })` itself and records the sale; every line leaves the
-NPC's stock. Underpaid, nothing happens and the NPC is told what is owed. If
+NPC's stock. Return `false` when the hand-over cannot happen (the customer
+cannot carry it): nothing is recorded, the order and the money stay on the
+counter, the NPC is told the hand-over failed, and HumaLike tries again on
+the next turn -- so hand over everything or nothing, never a part.
+Underpaid, nothing happens and the NPC is told what is owed. If
 the customer backs out, the NPC's `[srp:cancel_order]` calls
 `RunAction('refund', source, coords, { amount, currency })` with exactly
 what is on the counter. `deliver` and `refund` are declared for you, never
