@@ -256,14 +256,16 @@ end
 -- `/humalike_dev observe <npc_uuid> <key> [field=value ...]`: report a declared
 -- observation without the inventory (or whatever) hook that would normally
 -- fire it. Values are typed from the declaration, so `quantity=2` is an
--- integer and `stolen=true` a boolean.
+-- integer and `stolen=true` a boolean. Chat splits on spaces, so a value
+-- cannot contain one.
 local function observe(playerId, npcId, key, pairsList)
     local _, definition = HumalikeActions.Observation(key)
     if not definition then reply(playerId, ('unknown observation %s'):format(tostring(key))) return end
     local fields = {}
     for _, pair in ipairs(pairsList) do
         local name, raw = pair:match('^([^=]+)=(.*)$')
-        local fieldType = name and definition.fields[name]
+        if not name then reply(playerId, ('expected field=value, got %s'):format(pair)) return end
+        local fieldType = definition.fields[name]
         if fieldType == 'integer' or fieldType == 'number' then fields[name] = tonumber(raw)
         elseif fieldType == 'boolean' then
             if raw ~= 'true' and raw ~= 'false' then
@@ -271,7 +273,7 @@ local function observe(playerId, npcId, key, pairsList)
                 return
             end
             fields[name] = raw == 'true'
-        else fields[name or pair] = raw end
+        else fields[name] = raw end
     end
     local result = HumalikeReportObservation(npcId, playerId, key, fields)
     if result.ok then
@@ -282,7 +284,7 @@ local function observe(playerId, npcId, key, pairsList)
 end
 
 local USAGE = 'usage: /humalike_dev ambient <spawn|goto|remove|list> [npc_uuid]'
-    .. ' | observe <npc_uuid> <key> [field=value ...]'
+    .. ' | observe <npc_uuid> <key> [field=value ...] (values cannot contain spaces)'
 
 RegisterCommand('humalike_dev', function(playerId, args)
     if not allowed(playerId) then return end
