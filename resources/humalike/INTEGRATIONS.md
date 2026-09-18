@@ -241,6 +241,9 @@ Server integrations can translate their own event bus with
 three badge events, and `hands_raised`/`hands_lowered`. HumaLike validates the
 payload and loaded character before forwarding it.
 
+Client integrations can subscribe to
+`humalike:voice:transmittingChanged(active)` to update a custom HUD.
+
 ## Server observations
 
 Facts only the server knows -- an item handed to an NPC, a door unlocked, a job
@@ -249,10 +252,16 @@ The NPC reads the rendered line as a world event in its own language and can
 react to it; a player saying "I gave you the amulet" is talk, a reported
 observation is fact.
 
+Observations belong to the one selected actions provider, so declare them on
+the actions provider the server already registers rather than on a second one
+(two providers at the same priority make the domain `ambiguous`, and a lower
+one is never consulted):
+
 ```lua
 exports.humalike:RegisterProvider('actions', {
     name = 'my_actions', apiVersion = 1, priority = 100,
-    SupportedActions = {},
+    SupportedActions = { 'hand_over_money' },
+    RunAction = function(action, source, npcCoords, params) return true end,
     Namespace = 'srp',
     Observations = {
         item_given = {
@@ -271,27 +280,28 @@ local result = exports.humalike:ReportObservation(npcId, source, 'item_given', {
 })
 ```
 
-`Namespace` (`^[a-z][a-z0-9]{1,15}$`) prefixes every key on the wire
-(`srp:item_given`), so a server key never collides with a built-in event.
-Observation keys and field names match `^[a-z][a-z0-9_]{0,31}$`; up to 32
-observations with up to 8 fields each, typed `string` (≤ 64 characters),
-`integer`, `number` or `boolean`. Every declared field is required when
-reporting and unknown fields are rejected. `template` holds one line per NPC
-language (`en`, `pl`; ≤ 400 characters) whose `{placeholders}` name declared
-fields; an NPC whose language has no template reads the English one.
-`RunAction` is optional for a provider that implements no action.
+`Namespace` prefixes every key on the wire (`srp:item_given`), so a server key
+never collides with a built-in event. Each observation declares its `fields`
+(`string`, `integer`, `number` or `boolean`) and a `template` per NPC language
+(`en`, `pl`) whose `{placeholders}` name declared fields; an NPC whose language
+has no template reads the English one. A provider that implements no action
+may omit `RunAction`. `RegisterProvider` returns `false` and prints the exact
+reason for a declaration it refuses, such as `unknown placeholder {item} in
+observation item_given`.
 
-`ReportObservation(npcId, playerId, key, fields, options)` accepts a roster NPC
-(static, or external and bound) or an ambient body the server currently leases,
-and returns the export envelope: `value.key` and `value.text` on success, or an
+`ReportObservation(npcId, playerId, key, fields, options)` accepts a live roster
+NPC (static, or external and bound) or an ambient body the server currently
+leases. Every declared field is required and unknown fields are rejected. It
+returns the export envelope: `value.key` and `value.text` on success, or an
 `error` code (`invalid_player`, `character_not_loaded`, `npc_not_found`,
-`unknown_observation`, `invalid_field:<name>`, `unknown_field:<name>`,
-`invalid_options`). `options.react = false` files the fact without a spoken
-reaction. With `humalike_developer_tools 1`, `/humalike_dev observe <npc_uuid>
-<key> [field=value ...]` reports one by hand.
-
-Client integrations can subscribe to
-`humalike:voice:transmittingChanged(active)` to update a custom HUD.
+`npc_not_bound`, `unknown_observation`, `invalid_fields` when `fields` is not a
+table, `invalid_field:<name>`, `unknown_field:<name>`, `invalid_options`).
+`ok = true` means the observation is queued for delivery, not delivered: with
+the backend down it is retried a few times and then dropped. With
+`humalike_actions none` every report returns `unknown_observation`.
+`options.react = false` files the fact without a spoken reaction. With
+`humalike_developer_tools 1`, `/humalike_dev observe <npc_uuid> <key>
+[field=value ...]` reports one by hand.
 
 Keep customer-specific rewards, jobs, event names, dispatch payloads and UI
 hooks in the integration resource. This makes updating `humalike` a complete

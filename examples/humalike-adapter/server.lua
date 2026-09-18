@@ -25,13 +25,27 @@ local function registerProviders()
         end,
     })
 
-    -- Facts only this server knows. Declare them once; report each occurrence
-    -- from the hook that makes it true (see below).
+    -- The server's one actions provider carries both what the NPC can ask it
+    -- to run and what it can observe. One provider owns all observations:
+    -- HumaLike consults only the selected actions provider, so a second one
+    -- registered just for observations would shadow this one or leave the
+    -- domain ambiguous.
     exports.humalike:RegisterProvider('actions', {
         name = 'example_actions',
         apiVersion = 1,
         priority = 100,
-        SupportedActions = {},
+        SupportedActions = { 'hand_over_money' },
+        RunAction = function(action, source, _npcCoords, params)
+            if action ~= 'hand_over_money' then return false end
+            -- Replace with your economy's "give cash to player" call and
+            -- return true only once the cash really moved; the NPC treats
+            -- the return value as what happened.
+            print(('example adapter: no economy wired, %s for player %s (%s) not delivered'):format(
+                action, tostring(source), tostring(params.robber_description)))
+            return false
+        end,
+        -- Facts only this server knows. Declare them once; report each
+        -- occurrence from the hook that makes it true (see below).
         Namespace = 'example',
         Observations = {
             item_given = {
