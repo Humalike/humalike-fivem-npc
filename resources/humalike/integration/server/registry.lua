@@ -31,8 +31,15 @@ local DOMAINS = {
     actions = { required = {}, optional = { 'RunAction' } },
 }
 
-local OBSERVATION_LIMITS = { observations = 32, fields = 8, template = 400 }
+-- `text` is the backend's ObservationText cap: a template is refused here
+-- when its worst-case render (every placeholder at its field's widest value)
+-- would exceed it, so a report can never overflow at the edge.
+local OBSERVATION_LIMITS = { observations = 32, fields = 8, template = 400, text = 912 }
 local OBSERVATION_FIELD_TYPES = { string = true, integer = true, number = true, boolean = true }
+-- Widest render of one field value, in characters, as ReportObservation
+-- bounds them: strings at most 64, numbers at most 2^53 in magnitude (an
+-- integer renders in 17, a float in `%.14g` in 21: `-1.2345678901234e-300`).
+local OBSERVATION_FIELD_WIDTHS = { string = 64, integer = 17, number = 21, boolean = 5 }
 -- Mirrors the edge's NpcLanguage enum; Config.NpcLabels.LanguageLabels is
 -- label text for the client and lists languages no NPC can speak yet.
 local OBSERVATION_LANGUAGES = { en = true, pl = true }
@@ -328,10 +335,16 @@ local function normalizedObservation(key, definition)
         text = OBSERVATION_LANGUAGES[language]
             and HumaLike.CleanText(text, OBSERVATION_LIMITS.template)
         if not text then return nil, ('invalid template in observation %s'):format(key) end
+        local rendered = utf8.len(text)
         for placeholder in text:gmatch('{([^{}]*)}') do
             if not fields[placeholder] then
                 return nil, ('unknown placeholder {%s} in observation %s'):format(placeholder, key)
             end
+            rendered = rendered - (#placeholder + 2) + OBSERVATION_FIELD_WIDTHS[fields[placeholder]]
+        end
+        if rendered > OBSERVATION_LIMITS.text then
+            return nil, ('template renders up to %d characters, over %d, in observation %s'):format(
+                rendered, OBSERVATION_LIMITS.text, key)
         end
         -- A brace left over once every {placeholder} is taken out is a typo
         -- that would otherwise reach the NPC verbatim.

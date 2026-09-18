@@ -181,6 +181,45 @@ ok, err = observing({ Observations = { item_given = { template = { en = 'got {it
 assert(not ok and err == 'unknown placeholder {item} in observation item_given')
 ok, err = observing({ Observations = { item_given = { template = { en = ('x'):rep(401) } } } })
 assert(not ok and err == 'invalid template in observation item_given')
+-- C1 controls (U+0085 here) never pass, same as at the backend.
+ok, err = observing({ Observations = { item_given = { template = { en = 'a\u{85}b' } } } })
+assert(not ok and err == 'invalid template in observation item_given')
+-- A template is sized by its worst-case render, every occurrence counted:
+-- 16 x {item} at 64 characters + 288 = 1328 characters, past the backend's 912.
+local function wide(placeholders, padding, fields)
+    return { Observations = { item_given = { fields = fields,
+        template = { en = ('{item} '):rep(placeholders) .. ('x'):rep(padding) } } } }
+end
+ok, err = observing(wide(16, 288, { item = 'string' }))
+assert(not ok and err == 'template renders up to 1328 characters, over 912, in observation item_given', err)
+-- 9 x 65 + 327 = 912 fits; one more character does not.
+ok, err = observing(wide(9, 327, { item = 'string' }))
+assert(ok, err)
+assert(exported.UnregisterProvider('actions', 'observer'))
+ok, err = observing(wide(9, 328, { item = 'string' }))
+assert(not ok and err == 'template renders up to 913 characters, over 912, in observation item_given', err)
+-- Numbers are bounded at 2^53 by ReportObservation, so they are sized at
+-- their widest render (21 for a float, 17 for an integer), not as unbounded;
+-- a boolean at `false`. 40 x 22 + 33 = 913; 50 x 18 + 13 = 913.
+ok, err = observing(wide(40, 33, { item = 'number' }))
+assert(not ok and err == 'template renders up to 913 characters, over 912, in observation item_given', err)
+ok, err = observing(wide(40, 32, { item = 'number' }))
+assert(ok, err)
+assert(exported.UnregisterProvider('actions', 'observer'))
+ok, err = observing(wide(50, 13, { item = 'integer' }))
+assert(not ok and err == 'template renders up to 913 characters, over 912, in observation item_given', err)
+ok, err = observing(wide(50, 12, { item = 'integer' }))
+assert(ok, err)
+assert(exported.UnregisterProvider('actions', 'observer'))
+-- A 400-character template of booleans renders 343 characters: it fits.
+ok, err = observing(wide(57, 1, { item = 'boolean' }))
+assert(ok, err)
+assert(exported.UnregisterProvider('actions', 'observer'))
+-- Sized in characters, not bytes: 300 x ł is 300 characters.
+ok, err = observing({ Observations = { item_given = { fields = { item = 'string' },
+    template = { en = ('ł'):rep(300) .. '{item}' } } } })
+assert(ok, err)
+assert(exported.UnregisterProvider('actions', 'observer'))
 ok, err = observing({ Observations = { item_given = { template = { en = 'x' }, fields = 'item' } } })
 assert(not ok and err == 'invalid observation item_given')
 for _, broken in ipairs({ 'got {item', 'got item}', 'got {{item}}', 'got }{' }) do

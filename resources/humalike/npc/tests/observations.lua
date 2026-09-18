@@ -84,6 +84,17 @@ assert(report('npc-en', 7, 'item_given', with({ item = ('x'):rep(65) })).error =
 assert(report('npc-en', 7, 'item_given', with({ item = 'a\nb' })).error == 'invalid_field:item')
 assert(report('npc-en', 7, 'item_given', with({ stolen = 'no' })).error == 'invalid_field:stolen')
 assert(report('npc-en', 7, 'item_given', with({ weight = 0 / 0 })).error == 'invalid_field:weight')
+assert(report('npc-en', 7, 'item_given', with({ weight = math.huge })).error == 'invalid_field:weight')
+-- Past 2^53 a number renders wider than the registry sized the template for.
+assert(report('npc-en', 7, 'item_given', with({ weight = 2 ^ 53 + 2 })).error == 'invalid_field:weight')
+assert(report('npc-en', 7, 'item_given', with({ weight = 1e300 })).error == 'invalid_field:weight')
+assert(report('npc-en', 7, 'item_given', with({ quantity = -(2 ^ 53) - 2 })).error == 'invalid_field:quantity')
+assert(report('npc-en', 7, 'item_given', with({ quantity = math.mininteger })).error == 'invalid_field:quantity')
+assert(report('npc-en', 7, 'item_given', with({ quantity = math.maxinteger })).error == 'invalid_field:quantity')
+-- C1 controls (here U+0085) are what the backend refuses too; `%c` alone
+-- would let them through.
+assert(report('npc-en', 7, 'item_given', with({ item = 'a\u{85}b' })).error == 'invalid_field:item')
+assert(report('npc-en', 7, 'item_given', with({ item = 'a\u{9F}b' })).error == 'invalid_field:item')
 assert(report('npc-en', 7, 'item_given', with({ extra = 1 })).error == 'unknown_field:extra')
 assert(report('npc-en', 7, 'item_given', full, 'react').error == 'invalid_options')
 assert(report('npc-en', 7, 'item_given', full, { react = 'yes' }).error == 'invalid_options')
@@ -106,19 +117,35 @@ assert(math.type(event.fields.quantity) == 'integer')
 result = report('npc-pl', 7, 'item_given', with({ weight = 2.0 }), { react = false })
 assert(result.value.text == 'postać wręczyła ci 1 x amulet (2 kg)', result.value.text)
 assert(posted[2][2].react == false)
-result = report('npc-pl', 7, 'item_given', with({ weight = 1e20 }))
-assert(result.value.text == 'postać wręczyła ci 1 x amulet (100000000000000000000 kg)', result.value.text)
+result = report('npc-pl', 7, 'item_given', with({ weight = 2 ^ 53 }))
+assert(result.value.text == 'postać wręczyła ci 1 x amulet (9007199254740992 kg)', result.value.text)
+result = report('npc-pl', 7, 'item_given', with({ quantity = -(2 ^ 53), item = 'a\u{A0}b' }))
+assert(result.value.text == 'postać wręczyła ci -9007199254740992 x a\u{A0}b (0.5 kg)', result.value.text)
 
 -- A language with no template falls back to English, then to whatever exists.
 -- No declared fields: the key is omitted rather than sent as an empty table,
 -- which would encode as a JSON array and fail the contract.
 result = report('npc-en', 7, 'door_unlocked')
 assert(result.value.text == 'ktoś otworzył drzwi')
-assert(posted[4][2].fields == nil)
+assert(posted[5][2].fields == nil)
 
 -- A leased ambient body carries its lease token so the edge can authorize it.
 result = report('ambient-1', 7, 'item_given', full)
-assert(result.ok and posted[5][2].lease_token == 'lease-1')
-assert(posted[5][2].text:match('^postać'))
+assert(result.ok and posted[6][2].lease_token == 'lease-1')
+assert(posted[6][2].text:match('^postać'))
+
+-- A render past the backend's 912-character cap is refused with a reason
+-- rather than posted and dropped as a 422. Registration sizes templates so
+-- this cannot happen through RegisterProvider; a declaration that reached the
+-- provider some other way still cannot overflow.
+selectedProvider.Observations.hoard = {
+    fields = { item = 'string' },
+    template = { en = ('{item} '):rep(16) .. ('x'):rep(304) },
+}
+local hoard = report('npc-en', 7, 'hoard', { item = ('y'):rep(64) })
+assert(hoard.error == 'text_too_long', tostring(hoard.error))
+assert(#posted == 6)
+assert(report('npc-en', 7, 'hoard', { item = ('y'):rep(37) }).ok)
+assert(utf8.len(posted[7][2].text) == 912)
 
 print('observations: ok')
