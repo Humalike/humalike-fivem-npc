@@ -6,19 +6,32 @@
 -- template in that NPC's language before it leaves the box, so the backend
 -- quotes it verbatim and never needs the declarations.
 
+-- Bounds the registry sizes templates against (integration/server/registry.lua
+-- OBSERVATION_FIELD_WIDTHS) and the backend mirrors on ObservationFieldValue:
+-- a string is at most 64 characters, a number at most 2^53 in magnitude, so a
+-- value never renders wider than the registry assumed.
 local STRING_LIMIT = 64
+local NUMBER_LIMIT = 2 ^ 53
+-- The backend's ObservationText cap. Registration already refuses a template
+-- that could render past it; this is the last guard, not the first.
+local TEXT_LIMIT = 912
+
+-- Two comparisons rather than math.abs: math.abs(math.mininteger) wraps to
+-- itself and would slip through.
+local function boundedNumber(value)
+    if type(value) ~= 'number' or value ~= value
+        or value < -NUMBER_LIMIT or value > NUMBER_LIMIT then return nil end
+    return value
+end
 
 local FIELD_CHECKS = {
     string = function(value) return HumaLike.CleanText(value, STRING_LIMIT) end,
     integer = function(value)
-        if type(value) ~= 'number' or value % 1 ~= 0 or value ~= value then return nil end
+        value = boundedNumber(value)
+        if value == nil or value % 1 ~= 0 then return nil end
         return math.tointeger(value)
     end,
-    number = function(value)
-        if type(value) ~= 'number' or value ~= value or value == math.huge
-            or value == -math.huge then return nil end
-        return value
-    end,
+    number = boundedNumber,
     boolean = function(value)
         if type(value) ~= 'boolean' then return nil end
         return value
@@ -43,7 +56,7 @@ local function validatedFields(definition, raw)
 end
 
 -- An integral float reads as an integer (2 kg, not 2.0 kg); `%.0f` rather
--- than `%d` because a float past 2^63 has no integer representation.
+-- than `%d` so the format can never throw on a float.
 local function formatValue(value)
     if math.type(value) == 'float' and value % 1 == 0 then return ('%.0f'):format(value) end
     return tostring(value)
@@ -89,6 +102,8 @@ function HumalikeReportObservation(npcId, playerId, key, rawFields, options)
         return HumalikeExportResult.Failure('invalid_options')
     end
     local text = render(definition, target.language, fields)
+    local length = utf8.len(text)
+    if not length or length > TEXT_LIMIT then return HumalikeExportResult.Failure('text_too_long') end
     HumalikePostPlayerEvent(playerId, {
         type = 'server_observation',
         npc_id = npcId,
