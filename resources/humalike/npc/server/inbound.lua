@@ -112,9 +112,9 @@ local function dispatchCustomAction(target, localKey, definition, params)
         local npc = NpcRegistry[target.npc_id]
         if not npc then return false, 'unknown_static_npc' end
         entity = npc.entity_id
-        if type(entity) ~= 'number' or entity <= 0 or not DoesEntityExist(entity) then
-            return false, 'static_entity_unavailable'
-        end
+        if type(entity) ~= 'number' or entity <= 0 or not DoesEntityExist(entity)
+            or GetEntityType(entity) ~= 1 or IsPedAPlayer(entity)
+            or GetEntityHealth(entity) <= 0 then return false, 'static_entity_unavailable' end
         bucket = GetEntityRoutingBucket(entity)
     elseif target.kind == 'ambient' then
         local lease, ambientEntity, reason = ValidateAmbientActionTarget(target)
@@ -136,24 +136,29 @@ local INVOCATION_TTL_SECONDS = 600
 
 -- State-changing callbacks are at-least-once, so deduplicate by invocation ID.
 
+-- Length-prefixed so no value can forge a field boundary.
+local function framed(value)
+    local text = tostring(value)
+    return #text .. ':' .. text
+end
+
 local function invocationFingerprint(actionKey, target, params)
     local parts = {
-        actionKey,
-        target.kind,
-        target.npc_id,
-        tostring(target.entity_id or ''),
-        tostring(target.routing_bucket or ''),
-        tostring(target.lease_token or ''),
-        tostring(params.player_id or ''),
-        tostring(params.item_name or ''),
-        tostring(params.quantity or ''),
+        framed(actionKey),
+        framed(target.kind),
+        framed(target.npc_id),
+        framed(target.entity_id or ''),
+        framed(target.routing_bucket or ''),
+        framed(target.lease_token or ''),
     }
-    -- A server-defined action's values, in a stable order.
     local names = {}
     for name in pairs(params) do names[#names + 1] = name end
     table.sort(names)
-    for _, name in ipairs(names) do parts[#parts + 1] = name .. '=' .. tostring(params[name]) end
-    return table.concat(parts, '\0')
+    for _, name in ipairs(names) do
+        local value = params[name]
+        parts[#parts + 1] = framed(name) .. framed(type(value)) .. framed(value)
+    end
+    return table.concat(parts)
 end
 
 local function pruneInvocations(now)

@@ -240,6 +240,26 @@ ok, err = acting({ name = 'n', description = 'd', params = { copies = { type = '
 assert(not ok and err == 'invalid param copies in action give_map')
 ok, err = acting({ name = 'n', description = 'd', params = { copies = { type = 'string', enum = { 'A B' } } } })
 assert(not ok and err == 'invalid enum for copies in action give_map')
+ok, err = acting({ name = 'n', description = 'd', params = { copies = { type = 'integer', enum = { 'one' } } } })
+assert(not ok and err == 'invalid enum for copies in action give_map')
+ok, err = acting({ name = 'n', description = 'd', params = { gift = { type = 'boolean', enum = { 'true' } } } })
+assert(not ok and err == 'invalid enum for gift in action give_map')
+ok, err = acting({ name = 'n', description = 'd', params = 'copies' })
+assert(not ok and err == 'invalid params in action give_map')
+ok, err = acting({ name = 'n', description = 'd', requires = true })
+assert(not ok and err == 'invalid requires in action give_map')
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { { observation = 'item_given', where = 'item' } } })
+assert(not ok and err == 'invalid where in requirement 1 of action give_map')
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { { observation = 'item_given', where = { quantity = 'many' } } } })
+assert(not ok and err == 'invalid value for quantity in requirement 1 of action give_map')
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { { observation = 'item_given', where = { quantity = { gte = 10, lte = 3 } } } } })
+assert(not ok and err == 'invalid bound on quantity in requirement 1 of action give_map')
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { { observation = 'item_given', where = { quantity = { gte = 1, lte = 'x' } } } } })
+assert(not ok and err == 'invalid bound on quantity in requirement 1 of action give_map')
 ok, err = acting({ name = 'n', description = 'd', params = { item = { type = 'string' } },
     fixed = { item = 'x' } })
 assert(not ok and err == 'invalid fixed param item in action give_map')

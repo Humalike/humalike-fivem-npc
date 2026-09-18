@@ -311,6 +311,11 @@ local function normalizedAction(key, definition, observations)
     if not description or description:find('[%[%]]') then
         return nil, ('invalid description in action %s'):format(key)
     end
+    for _, collection in ipairs({ 'params', 'fixed', 'requires', 'locked_hint' }) do
+        if definition[collection] ~= nil and type(definition[collection]) ~= 'table' then
+            return nil, ('invalid %s in action %s'):format(collection, key)
+        end
+    end
     local params, paramCount = {}, 0
     for paramName, spec in pairs(definition.params or {}) do
         if type(paramName) ~= 'string' or not paramName:match('^[a-z][a-z0-9_]*$')
@@ -321,13 +326,14 @@ local function normalizedAction(key, definition, observations)
         local param = { type = spec.type, required = spec.required == true }
         if spec.enum ~= nil then
             if type(spec.enum) ~= 'table' or #spec.enum == 0
-                or #spec.enum > ACTION_LIMITS.enum then
+                or #spec.enum > ACTION_LIMITS.enum or spec.type == 'boolean' then
                 return nil, ('invalid enum for %s in action %s'):format(paramName, key)
             end
             param.enum = {}
             for index, choice in ipairs(spec.enum) do
-                local valid = (type(choice) == 'string' and choice:match('^[a-z0-9_.-]+$')
-                    and #choice <= 32) or math.type(choice) == 'integer'
+                local valid = (spec.type == 'string' and type(choice) == 'string'
+                    and choice:match('^[a-z0-9_.-]+$') and #choice <= 32)
+                    or (spec.type == 'integer' and math.type(choice) == 'integer')
                 if not valid then
                     return nil, ('invalid enum for %s in action %s'):format(paramName, key)
                 end
@@ -366,6 +372,9 @@ local function normalizedAction(key, definition, observations)
         if not observation then
             return nil, ('unknown observation in requirement %d of action %s'):format(index, key)
         end
+        if rule.where ~= nil and type(rule.where) ~= 'table' then
+            return nil, ('invalid where in requirement %d of action %s'):format(index, key)
+        end
         local where = {}
         for field, value in pairs(rule.where or {}) do
             local fieldType = observation.fields[field]
@@ -373,24 +382,32 @@ local function normalizedAction(key, definition, observations)
                 return nil, ('unknown field %s in requirement %d of action %s'):format(
                     tostring(field), index, key)
             end
+            local numeric = fieldType == 'integer' or fieldType == 'number'
             if type(value) == 'table' then
                 -- A bound on a numeric field: { gte = 500 }, { lte = 3 }, or both.
-                local numeric = fieldType == 'integer' or fieldType == 'number'
-                local bounded = (value.gte ~= nil and type(value.gte) == 'number')
-                    or (value.lte ~= nil and type(value.lte) == 'number')
-                for bound in pairs(value) do
-                    if bound ~= 'gte' and bound ~= 'lte' then bounded = false end
+                local bounded = numeric and next(value) ~= nil
+                for bound, limit in pairs(value) do
+                    if (bound ~= 'gte' and bound ~= 'lte') or type(limit) ~= 'number'
+                        or limit ~= limit then bounded = false end
                 end
-                if not numeric or not bounded then
+                if bounded and value.gte and value.lte and value.gte > value.lte then
+                    bounded = false
+                end
+                if not bounded then
                     return nil, ('invalid bound on %s in requirement %d of action %s'):format(
                         field, index, key)
                 end
                 where[field] = { gte = value.gte, lte = value.lte }
-            elseif scalar(value) then
-                where[field] = value
             else
-                return nil, ('invalid value for %s in requirement %d of action %s'):format(
-                    field, index, key)
+                local fits = (fieldType == 'string' and type(value) == 'string')
+                    or (fieldType == 'boolean' and type(value) == 'boolean')
+                    or (fieldType == 'integer' and math.type(value) == 'integer')
+                    or (fieldType == 'number' and type(value) == 'number' and value == value)
+                if not fits then
+                    return nil, ('invalid value for %s in requirement %d of action %s'):format(
+                        field, index, key)
+                end
+                where[field] = value
             end
         end
         local within = rule.within_s == nil and 600 or rule.within_s

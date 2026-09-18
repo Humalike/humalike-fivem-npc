@@ -69,7 +69,8 @@ function GetEntityCoords() return { x = 4, y = 5, z = 6 } end
 function GetPlayerName(playerId) return playerId == 7 and 'Tester' or nil end
 function GetPlayerRoutingBucket() return playerBucket end
 function DoesEntityExist(entity) return entity == 201 and staticEntityExists end
-function GetEntityType() return 1 end
+staticEntityIsPed = true
+function GetEntityType() return staticEntityIsPed and 1 or 2 end
 function IsPedAPlayer() return false end
 function GetEntityHealth() return 100 end
 function GetEntityRoutingBucket() return 2 end
@@ -321,6 +322,14 @@ local _, extra = give('map-5', { player_id = 7, note = 'x', item = 'gold', hacke
 assert(extra.ok == true and runCalls[#runCalls].params.hacked == nil)
 assert(runCalls[#runCalls].params.item == 'treasure_map', 'fixed values always win')
 assert(select(2, give('map-6', { player_id = 99, note = 'x' })).reason == 'invalid_action_player')
+-- Two different value sets are two different deeds, whatever the bytes.
+local _, forgedA = give('map-frame-1', { player_id = 7, note = 'x\0b=y' })
+local _, forgedB = give('map-frame-1', { player_id = 7, note = 'x', copies = 1 })
+assert(forgedA.ok == true and forgedB.reason == 'invocation_conflict')
+-- A stale static handle that now points at something else is no target.
+staticEntityIsPed = false
+assert(select(2, give('map-vehicle', { player_id = 7, note = 'x' })).reason == 'static_entity_unavailable')
+staticEntityIsPed = true
 -- The script may still refuse.
 runResult = false
 assert(select(2, give('map-7', { player_id = 7, note = 'x' })).reason == 'action_rejected')
