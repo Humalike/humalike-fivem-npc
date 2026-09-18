@@ -92,17 +92,19 @@ assert(math.type(event.fields.quantity) == 'integer')
 result = report('npc-pl', 7, 'item_given', with({ weight = 2.0 }), { react = false })
 assert(result.value.text == 'postać wręczyła ci 1 x amulet (2 kg)', result.value.text)
 assert(posted[2][2].react == false)
+result = report('npc-pl', 7, 'item_given', with({ weight = 1e20 }))
+assert(result.value.text == 'postać wręczyła ci 1 x amulet (100000000000000000000 kg)', result.value.text)
 
 -- A language with no template falls back to English, then to whatever exists.
 -- No declared fields: the key is omitted rather than sent as an empty table,
 -- which would encode as a JSON array and fail the contract.
 result = report('npc-en', 7, 'door_unlocked')
 assert(result.value.text == 'ktoś otworzył drzwi')
-assert(posted[3][2].fields == nil)
+assert(posted[4][2].fields == nil)
 
 -- A leased ambient body carries its lease token so the edge can authorize it.
 result = report('ambient-1', 7, 'item_given', full)
-assert(result.ok and posted[4][2].lease_token == 'lease-1')
-assert(posted[4][2].text:match('^postać'))
+assert(result.ok and posted[5][2].lease_token == 'lease-1')
+assert(posted[5][2].text:match('^postać'))
 
 print('observations: ok')

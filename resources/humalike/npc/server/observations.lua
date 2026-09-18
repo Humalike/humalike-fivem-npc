@@ -42,8 +42,10 @@ local function validatedFields(definition, raw)
     return fields
 end
 
+-- An integral float reads as an integer (2 kg, not 2.0 kg); `%.0f` rather
+-- than `%d` because a float past 2^63 has no integer representation.
 local function formatValue(value)
-    if math.type(value) == 'float' and value % 1 == 0 then return ('%d'):format(value) end
+    if math.type(value) == 'float' and value % 1 == 0 then return ('%.0f'):format(value) end
     return tostring(value)
 end
 
