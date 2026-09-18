@@ -273,6 +273,7 @@ function HumalikeFindAmbientLease(npcId)
                 entity_handle = entity,
                 routing_bucket = lease.routing_bucket,
                 lease_token = lease.lease_token,
+                language = lease.language,
             }
         end
     end

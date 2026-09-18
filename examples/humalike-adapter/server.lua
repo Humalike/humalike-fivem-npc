@@ -24,7 +24,38 @@ local function registerProviders()
             })
         end,
     })
+
+    -- Facts only this server knows. Declare them once; report each occurrence
+    -- from the hook that makes it true (see below).
+    exports.humalike:RegisterProvider('actions', {
+        name = 'example_actions',
+        apiVersion = 1,
+        priority = 100,
+        SupportedActions = {},
+        Namespace = 'example',
+        Observations = {
+            item_given = {
+                fields = { item = 'string', quantity = 'integer' },
+                template = {
+                    en = 'the character handed you {quantity} x {item}',
+                    pl = 'postać wręczyła ci {quantity} x {item}',
+                },
+            },
+        },
+    })
 end
+
+-- Replace with your inventory's "gave item to ped" event. Report only after
+-- the transfer really happened; the NPC treats this as fact.
+AddEventHandler('example:inventory:itemGivenToNpc', function(source, npcId, item, quantity)
+    local result = exports.humalike:ReportObservation(npcId, source, 'item_given', {
+        item = item,
+        quantity = quantity,
+    })
+    if not result.ok then
+        print(('example adapter: observation rejected (%s)'):format(result.error))
+    end
+end)
 
 AddEventHandler('onResourceStart', function(resource)
     if resource == GetCurrentResourceName() then registerProviders() end

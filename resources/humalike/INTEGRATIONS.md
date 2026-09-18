@@ -241,6 +241,55 @@ Server integrations can translate their own event bus with
 three badge events, and `hands_raised`/`hands_lowered`. HumaLike validates the
 payload and loaded character before forwarding it.
 
+## Server observations
+
+Facts only the server knows -- an item handed to an NPC, a door unlocked, a job
+finished -- are declared on the actions provider and reported per occurrence.
+The NPC reads the rendered line as a world event in its own language and can
+react to it; a player saying "I gave you the amulet" is talk, a reported
+observation is fact.
+
+```lua
+exports.humalike:RegisterProvider('actions', {
+    name = 'my_actions', apiVersion = 1, priority = 100,
+    SupportedActions = {},
+    Namespace = 'srp',
+    Observations = {
+        item_given = {
+            fields = { item = 'string', quantity = 'integer' },
+            template = {
+                en = 'the character handed you {quantity} x {item}',
+                pl = 'postać wręczyła ci {quantity} x {item}',
+            },
+        },
+    },
+})
+
+-- from your inventory hook, once the transfer is real:
+local result = exports.humalike:ReportObservation(npcId, source, 'item_given', {
+    item = 'amulet', quantity = 1,
+})
+```
+
+`Namespace` (`^[a-z][a-z0-9]{1,15}$`) prefixes every key on the wire
+(`srp:item_given`), so a server key never collides with a built-in event.
+Observation keys and field names match `^[a-z][a-z0-9_]{0,31}$`; up to 32
+observations with up to 8 fields each, typed `string` (≤ 64 characters),
+`integer`, `number` or `boolean`. Every declared field is required when
+reporting and unknown fields are rejected. `template` holds one line per NPC
+language (`en`, `pl`; ≤ 400 characters) whose `{placeholders}` name declared
+fields; an NPC whose language has no template reads the English one.
+`RunAction` is optional for a provider that implements no action.
+
+`ReportObservation(npcId, playerId, key, fields, options)` accepts a roster NPC
+(static, or external and bound) or an ambient body the server currently leases,
+and returns the export envelope: `value.key` and `value.text` on success, or an
+`error` code (`invalid_player`, `character_not_loaded`, `npc_not_found`,
+`unknown_observation`, `invalid_field:<name>`, `unknown_field:<name>`,
+`invalid_options`). `options.react = false` files the fact without a spoken
+reaction. With `humalike_developer_tools 1`, `/humalike_dev observe <npc_uuid>
+<key> [field=value ...]` reports one by hand.
+
 Client integrations can subscribe to
 `humalike:voice:transmittingChanged(active)` to update a custom HUD.
 

@@ -137,6 +137,72 @@ assert(HumalikeActions.Run('custom_action', 7, {}, {}))
 local supported = GetSupportedActions()
 assert(table.concat(supported, ',') == 'wave,give_item,custom_action')
 
+-- Declared observations: validated at registration, namespaced on the wire.
+local function observing(overrides)
+    local descriptor = {
+        name = 'observer', apiVersion = 1, priority = 50,
+        SupportedActions = {},
+        Namespace = 'srp',
+        Observations = {
+            item_given = {
+                fields = { item = 'string', quantity = 'integer' },
+                template = { en = 'the character handed you {quantity} x {item}' },
+            },
+        },
+    }
+    for key, value in pairs(overrides or {}) do descriptor[key] = value end
+    return exported.RegisterProvider('actions', descriptor)
+end
+ok, err = observing({ SupportedActions = { 'custom_action' } })
+assert(not ok and err == 'invalid RunAction')
+ok, err = observing({ Namespace = 'SRP' })
+assert(not ok and err == 'invalid Namespace')
+ok, err = exported.RegisterProvider('actions', {
+    name = 'observer', apiVersion = 1, priority = 50, SupportedActions = {},
+    Observations = { item_given = { template = { en = 'x' } } },
+})
+assert(not ok and err == 'missing Namespace')
+ok, err = observing({ Observations = 'item_given' })
+assert(not ok and err == 'invalid Observations')
+ok, err = observing({ Observations = { ['Item-Given'] = { template = { en = 'x' } } } })
+assert(not ok and err == 'invalid observation key')
+ok, err = observing({ Observations = { item_given = { template = { en = 'x' },
+    fields = { item = 'text' } } } })
+assert(not ok and err == 'invalid field item in observation item_given')
+ok, err = observing({ Observations = { item_given = { fields = {} } } })
+assert(not ok and err == 'missing template in observation item_given')
+ok, err = observing({ Observations = { item_given = { template = { de = 'x' } } } })
+assert(not ok and err == 'invalid template in observation item_given')
+ok, err = observing({ Observations = { item_given = { template = { en = 'got {item}' } } } })
+assert(not ok and err == 'unknown placeholder {item} in observation item_given')
+ok, err = observing({ Observations = { item_given = { template = { en = ('x'):rep(401) } } } })
+assert(not ok and err == 'invalid template in observation item_given')
+local tooMany = {}
+for index = 1, 33 do tooMany['fact_' .. index] = { template = { en = 'x' } } end
+ok, err = observing({ Observations = tooMany })
+assert(not ok and err == 'too many observations')
+local tooWide = {}
+for index = 1, 9 do tooWide['f' .. index] = 'string' end
+ok, err = observing({ Observations = { item_given = { fields = tooWide, template = { en = 'x' } } } })
+assert(not ok and err == 'too many fields in observation item_given')
+
+ok, err = observing({ priority = 100 })
+assert(ok, err)
+assert(HumalikeSelectedProvider('actions').name == 'observer')
+local wireKey, definition = HumalikeActions.Observation('item_given')
+assert(wireKey == 'srp:item_given' and definition.fields.quantity == 'integer')
+assert(definition.template.en == 'the character handed you {quantity} x {item}')
+assert(HumalikeActions.Observation('door_unlocked') == nil)
+assert(HumalikeActions.Observation(nil) == nil)
+-- An observation-only provider runs nothing.
+assert(not HumalikeActions.Run('custom_action', 7, {}, {}))
+assert(table.concat(GetSupportedActions(), ',') == 'wave,give_item')
+-- A provider that declares none still carries an empty table, never nil.
+assert(next(HumalikeProviders.registered.actions.custom_actions.Observations) == nil)
+assert(exported.UnregisterProvider('actions', 'observer'))
+assert(HumalikeActions.Observation('item_given') == nil)
+assert(HumalikeSelectedProvider('actions').name == 'custom_actions')
+
 owner = 'custom_two'
 ok, err = exported.RegisterProvider('player', {
     name = 'custom', apiVersion = 1, priority = 100,

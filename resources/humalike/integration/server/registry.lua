@@ -25,8 +25,15 @@ local DOMAINS = {
     },
     inventory = { required = { 'AddItem' } },
     dispatch = { required = { 'Report' } },
-    actions = { required = { 'RunAction' } },
+    -- RunAction is required only once the provider implements an action (see
+    -- validateDescriptor): an integration that only reports observations has
+    -- nothing to run.
+    actions = { required = {}, optional = { 'RunAction' } },
 }
+
+local OBSERVATION_LIMITS = { observations = 32, fields = 8, template = 400, description = 200 }
+local OBSERVATION_FIELD_TYPES = { string = true, integer = true, number = true, boolean = true }
+local OBSERVATION_LANGUAGES = { en = true, pl = true }
 
 for domain in pairs(DOMAINS) do HumalikeProviders.registered[domain] = {} end
 
@@ -192,10 +199,88 @@ local function validateDescriptor(domain, descriptor)
     if descriptor.Available ~= nil and not callable(descriptor.Available) then
         return false, 'invalid Available'
     end
-    if domain == 'actions' and type(descriptor.SupportedActions) ~= 'table' then
-        return false, 'missing SupportedActions'
+    if domain == 'actions' then
+        if type(descriptor.SupportedActions) ~= 'table' then
+            return false, 'missing SupportedActions'
+        end
+        if next(descriptor.SupportedActions) ~= nil and not callable(descriptor.RunAction) then
+            return false, 'invalid RunAction'
+        end
+        if descriptor.Namespace ~= nil and (type(descriptor.Namespace) ~= 'string'
+            or not descriptor.Namespace:match('^[a-z][a-z0-9]+$')
+            or #descriptor.Namespace > 16) then
+            return false, 'invalid Namespace'
+        end
+        if descriptor.Observations ~= nil then
+            if type(descriptor.Observations) ~= 'table' then return false, 'invalid Observations' end
+            if next(descriptor.Observations) ~= nil and not descriptor.Namespace then
+                return false, 'missing Namespace'
+            end
+        end
     end
     return true
+end
+
+local function cleanTemplate(value, maxLength)
+    if type(value) ~= 'string' or value:find('%c') then return nil end
+    value = value:match('^%s*(.-)%s*$')
+    local length = utf8.len(value)
+    if value == '' or not length or length > maxLength then return nil end
+    return value
+end
+
+-- A declared observation: the fields the script will report and the line the
+-- NPC reads, per language. Validated here, at RegisterProvider, so a typo
+-- surfaces in the integration's own console instead of as a silent drop later.
+local function normalizedObservation(key, definition)
+    if type(key) ~= 'string' or not key:match('^[a-z][a-z0-9_]*$') or #key > 32 then
+        return nil, 'invalid observation key'
+    end
+    if type(definition) ~= 'table' then return nil, ('invalid observation %s'):format(key) end
+    local fields, fieldCount = {}, 0
+    for name, fieldType in pairs(definition.fields or {}) do
+        if type(name) ~= 'string' or not name:match('^[a-z][a-z0-9_]*$') or #name > 32
+            or not OBSERVATION_FIELD_TYPES[fieldType] then
+            return nil, ('invalid field %s in observation %s'):format(tostring(name), key)
+        end
+        fields[name] = fieldType
+        fieldCount = fieldCount + 1
+        if fieldCount > OBSERVATION_LIMITS.fields then
+            return nil, ('too many fields in observation %s'):format(key)
+        end
+    end
+    if type(definition.template) ~= 'table' or next(definition.template) == nil then
+        return nil, ('missing template in observation %s'):format(key)
+    end
+    local template = {}
+    for language, text in pairs(definition.template) do
+        text = OBSERVATION_LANGUAGES[language] and cleanTemplate(text, OBSERVATION_LIMITS.template)
+        if not text then return nil, ('invalid template in observation %s'):format(key) end
+        for placeholder in text:gmatch('{([^{}]*)}') do
+            if not fields[placeholder] then
+                return nil, ('unknown placeholder {%s} in observation %s'):format(placeholder, key)
+            end
+        end
+        template[language] = text
+    end
+    local description = definition.description
+    if description ~= nil
+        and not cleanTemplate(description, OBSERVATION_LIMITS.description) then
+        return nil, ('invalid description in observation %s'):format(key)
+    end
+    return { fields = fields, template = template, description = description }
+end
+
+local function normalizedObservations(descriptor)
+    local observations, count = {}, 0
+    for key, definition in pairs(descriptor.Observations or {}) do
+        local observation, err = normalizedObservation(key, definition)
+        if not observation then return nil, err end
+        observations[key] = observation
+        count = count + 1
+        if count > OBSERVATION_LIMITS.observations then return nil, 'too many observations' end
+    end
+    return observations
 end
 
 local function normalizedActions(descriptor)
@@ -226,6 +311,8 @@ local function register(domain, descriptor, owner)
     if domain == 'actions' then
         provider.SupportedActions, err = normalizedActions(descriptor)
         if not provider.SupportedActions then return false, err end
+        provider.Observations, err = normalizedObservations(descriptor)
+        if not provider.Observations then return false, err end
     end
     provider.ownerResource = owner
     provider.priority = descriptor.priority

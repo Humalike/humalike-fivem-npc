@@ -147,3 +147,36 @@ assert(#actions == actionCount)
 aceAllowed = false
 command(7, { 'ambient', 'list' })
 assert(#actions == actionCount)
+
+-- observe: typed from the declaration, replies with the rendered line or the
+-- export's rejection code.
+aceAllowed = true
+local reported = {}
+HumalikeActions = {
+    Observation = function(key)
+        if key ~= 'item_given' then return nil end
+        return 'srp:item_given', { fields = { item = 'string', quantity = 'integer', stolen = 'boolean' } }
+    end,
+}
+function HumalikeReportObservation(npcId, playerId, key, fields)
+    reported[#reported + 1] = { npcId = npcId, playerId = playerId, key = key, fields = fields }
+    if fields.item == nil then return { ok = false, error = 'invalid_field:item' } end
+    return { ok = true, value = { key = 'srp:' .. key, text = 'handed you ' .. fields.item } }
+end
+local function lastReply()
+    local event = clientEvents[#clientEvents]
+    return event[1] == 'humalike:npc:developerReply' and event[3] or nil
+end
+
+command(7, { 'observe', 'not-a-uuid', 'item_given' })
+assert(#reported == 0 and lastReply() == '[humalike-dev] a canonical NPC UUID is required')
+command(7, { 'observe', npcId, 'door_unlocked' })
+assert(#reported == 0 and lastReply() == '[humalike-dev] unknown observation door_unlocked')
+command(7, { 'observe', npcId, 'item_given', 'item=amulet', 'quantity=2', 'stolen=true' })
+assert(reported[1].npcId == npcId and reported[1].playerId == 7 and reported[1].key == 'item_given')
+assert(reported[1].fields.item == 'amulet' and reported[1].fields.quantity == 2
+    and reported[1].fields.stolen == true)
+assert(lastReply() == '[humalike-dev] reported srp:item_given: handed you amulet', lastReply())
+command(7, { 'observe', npcId, 'item_given', 'quantity=2' })
+assert(lastReply() == '[humalike-dev] observation rejected: invalid_field:item')
+print('developer_tools_server (observe): ok')

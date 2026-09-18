@@ -23,7 +23,7 @@ local function send(observation, delay, attempt)
     end)
 end
 
-local function post(playerId, event)
+function HumalikePostPlayerEvent(playerId, event)
     send({
         fivem_session_id = playerId,
         source_event_id = HumalikeHttp.NextSourceEventId(playerId),
@@ -72,7 +72,7 @@ function HumalikeReportPlayerEvent(playerId, rawEvent)
         or not HumalikePlayer.IsCharacterLoaded(playerId) then return false end
     local event = validatedEvent(rawEvent)
     if not event then return false end
-    post(playerId, event)
+    HumalikePostPlayerEvent(playerId, event)
     return true
 end
 
