@@ -222,7 +222,16 @@ local giveMap = {
           consume = true },
     },
     locked_hint = { en = 'Only once the amulet is in your hands.' },
+    limit = { per_player = 1, every_s = 86400, hint = { en = 'One a day.' } },
 }
+ok, err = acting({ name = 'n', description = 'd', limit = 3 })
+assert(not ok and err == 'invalid limit in action give_map')
+ok, err = acting({ name = 'n', description = 'd', limit = { per_player = 0, every_s = 60 } })
+assert(not ok and err == 'invalid limit in action give_map')
+ok, err = acting({ name = 'n', description = 'd', limit = { per_player = 1, every_s = 1.5 } })
+assert(not ok and err == 'invalid limit in action give_map')
+ok, err = acting({ name = 'n', description = 'd', limit = { per_player = 1, every_s = 60, hint = { de = 'x' } } })
+assert(not ok and err == 'invalid limit hint in action give_map')
 ok, err = acting(giveMap, { RunAction = false })
 assert(not ok and err == 'invalid RunAction', tostring(err))
 ok, err = exported.RegisterProvider('actions', {
@@ -302,6 +311,8 @@ assert(declaredActions[1].preconditions[1].where.quantity.gte == 500)
 assert(declaredActions[1].preconditions[1].consume == true)
 assert(declaredActions[1].locked_hint.en == 'Only once the amulet is in your hands.')
 assert(declaredActions[1].fixed == nil, 'fixed values never leave the box')
+assert(declaredActions[1].limit.per_player == 1 and declaredActions[1].limit.every_s == 86400)
+assert(declaredActions[1].limit.hint.en == 'One a day.')
 assert(#declaredObservations == 1 and declaredObservations[1].key == 'srp:item_given')
 assert(declaredObservations[1].fields.quantity == 'integer')
 assert(exported.UnregisterProvider('actions', 'observer'))

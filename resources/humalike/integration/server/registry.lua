@@ -311,7 +311,7 @@ local function normalizedAction(key, definition, observations)
     if not description or description:find('[%[%]]') then
         return nil, ('invalid description in action %s'):format(key)
     end
-    for _, collection in ipairs({ 'params', 'fixed', 'requires', 'locked_hint' }) do
+    for _, collection in ipairs({ 'params', 'fixed', 'requires', 'locked_hint', 'limit' }) do
         if definition[collection] ~= nil and type(definition[collection]) ~= 'table' then
             return nil, ('invalid %s in action %s'):format(collection, key)
         end
@@ -420,6 +420,26 @@ local function normalizedAction(key, definition, observations)
             consume = rule.consume == true,
         }
     end
+    local limit
+    if definition.limit ~= nil then
+        local per, every = definition.limit.per_player, definition.limit.every_s
+        if math.type(per) ~= 'integer' or per < 1 or per > 1000
+            or math.type(every) ~= 'integer' or every < 1 or every > 604800 then
+            return nil, ('invalid limit in action %s'):format(key)
+        end
+        limit = { per_player = per, every_s = every }
+        if definition.limit.hint ~= nil then
+            if type(definition.limit.hint) ~= 'table' or next(definition.limit.hint) == nil then
+                return nil, ('invalid limit hint in action %s'):format(key)
+            end
+            limit.hint = {}
+            for language, text in pairs(definition.limit.hint) do
+                text = OBSERVATION_LANGUAGES[language] and cleanTemplate(text, ACTION_LIMITS.hint)
+                if not text then return nil, ('invalid limit hint in action %s'):format(key) end
+                limit.hint[language] = text
+            end
+        end
+    end
     local hint
     if definition.locked_hint ~= nil then
         if type(definition.locked_hint) ~= 'table' or next(definition.locked_hint) == nil then
@@ -434,7 +454,7 @@ local function normalizedAction(key, definition, observations)
     end
     return {
         name = name, description = description, params = params, fixed = fixed,
-        requires = requires, locked_hint = hint,
+        requires = requires, locked_hint = hint, limit = limit,
     }
 end
 

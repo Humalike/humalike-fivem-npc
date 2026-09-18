@@ -341,7 +341,10 @@ must have been reported for this NPC and the player it is answering, matching
 (5–3600, default 600) seconds;
 `consume` spends the fact once the deed is done, so one amulet buys one map.
 `locked_hint` is what the NPC is told, per language, while a requirement is
-unmet; a player saying it happened never unlocks anything.
+unmet; a player saying it happened never unlocks anything. `limit = {
+per_player = 1, every_s = 86400, hint = { en = '...' } }` caps how often one
+player may get the deed (counted from the deeds HumaLike recorded, so chat
+cannot reset it); no limit unless declared.
 
 Admins enable a declared action per NPC in the dashboard like any other. The
 resource re-declares everything on every `report_capabilities`, so a changed
