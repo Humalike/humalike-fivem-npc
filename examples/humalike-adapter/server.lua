@@ -1,3 +1,9 @@
+-- Stand-in for the server's inventory: wire `exports.ox_inventory:AddItem`
+-- (or your own) here and return true only when the item was handed over.
+local function giveItem(_source, _item, _count)
+    return false
+end
+
 local function registerProviders()
     exports.humalike:RegisterProvider('player', {
         name = 'example_player',
@@ -63,11 +69,16 @@ local function registerProviders()
         },
         RunAction = function(action, source, _npcCoords, params)
             if action == 'give_map' then
-                -- Replace with your inventory: params.item is the fixed value above.
-                TriggerClientEvent('chat:addMessage', source, {
-                    args = { 'HumaLike', ('You received: %s'):format(params.item) },
-                })
-                return true
+                -- Replace with your inventory's "give item" call; params.item is
+                -- the fixed value above. Return true only once the item really
+                -- moved: the NPC treats the return value as what happened.
+                local given = giveItem(source, params.item, 1)
+                if given then
+                    TriggerClientEvent('chat:addMessage', source, {
+                        args = { 'HumaLike', ('You received: %s'):format(params.item) },
+                    })
+                end
+                return given == true
             end
             if action == 'hand_over_money' then
                 -- Replace with your economy's "give cash to player" call and
