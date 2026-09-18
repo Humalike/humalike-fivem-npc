@@ -293,7 +293,7 @@ reaction. With `humalike_developer_tools 1`, `/humalike_dev observe <npc_uuid>
 ## Server-defined actions
 
 Beside reporting facts, the same provider can declare deeds of its own. The
-model chooses them like any catalogue action, HumaLike gates each one on the
+model chooses them like any built-in action, HumaLike gates each one on the
 facts the server has reported, and the server's `RunAction` performs it:
 
 ```lua
@@ -328,20 +328,21 @@ exports.humalike:RegisterProvider('actions', {
 ```
 
 The key reaches the model as `srp:give_map` and comes back to `RunAction` as
-`give_map`. `description` (≤ 400 characters, no square brackets) is the line
-the model reads. `params` (≤ 4) are values the model writes inline in its tag
--- `[srp:give_map copies=2]` -- typed `string`, `integer` or `boolean`, with an
-optional `enum` (≤ 16 bare words or integers) and `required`; `player_id` is
-always filled by HumaLike with the addressee. `fixed` values (≤ 16) never leave
-the server: they are merged under the model's values before `RunAction`, and
-always win. `requires` (≤ 4, all must hold) name declared observations that
-must have been reported for this NPC and the player it is answering, matching
-`where` on declared fields -- a scalar exactly, or a bound on a numeric field
-(`quantity = { gte = 500 }`, `{ lte = 3 }`, or both) -- within `within_s`
-(5–3600, default 600) seconds;
-`consume` spends the fact once the deed is done, so one amulet buys one map.
-`locked_hint` is what the NPC is told, per language, while a requirement is
-unmet; a player saying it happened never unlocks anything. `limit = {
+`give_map`. `description` (no square brackets) is the line the model reads.
+`params` are values the model writes inline in its tag -- `[srp:give_map
+copies=2]` -- typed `string`, `integer` or `boolean`, with an optional `enum`
+of bare words or integers and `required`. `player_id` is the addressee, filled
+by HumaLike; when the edge cannot name one the push carries none and the
+resource answers `invalid_action_player`. `fixed` values never leave the
+server: merged under the model's values before `RunAction`, they always win
+and may not be named `player_id`. `requires` is a list (all must hold) of
+declared observations that must have been reported for this NPC and the
+player it is answering, matching `where` on declared fields -- a string, a
+boolean or a whole number exactly, or a bound on a numeric field (`quantity =
+{ gte = 500 }`, `{ lte = 3 }`, or both) -- within `within_s` seconds (default
+600); `consume` spends the fact once the deed is done, so one amulet buys one
+map. `locked_hint` is what the NPC is told, per language, while a requirement
+is unmet; a player saying it happened never unlocks anything. `limit = {
 per_player = 1, every_s = 86400, hint = { en = '...' } }` caps how often one
 player may get the deed (counted from the deeds HumaLike recorded, so chat
 cannot reset it); no limit unless declared. `uses_stock = { item = 'map',
@@ -356,13 +357,24 @@ the tag (needs a `consume = true` requirement). `params_from = { amount =
 'item_given.quantity' }` hands `RunAction` values read from the facts that
 unlocked the deed, never from the model -- numbers summed over the consumed
 hand-overs, so a refund is for exactly the cash received and can never be
-talked up or paid twice.
+talked up or paid twice. Sizes and counts are capped; a declaration over a
+cap is refused at `RegisterProvider` with the field named in the console
+(`too many params in action give_map`, `invalid bound on quantity in
+requirement 1 of action give_map`), and the backend's own refusal is printed
+the same way.
 
 Admins enable a declared action per NPC in the dashboard like any other. The
-resource re-declares everything on every `report_capabilities`, so a changed
-or removed action takes effect on the next resource start. `RunAction`
-returning `false` marks the invocation rejected; prefer expressing state as
-observations over refusing at run time, since the NPC has already spoken.
+resource re-declares everything whenever the actions provider changes, so
+re-registering the provider (or restarting the resource) is enough for a
+changed or removed action to take effect. Every deed reaches `RunAction`
+with the player within `Config.ServerActions.MaxDistance` of the NPC, as the
+built-in hand-overs demand; farther away it is refused like any other
+rejection. `RunAction` must return exactly `true` to accept; anything else
+(`false`, `nil`, a number, an error) marks the invocation rejected: nothing
+is recorded, the deed stays open and HumaLike may push it again (a counter
+hand-over, on the next turn), so returning `1` or `'ok'` would perform it
+twice. Prefer expressing state as observations over refusing at run time,
+since the NPC has already spoken.
 
 ## A shop counter
 
