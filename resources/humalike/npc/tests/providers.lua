@@ -10,7 +10,6 @@ Config = {
     SupportedActions = { 'wave' },
 }
 
--- The console: a refused descriptor is printed for its author.
 local printed, consolePrint = {}, print
 function print(line) printed[#printed + 1] = line end
 function GetCurrentResourceName() return 'humalike' end
@@ -228,8 +227,6 @@ for index = 1, 9 do tooWide['f' .. index] = 'string' end
 ok, err = observing({ Observations = { item_given = { fields = tooWide, template = { en = 'x' } } } })
 assert(not ok and err == 'too many fields in observation item_given')
 
--- Declared actions: validated against the declared observations, reported
--- namespaced beside the built-in keys.
 local function acting(action, overrides)
     local descriptor = {
         name = 'observer', apiVersion = 1, priority = 50,
@@ -322,7 +319,6 @@ ok, err = acting({ name = 'n', description = 'd', params = 'copies' })
 assert(not ok and err == 'invalid params in action give_map')
 ok, err = acting({ name = 'n', description = 'd', requires = true })
 assert(not ok and err == 'invalid requires in action give_map')
--- A map or a hole would walk as fewer rules than written: an ungated deed.
 ok, err = acting({ name = 'n', description = 'd',
     requires = { amulet = { observation = 'item_given' } } })
 assert(not ok and err == 'requires must be a list in action give_map', tostring(err))
@@ -332,7 +328,6 @@ assert(not ok and err == 'requires must be a list in action give_map', tostring(
 ok, err = acting({ name = 'n', description = 'd',
     params = { copies = { type = 'integer', enum = { one = 1 } } } })
 assert(not ok and err == 'invalid enum for copies in action give_map')
--- The backend's caps and number rules, refused here with the field named.
 local wideObservation = { fields = { a = 'integer', b = 'integer', c = 'integer', d = 'integer', e = 'integer' },
                           template = { en = 'x' } }
 ok, err = acting({ name = 'n', description = 'd',
@@ -355,9 +350,6 @@ ok, err = acting({ name = 'n', description = 'd',
 assert(ok, err)
 assert(math.type(HumalikeSelectedProvider('actions').Actions.give_map.requires[1].where.quantity) == 'integer')
 assert(exported.UnregisterProvider('actions', 'observer'))
--- Past 2^53 an integral float has no integer to become and would go out as
--- 1e+19: refused, exact match and bound alike, at the bound observations
--- report under.
 ok, err = acting({ name = 'n', description = 'd',
     requires = { { observation = 'item_given', where = { quantity = 2 ^ 63 } } } })
 assert(not ok and err == 'invalid value for quantity in requirement 1 of action give_map', tostring(err))
@@ -383,8 +375,6 @@ ok, err = acting({ name = 'n', description = 'd',
     requires = { { observation = 'item_given', where = { quantity = { gte = -(2 ^ 53), lte = 2 ^ 53 } } } } })
 assert(ok, err)
 assert(exported.UnregisterProvider('actions', 'observer'))
--- A bound on an integer field is a whole number, stored as one, like an
--- exact match; on a number field a fraction is a fraction.
 for _, fractional in ipairs({ { gte = 1.5 }, { lte = 0.5 }, { sum_gte = 2.5 } }) do
     ok, err = acting({ name = 'n', description = 'd',
         requires = { { observation = 'item_given', where = { quantity = fractional } } } })
@@ -475,8 +465,6 @@ assert(#declaredObservations == 1 and declaredObservations[1].key == 'srp:item_g
 assert(declaredObservations[1].fields.quantity == 'integer')
 assert(exported.UnregisterProvider('actions', 'observer'))
 
--- The backend's report takes 32 actions in all: a 33rd is refused at
--- registration rather than as a whole report refused later.
 local function manyActions(count)
     local actions = {}
     for index = 1, count do

@@ -289,17 +289,13 @@ local function finite(value)
         and value ~= math.huge and value ~= -math.huge
 end
 
--- A number in a `where`: within the magnitude the backend takes for a
--- reported numeric field (2^53, the same bound observations report under),
--- so an integral float past it is never sent as 1e+19. Two comparisons
--- rather than math.abs: math.abs(math.mininteger) wraps to itself.
+-- Same bound as observations; not math.abs, which wraps on math.mininteger.
 local WHERE_NUMBER_LIMIT = 2 ^ 53
 local function bounded(value)
     return finite(value) and value >= -WHERE_NUMBER_LIMIT and value <= WHERE_NUMBER_LIMIT
 end
 
--- { a, b, c } and nothing else: a map or a hole would be walked as fewer
--- entries than the author wrote, or none.
+-- ipairs would silently stop at a hole.
 local function sequence(value)
     local count = 0
     for _ in pairs(value) do count = count + 1 end
@@ -307,10 +303,6 @@ local function sequence(value)
     return true
 end
 
--- A server-defined action: what the model reads, what it may fill in, what
--- the script fixes, and which reported facts must precede it. Mirrors the
--- backend contract so a mistake is refused here, at RegisterProvider, in the
--- integration's own console.
 local function normalizedAction(key, definition, observations)
     if type(key) ~= 'string' or not key:match('^[a-z][a-z0-9_]*$') or #key > 32 then
         return nil, 'invalid action key'
@@ -406,10 +398,7 @@ local function normalizedAction(key, definition, observations)
             end
             local numeric = fieldType == 'integer' or fieldType == 'number'
             if type(value) == 'table' then
-                -- A bound on a numeric field: { gte = 500 }, { lte = 3 }, both, or
-                -- { sum_gte = 2 } added up across hand-overs. On an integer
-                -- field the limit is a whole number, stored as one, like an
-                -- exact match: the backend takes no fraction there.
+                -- { gte = n }, { lte = n } or { sum_gte = n }.
                 local valid = numeric and next(value) ~= nil
                 for bound, limit in pairs(value) do
                     if (bound ~= 'gte' and bound ~= 'lte' and bound ~= 'sum_gte')
@@ -435,8 +424,6 @@ local function normalizedAction(key, definition, observations)
                     sum_gte = value.sum_gte and whole(value.sum_gte),
                 }
             else
-                -- An exact match on a numeric field is a whole number: the
-                -- backend takes no fraction there.
                 local fits = (fieldType == 'string' and type(value) == 'string')
                     or (fieldType == 'boolean' and type(value) == 'boolean')
                     or (numeric and bounded(value) and value % 1 == 0)
@@ -485,8 +472,7 @@ local function normalizedAction(key, definition, observations)
     if definition.auto == true and not spends then
         return nil, ('auto action %s needs a requirement with consume = true'):format(key)
     end
-    -- Values the deed takes from the facts that unlocked it, never from the
-    -- model: { amount = 'item_given.quantity' }.
+    -- { amount = 'item_given.quantity' }
     local paramsFrom, paramsFromCount = {}, 0
     for name, source in pairs(definition.params_from or {}) do
         paramsFromCount = paramsFromCount + 1
@@ -528,8 +514,6 @@ local function normalizedAction(key, definition, observations)
     }
 end
 
--- The backend's report takes ACTION_LIMITS.actions in all, so one more is
--- refused here, by name, rather than as a whole report refused later.
 local function normalizedActions(descriptor, observations)
     local actions, count = {}, 0
     for key, definition in pairs(descriptor.Actions or {}) do

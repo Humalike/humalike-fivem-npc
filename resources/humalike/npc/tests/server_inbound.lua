@@ -32,13 +32,11 @@ function exports() end
 HumalikeInventory = { Available = function() return true end }
 local characterLoaded = true
 HumalikePlayer = { IsCharacterLoaded = function(playerId) return characterLoaded end }
--- The dedupe cache's clock, so a test can move past its TTL.
 local clock, osTime = 1000000, os.time
 os.time = function(...) if ... then return osTime(...) end return clock end
 dofile('../server/core/text.lua')
 dofile('../integration/server/registry.lua')
 dofile('../integration/server/actions.lua')
--- The real actions provider: a declared deed, run by RunAction.
 local runCalls, runResult = {}, true
 local provider = {
     name = 'srp_actions', apiVersion = 1, priority = 10, SupportedActions = {}, Namespace = 'srp',
@@ -318,9 +316,6 @@ assert(handOverCalls == 4)
 assert(#clientEvents == ceAmbient + 1)
 assert(clientEvents[#clientEvents].name == 'humalike:npc:playAmbientAction')
 
--- A server-defined action: the model's values checked against the
--- declaration, the script's fixed values under them, one RunAction per
--- invocation id, and never the client animation path.
 local ceCustom = #clientEvents
 local function give(invocationId, params, target)
     return request({
@@ -340,11 +335,8 @@ assert(runCalls[1].coords.x == 4)
 assert(runCalls[1].params.player_id == 7 and runCalls[1].params.copies == 2)
 assert(runCalls[1].params.note == 'here' and runCalls[1].params.item == 'treasure_map')
 assert(#clientEvents == ceCustom, 'no client animation for a server-defined action')
--- At-least-once delivery: the same invocation runs once.
 assert(select(2, give('map-1', { player_id = 7, copies = 2, note = 'here', paid = 50 })).ok == true)
 assert(#runCalls == 1)
--- Declared shape or nothing: a wrong enum value, a wrong type, a missing
--- required value, and a value the script never declared.
 assert(select(2, give('map-2', { player_id = 7, copies = 3, note = 'x', paid = 50 })).reason == 'invalid_param:copies')
 assert(select(2, give('map-3', { player_id = 7, copies = '2', note = 'x', paid = 50 })).reason == 'invalid_param:copies')
 assert(select(2, give('map-4', { player_id = 7, paid = 50 })).reason == 'missing_param:note')
@@ -352,22 +344,18 @@ local _, extra = give('map-5', { player_id = 7, note = 'x', item = 'gold', hacke
 assert(extra.ok == true and runCalls[#runCalls].params.hacked == nil)
 assert(runCalls[#runCalls].params.item == 'treasure_map', 'fixed values always win')
 assert(select(2, give('map-6', { player_id = 99, note = 'x', paid = 50 })).reason == 'invalid_action_player')
--- Online but between characters: no deed, like the built-in hand-overs.
 characterLoaded = false
 local runsLoaded = #runCalls
 assert(select(2, give('map-unloaded', { player_id = 7, note = 'x', paid = 50 })).reason == 'character_not_loaded')
 assert(#runCalls == runsLoaded, 'no RunAction for a player without a character')
 characterLoaded = true
--- A stale static handle that now points at something else is no target.
 staticEntityIsPed = false
 assert(select(2, give('map-vehicle', { player_id = 7, note = 'x', paid = 50 })).reason == 'static_entity_unavailable')
 staticEntityIsPed = true
--- Out of arm's reach, like the built-in hand-overs.
 playerDistance = 5.5
 assert(select(2, give('map-far', { player_id = 7, note = 'x', paid = 50 })).reason == 'action_player_out_of_reach')
 playerDistance = 0
--- The script may still refuse; a refusal is retried under the same id, and
--- only exactly `true` is a deed done: a throw, a 1, a nil all reject.
+-- Only exactly true accepts; a refusal is retried under the same id.
 local map7 = { player_id = 7, note = 'x', paid = 50 }
 runResult = false
 assert(select(2, give('map-7', map7)).reason == 'action_rejected')
@@ -390,16 +378,13 @@ runResult = true
 assert(select(2, give('map-7', map7)).ok == true)
 assert(select(2, give('map-7', map7)).ok == true and #runCalls == runsBefore + 6,
     'once done, the id is remembered')
--- The edge may re-push the same id long after (a requirement window of up
--- to an hour, a player who frees inventory later): still answered from the
--- cache.
+-- Re-pushed long after: still answered from the cache.
 clock = clock + 3601
 assert(select(2, give('map-7', map7)).ok == true and #runCalls == runsBefore + 6,
     'a done id is remembered past the longest backend window')
 clock = clock + 6 * 3600
 local retired = give('map-7', map7)
 assert(retired == 200 and #runCalls == runsBefore + 7, 'past the TTL the id is forgotten')
--- An ambient body needs its live lease like any other deed.
 assert(select(2, give('map-8', { player_id = 7, note = 'x', paid = 50 }, {
     kind = 'ambient', npc_id = 'ambient-1', entity_id = 101, routing_bucket = 2,
     lease_token = 'stale',
@@ -409,7 +394,6 @@ assert(select(2, give('map-9', { player_id = 7, note = 'x', paid = 50 }, {
     lease_token = 'lease-token',
 })).ok == true)
 
--- No provider, no deed.
 assert(HumalikeProviders.registered.actions.srp_actions)
 HumalikeProviders.registered.actions.srp_actions = nil
 HumalikeProviders.selected.actions = nil

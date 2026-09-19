@@ -1,5 +1,3 @@
--- DescribeFailure reads external response data: anything not shaped as a
--- list of {field, message} tables is ignored, never an error.
 HumalikeHttp = HumalikeHttp or {}
 dofile('server/http.lua')
 
@@ -10,4 +8,4 @@ assert(describe(400, { error = { code = 'VALIDATION_ERROR', details = {
 assert(describe(400, { error = { code = 'X', details = 'not a list' } }) == 'HTTP 400 X')
 assert(describe(500, nil) == 'HTTP 500')
 assert(describe(422, { error = 'string' }) == 'HTTP 422')
-print('http_describe_failure ok')
+print('http_describe_failure: ok')

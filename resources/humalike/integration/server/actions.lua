@@ -7,7 +7,6 @@ function HumalikeActions.Supported()
     for _, action in ipairs(provider.SupportedActions or {}) do
         result[#result + 1] = action
     end
-    -- The server's own actions, namespaced, in a stable order.
     local custom = {}
     for key in pairs(provider.Actions or {}) do custom[#custom + 1] = key end
     table.sort(custom)
@@ -15,8 +14,6 @@ function HumalikeActions.Supported()
     return result
 end
 
--- The local key and definition behind a namespaced action key the backend
--- pushes, or nil for a built-in action.
 function HumalikeActions.Custom(wireKey)
     local provider = HumalikeSelectedProvider('actions')
     if not provider or not provider.Namespace or type(wireKey) ~= 'string' then return nil end
@@ -26,16 +23,13 @@ function HumalikeActions.Custom(wireKey)
     return key, definition
 end
 
--- nil for an empty table: it would encode as a JSON array where the backend
--- expects an object, and every such field defaults there anyway.
+-- An empty table encodes as [].
 local function mapOrNil(value)
     if next(value) == nil then return nil end
     return value
 end
 
--- What report_capabilities sends beside the keys: the server's declarations
--- in the backend's wire shape. Fixed params stay here -- the model never
--- sees them and the backend has no use for them.
+-- Fixed params are not reported.
 function HumalikeActions.Declarations()
     local provider = HumalikeSelectedProvider('actions')
     local actions, observations = {}, {}
@@ -76,8 +70,6 @@ function HumalikeActions.Declarations()
     return actions, observations
 end
 
--- The wire key and definition of a declared observation, or nil when the
--- selected provider declares no such thing.
 function HumalikeActions.Observation(key)
     local provider = HumalikeSelectedProvider('actions')
     local definition = provider and type(key) == 'string' and provider.Observations[key] or nil
@@ -85,9 +77,7 @@ function HumalikeActions.Observation(key)
     return provider.Namespace .. ':' .. key, definition
 end
 
--- Exactly `true` is a deed done; anything else is a refusal, and a refused
--- deed is pushed again, so a `1` or an `'ok'` would be performed twice.
--- Said once, the first time it happens.
+-- A refused action is pushed again, so a truthy non-boolean would run twice.
 local warnedReturn = false
 function HumalikeActions.Run(action, source, coords, params)
     local ok, value = HumalikeProviderCall(

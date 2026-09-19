@@ -7,7 +7,6 @@ local SERVER_ACTION_ANIMATIONS = {
     hand_over_money = true,
 }
 
--- A static NPC's live body, or why there is none.
 local function staticEntity(npcId)
     local npc = NpcRegistry[npcId]
     if not npc then return nil, 'unknown_static_npc' end
@@ -18,9 +17,6 @@ local function staticEntity(npcId)
     return entity
 end
 
--- The addressee of a server-run deed: named by HumaLike, online, with a
--- character loaded (the built-in hand-overs demand one), in the body's
--- routing bucket.
 local function actionPlayer(params, bucket)
     local playerId = params and params.player_id
     if type(playerId) ~= 'number' or playerId % 1 ~= 0 or playerId < 1
@@ -89,12 +85,9 @@ local function dispatchAmbientAction(target, actionKey, params)
     return true
 end
 
--- A server-defined action: the values the model filled in, checked against
--- the declaration, under the script's own fixed values, to the provider's
--- RunAction. The built-in paths above never see a namespaced key.
+-- Fixed values win over pushed params.
 local function customParams(definition, params)
     local merged = { player_id = params.player_id }
-    -- Values HumaLike read from the reported facts: scalar, as reported.
     for name in pairs(definition.params_from or {}) do
         local value = params[name]
         if value == nil or not (type(value) == 'string' or type(value) == 'number'
@@ -125,7 +118,6 @@ local function customParams(definition, params)
     return merged
 end
 
--- Within arm's reach of the body, as the built-in hand-overs demand.
 local function withinReach(playerId, npcCoords)
     local ped = GetPlayerPed(playerId)
     if not ped or ped == 0 or not DoesEntityExist(ped) then return false end
@@ -160,14 +152,8 @@ local function dispatchCustomAction(target, localKey, definition, params)
     return true
 end
 
--- State-changing callbacks are at-least-once and an invocation id names the
--- deed, not the attempt: the edge re-pushes a refused deed under the same id
--- until it lands (a requirement or limit window of up to 3600 s, a player
--- who frees inventory much later), so an accepted id must answer true
--- without running RunAction again. Only a done
--- deed is remembered; a refusal is answered afresh on every attempt. The TTL
--- outlasts the longest backend window several times over; the cap is a
--- memory guard that evicts the soonest-to-expire only once it is exceeded.
+-- State-changing callbacks are at-least-once, so deduplicate by invocation ID.
+-- Only delivered ones are kept: a refusal is re-pushed under the same ID for up to an hour.
 local completedInvocations = {}
 local MAX_COMPLETED_INVOCATIONS = 4096
 local INVOCATION_TTL_SECONDS = 6 * 3600

@@ -54,8 +54,7 @@ assert(responseStatus == 401 and responseSent == 1,
     'callback authorization must be rechecked after asynchronous body collection')
 assert(handlerCalls == 0, 'a callback crossing assignment replacement must not execute')
 
--- A request answered ok is answered from memory when it is asked again; a
--- refusal is not remembered, so the same request runs the handler again.
+-- Refusals are not remembered.
 activeToken = 'callback-one'
 local answer = { ok = false }
 HumaLike.RegisterCallback('/deed', function()
