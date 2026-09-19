@@ -44,7 +44,7 @@ function CreateThread() end
 function RegisterCommand() end
 function RegisterNetEvent() end
 function GetSupportedActions() return {} end
-HumalikeActions = { Declarations = function() return {}, {} end, Catalog = function() return nil end }
+HumalikeActions = { Declarations = function() return {}, {} end }
 function GetCurrentResourceName() return 'humalike' end
 function NetworkGetNetworkIdFromEntity() return 53 end
 function NetworkGetEntityOwner() return 7 end

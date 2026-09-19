@@ -76,15 +76,6 @@ function HumalikeActions.Declarations()
     return actions, observations
 end
 
--- The shop in the backend's wire shape, or nil.
-function HumalikeActions.Catalog()
-    local provider = HumalikeSelectedProvider('actions')
-    local catalog = provider and provider.Catalog or nil
-    if not catalog then return nil end
-    return { currency = catalog.currency, payment = provider.Namespace .. ':' .. catalog.payment,
-             items = catalog.items }
-end
-
 -- The wire key and definition of a declared observation, or nil when the
 -- selected provider declares no such thing.
 function HumalikeActions.Observation(key)

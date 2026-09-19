@@ -9,7 +9,6 @@ function HumalikeNpcReportCapabilities()
         features = features,
         actions = actions,
         observations = observations,
-        catalog = HumalikeActions.Catalog(),
     }, function(ok, status, body)
         if population then population.CapabilitiesReported(features, ok) end
         if ok then return end

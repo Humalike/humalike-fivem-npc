@@ -94,10 +94,6 @@ end
 -- RunAction. The built-in paths above never see a namespaced key.
 local function customParams(definition, params)
     local merged = { player_id = params.player_id }
-    -- The counter's values (a basket, a total, an amount): as HumaLike sent them.
-    for name in pairs(definition.passthrough or {}) do
-        if params[name] ~= nil then merged[name] = params[name] end
-    end
     -- Values HumaLike read from the reported facts: scalar, as reported.
     for name in pairs(definition.params_from or {}) do
         local value = params[name]
@@ -166,9 +162,9 @@ end
 
 -- State-changing callbacks are at-least-once and an invocation id names the
 -- deed, not the attempt: the edge re-pushes a refused deed under the same id
--- until it lands (a counter hand-over on every turn, an order or limit
--- window of up to 3600 s, a player who frees inventory much later), so an
--- accepted id must answer true without running RunAction again. Only a done
+-- until it lands (a requirement or limit window of up to 3600 s, a player
+-- who frees inventory much later), so an accepted id must answer true
+-- without running RunAction again. Only a done
 -- deed is remembered; a refusal is answered afresh on every attempt. The TTL
 -- outlasts the longest backend window several times over; the cap is a
 -- memory guard that evicts the soonest-to-expire only once it is exceeded.

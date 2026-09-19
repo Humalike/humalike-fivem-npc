@@ -141,7 +141,7 @@ function HumalikeFindAmbientLease() return lease end
 function TriggerEvent() end
 function SyncNpcRoster() end
 function GetSupportedActions() return { 'wave' } end
-HumalikeActions = { Declarations = function() return {}, {} end, Catalog = function() return nil end }
+HumalikeActions = { Declarations = function() return {}, {} end }
 function RegisterCommand() end
 function print() end
 HumaLike = { RuntimeCredentials = function() return credentials end }
