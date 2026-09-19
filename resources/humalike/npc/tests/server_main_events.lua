@@ -22,7 +22,7 @@ function SyncNpcRoster(callback, repair)
     rosterCallback = callback
 end
 function GetSupportedActions() return { 'wave' } end
-HumalikeActions = { Declarations = function() return {}, {} end }
+HumalikeActions = { Declarations = function() return {}, {} end, Catalog = function() return nil end }
 local capabilityOk = true
 local lastFeatures
 HumalikeHttp = {

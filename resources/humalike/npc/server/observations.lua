@@ -122,3 +122,6 @@ end
 exports('ReportObservation', function(npcId, playerId, key, fields, options)
     return HumalikeReportObservation(npcId, playerId, key, fields, options)
 end)
+
+-- An order is addressed the way a fact is (orders.lua).
+HumalikeObservationTarget = resolveTarget
