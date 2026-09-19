@@ -341,16 +341,16 @@ ok, err = acting({ name = 'n', description = 'd',
     params = { copies = { type = 'integer', enum = { one = 1 } } } })
 assert(not ok and err == 'invalid enum for copies in action give_map')
 -- The backend's caps and number rules, refused here with the field named.
-local wide = { fields = { a = 'integer', b = 'integer', c = 'integer', d = 'integer', e = 'integer' },
-               template = { en = 'x' } }
+local wideObservation = { fields = { a = 'integer', b = 'integer', c = 'integer', d = 'integer', e = 'integer' },
+                          template = { en = 'x' } }
 ok, err = acting({ name = 'n', description = 'd',
     requires = { { observation = 'wide', where = { a = 1, b = 1, c = 1, d = 1, e = 1 } } } },
-    { Observations = { wide = wide } })
+    { Observations = { wide = wideObservation } })
 assert(not ok and err == 'too many fields in where of requirement 1 of action give_map', tostring(err))
 ok, err = acting({ name = 'n', description = 'd',
     requires = { { observation = 'wide', consume = true } },
     params_from = { a = 'wide.a', b = 'wide.b', c = 'wide.c', d = 'wide.d', e = 'wide.e' } },
-    { Observations = { wide = wide } })
+    { Observations = { wide = wideObservation } })
 assert(not ok and err == 'too many params_from in action give_map', tostring(err))
 ok, err = acting({ name = 'n', description = 'd',
     requires = { { observation = 'item_given', where = { quantity = { gte = math.huge } } } } })

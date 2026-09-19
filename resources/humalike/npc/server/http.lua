@@ -30,8 +30,11 @@ end
 function HumalikeHttp.DescribeFailure(status, body)
     local failure = type(body) == 'table' and type(body.error) == 'table' and body.error or {}
     local details = {}
-    for _, detail in ipairs(failure.details or {}) do
-        details[#details + 1] = ('%s: %s'):format(tostring(detail.field), tostring(detail.message))
+    -- External data: only a list of tables is read, anything else is ignored.
+    for _, detail in ipairs(type(failure.details) == 'table' and failure.details or {}) do
+        if type(detail) == 'table' then
+            details[#details + 1] = ('%s: %s'):format(tostring(detail.field), tostring(detail.message))
+        end
     end
     return ('HTTP %s%s%s'):format(tostring(status),
         failure.code and ' ' .. tostring(failure.code) or '',
