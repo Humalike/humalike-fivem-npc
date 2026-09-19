@@ -33,6 +33,7 @@ HumalikeHttp = {
         capabilityCalls = capabilityCalls + 1
         callback(capabilityOk, capabilityOk and 200 or 500)
     end,
+    DescribeFailure = function(status) return 'HTTP ' .. tostring(status) end,
 }
 function RegisterCommand(name, handler, restricted)
     commands[name] = { handler = handler, restricted = restricted }

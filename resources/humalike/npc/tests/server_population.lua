@@ -171,6 +171,7 @@ HumalikeHttp = {
             callback(capabilityOk, capabilityOk and 200 or 500)
         end
     end,
+    DescribeFailure = function(status) return 'HTTP ' .. tostring(status) end,
 }
 
 dofile('server/population.lua')
