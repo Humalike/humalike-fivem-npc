@@ -25,23 +25,13 @@ local DOMAINS = {
     },
     inventory = { required = { 'AddItem' } },
     dispatch = { required = { 'Report' } },
-    -- RunAction is required only once the provider implements an action (see
-    -- validateDescriptor): an integration that only reports observations has
-    -- nothing to run.
     actions = { required = {}, optional = { 'RunAction' } },
 }
 
--- `text` is the backend's ObservationText cap: a template is refused here
--- when its worst-case render (every placeholder at its field's widest value)
--- would exceed it, so a report can never overflow at the edge.
 local OBSERVATION_LIMITS = { observations = 32, fields = 8, template = 400, text = 912 }
 local OBSERVATION_FIELD_TYPES = { string = true, integer = true, number = true, boolean = true }
--- Widest render of one field value, in characters, as ReportObservation
--- bounds them: strings at most 64, numbers at most 2^53 in magnitude (an
--- integer renders in 17, a float in `%.14g` in 21: `-1.2345678901234e-300`).
+-- Widest render per field type under the bounds npc/server/observations.lua enforces.
 local OBSERVATION_FIELD_WIDTHS = { string = 64, integer = 17, number = 21, boolean = 5 }
--- Mirrors the edge's NpcLanguage enum; Config.NpcLabels.LanguageLabels is
--- label text for the client and lists languages no NPC can speak yet.
 local OBSERVATION_LANGUAGES = { en = true, pl = true }
 
 for domain in pairs(DOMAINS) do HumalikeProviders.registered[domain] = {} end
@@ -230,9 +220,6 @@ local function validateDescriptor(domain, descriptor)
     return true
 end
 
--- A declared observation: the fields the script will report and the line the
--- NPC reads, per language. Validated here, at RegisterProvider, so a typo
--- surfaces in the integration's own console instead of as a silent drop later.
 local function normalizedObservation(key, definition)
     if type(key) ~= 'string' or not key:match('^[a-z][a-z0-9_]*$') or #key > 32 then
         return nil, 'invalid observation key'
@@ -272,8 +259,6 @@ local function normalizedObservation(key, definition)
             return nil, ('template renders up to %d characters, over %d, in observation %s'):format(
                 rendered, OBSERVATION_LIMITS.text, key)
         end
-        -- A brace left over once every {placeholder} is taken out is a typo
-        -- that would otherwise reach the NPC verbatim.
         if text:gsub('{[^{}]*}', ''):find('[{}]') then
             return nil, ('invalid template in observation %s'):format(key)
         end
@@ -371,8 +356,7 @@ exports('RegisterProvider', function(domain, descriptor)
         return false, 'external provider resource required'
     end
     local ok, err = register(domain, descriptor, owner)
-    -- An export carries one return value across resources, so the reason a
-    -- descriptor was refused would otherwise never reach its author.
+    -- Exports carry one return value across resources, so print the reason.
     if not ok then
         print(('[humalike] %s provider from %s rejected: %s'):format(
             tostring(domain), owner, tostring(err)))

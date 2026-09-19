@@ -47,8 +47,6 @@ local function targetForNpc(npcId)
     return nil
 end
 
--- The live target behind an NPC id, for callers outside this file that must
--- refuse the same NPCs control does: kind, record and ambient lease token.
 function HumalikeNpcRuntimeControl.Target(npcId) return targetForNpc(npcId) end
 
 local function normalizeDomains(value)

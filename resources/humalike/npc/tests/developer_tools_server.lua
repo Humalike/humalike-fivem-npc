@@ -148,8 +148,6 @@ aceAllowed = false
 command(7, { 'ambient', 'list' })
 assert(#actions == actionCount)
 
--- observe: typed from the declaration, replies with the rendered line or the
--- export's rejection code.
 aceAllowed = true
 local reported = {}
 HumalikeActions = {
@@ -183,4 +181,4 @@ command(7, { 'observe', npcId, 'item_given', 'item=amulet', 'stolen=tru' })
 assert(#reported == 2 and lastReply() == '[humalike-dev] stolen must be true or false')
 command(7, { 'observe', npcId, 'item_given', 'amulet' })
 assert(#reported == 2 and lastReply() == '[humalike-dev] expected field=value, got amulet')
-print('developer_tools_server (observe): ok')
+print('developer_tools_server: ok')

@@ -10,8 +10,6 @@ function HumalikeActions.Supported()
     return result
 end
 
--- The wire key and definition of a declared observation, or nil when the
--- selected provider declares no such thing.
 function HumalikeActions.Observation(key)
     local provider = HumalikeSelectedProvider('actions')
     local definition = provider and type(key) == 'string' and provider.Observations[key] or nil

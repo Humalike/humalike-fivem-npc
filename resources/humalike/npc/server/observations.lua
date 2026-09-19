@@ -1,23 +1,9 @@
--- Server observations: facts an integration reports about its own NPC.
---
--- The script declares what it can observe on its actions provider
--- (`Namespace` + `Observations`, validated at RegisterProvider) and reports
--- each occurrence here. The line the NPC reads is rendered from the declared
--- template in that NPC's language before it leaves the box, so the backend
--- quotes it verbatim and never needs the declarations.
-
--- Bounds the registry sizes templates against (integration/server/registry.lua
--- OBSERVATION_FIELD_WIDTHS) and the backend mirrors on ObservationFieldValue:
--- a string is at most 64 characters, a number at most 2^53 in magnitude, so a
--- value never renders wider than the registry assumed.
+-- Must match OBSERVATION_FIELD_WIDTHS in integration/server/registry.lua.
 local STRING_LIMIT = 64
 local NUMBER_LIMIT = 2 ^ 53
--- The backend's ObservationText cap. Registration already refuses a template
--- that could render past it; this is the last guard, not the first.
 local TEXT_LIMIT = 912
 
--- Two comparisons rather than math.abs: math.abs(math.mininteger) wraps to
--- itself and would slip through.
+-- Not math.abs: math.abs(math.mininteger) wraps to itself.
 local function boundedNumber(value)
     if type(value) ~= 'number' or value ~= value
         or value < -NUMBER_LIMIT or value > NUMBER_LIMIT then return nil end
@@ -38,8 +24,6 @@ local FIELD_CHECKS = {
     end,
 }
 
--- Every declared field, exactly, with its declared type: the template and,
--- later, an action's preconditions both read these by name.
 local function validatedFields(definition, raw)
     raw = raw or {}
     if type(raw) ~= 'table' then return nil, 'invalid_fields' end
@@ -55,8 +39,7 @@ local function validatedFields(definition, raw)
     return fields
 end
 
--- An integral float reads as an integer (2 kg, not 2.0 kg); `%.0f` rather
--- than `%d` so the format can never throw on a float.
+-- `%.0f` rather than `%d` so an integral float can never throw.
 local function formatValue(value)
     if math.type(value) == 'float' and value % 1 == 0 then return ('%.0f'):format(value) end
     return tostring(value)
@@ -71,10 +54,6 @@ local function render(definition, language, fields)
     return (template:gsub('{([^{}]*)}', function(name) return formatValue(fields[name]) end))
 end
 
--- Whose fact this is: a live roster NPC (static, or external and bound) or an
--- ambient body the server currently leases, resolved exactly as runtime
--- control resolves it. A roster NPC with no live body is refused here; the
--- edge would drop the report after an ok otherwise.
 local function resolveTarget(npcId)
     if type(npcId) ~= 'string' then return nil, 'npc_not_found' end
     local kind, target, leaseToken = HumalikeNpcRuntimeControl.Target(npcId)
@@ -110,8 +89,7 @@ function HumalikeReportObservation(npcId, playerId, key, rawFields, options)
         lease_token = target.lease_token,
         key = wireKey,
         text = text,
-        -- An empty Lua table encodes as a JSON array; the contract defaults
-        -- the field, so an observation without fields simply omits it.
+        -- An empty table encodes as [].
         fields = next(fields) ~= nil and fields or nil,
         react = options.react ~= false,
     })
