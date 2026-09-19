@@ -24,13 +24,9 @@ function HumalikeHttp.PostAction(name, payload, callback)
     end)
 end
 
--- A refusal in one readable line: the status, the backend's code and the
--- fields it named (a validation error carries `details`), so a bad body
--- reads in the console instead of a bare status.
 function HumalikeHttp.DescribeFailure(status, body)
     local failure = type(body) == 'table' and type(body.error) == 'table' and body.error or {}
     local details = {}
-    -- External data: only a list of tables is read, anything else is ignored.
     for _, detail in ipairs(type(failure.details) == 'table' and failure.details or {}) do
         if type(detail) == 'table' then
             details[#details + 1] = ('%s: %s'):format(tostring(detail.field), tostring(detail.message))

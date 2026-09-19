@@ -10,7 +10,6 @@ Config = {
     SupportedActions = { 'wave' },
 }
 
--- The console: a refused descriptor is printed for its author.
 local printed, consolePrint = {}, print
 function print(line) printed[#printed + 1] = line end
 function GetCurrentResourceName() return 'humalike' end
@@ -141,7 +140,6 @@ assert(HumalikeActions.Run('custom_action', 7, {}, {}))
 local supported = GetSupportedActions()
 assert(table.concat(supported, ',') == 'wave,give_item,custom_action')
 
--- Declared observations: validated at registration, namespaced on the wire.
 local function observing(overrides)
     local descriptor = {
         name = 'observer', apiVersion = 1, priority = 50,
@@ -181,26 +179,20 @@ ok, err = observing({ Observations = { item_given = { template = { en = 'got {it
 assert(not ok and err == 'unknown placeholder {item} in observation item_given')
 ok, err = observing({ Observations = { item_given = { template = { en = ('x'):rep(401) } } } })
 assert(not ok and err == 'invalid template in observation item_given')
--- C1 controls (U+0085 here) never pass, same as at the backend.
 ok, err = observing({ Observations = { item_given = { template = { en = 'a\u{85}b' } } } })
 assert(not ok and err == 'invalid template in observation item_given')
--- A template is sized by its worst-case render, every occurrence counted:
--- 16 x {item} at 64 characters + 288 = 1328 characters, past the backend's 912.
+-- Worst-case render: 16 x {item} at 64 + 288 = 1328.
 local function wide(placeholders, padding, fields)
     return { Observations = { item_given = { fields = fields,
         template = { en = ('{item} '):rep(placeholders) .. ('x'):rep(padding) } } } }
 end
 ok, err = observing(wide(16, 288, { item = 'string' }))
 assert(not ok and err == 'template renders up to 1328 characters, over 912, in observation item_given', err)
--- 9 x 65 + 327 = 912 fits; one more character does not.
 ok, err = observing(wide(9, 327, { item = 'string' }))
 assert(ok, err)
 assert(exported.UnregisterProvider('actions', 'observer'))
 ok, err = observing(wide(9, 328, { item = 'string' }))
 assert(not ok and err == 'template renders up to 913 characters, over 912, in observation item_given', err)
--- Numbers are bounded at 2^53 by ReportObservation, so they are sized at
--- their widest render (21 for a float, 17 for an integer), not as unbounded;
--- a boolean at `false`. 40 x 22 + 33 = 913; 50 x 18 + 13 = 913.
 ok, err = observing(wide(40, 33, { item = 'number' }))
 assert(not ok and err == 'template renders up to 913 characters, over 912, in observation item_given', err)
 ok, err = observing(wide(40, 32, { item = 'number' }))
@@ -211,11 +203,10 @@ assert(not ok and err == 'template renders up to 913 characters, over 912, in ob
 ok, err = observing(wide(50, 12, { item = 'integer' }))
 assert(ok, err)
 assert(exported.UnregisterProvider('actions', 'observer'))
--- A 400-character template of booleans renders 343 characters: it fits.
 ok, err = observing(wide(57, 1, { item = 'boolean' }))
 assert(ok, err)
 assert(exported.UnregisterProvider('actions', 'observer'))
--- Sized in characters, not bytes: 300 x ł is 300 characters.
+-- Characters, not bytes.
 ok, err = observing({ Observations = { item_given = { fields = { item = 'string' },
     template = { en = ('ł'):rep(300) .. '{item}' } } } })
 assert(ok, err)
@@ -236,8 +227,6 @@ for index = 1, 9 do tooWide['f' .. index] = 'string' end
 ok, err = observing({ Observations = { item_given = { fields = tooWide, template = { en = 'x' } } } })
 assert(not ok and err == 'too many fields in observation item_given')
 
--- Declared actions: validated against the declared observations, reported
--- namespaced beside the built-in keys.
 local function acting(action, overrides)
     local descriptor = {
         name = 'observer', apiVersion = 1, priority = 50,
@@ -335,7 +324,6 @@ ok, err = acting({ name = 'n', description = 'd', params = 'copies' })
 assert(not ok and err == 'invalid params in action give_map')
 ok, err = acting({ name = 'n', description = 'd', requires = true })
 assert(not ok and err == 'invalid requires in action give_map')
--- A map or a hole would walk as fewer rules than written: an ungated deed.
 ok, err = acting({ name = 'n', description = 'd',
     requires = { amulet = { observation = 'item_given' } } })
 assert(not ok and err == 'requires must be a list in action give_map', tostring(err))
@@ -345,7 +333,6 @@ assert(not ok and err == 'requires must be a list in action give_map', tostring(
 ok, err = acting({ name = 'n', description = 'd',
     params = { copies = { type = 'integer', enum = { one = 1 } } } })
 assert(not ok and err == 'invalid enum for copies in action give_map')
--- The backend's caps and number rules, refused here with the field named.
 local wideObservation = { fields = { a = 'integer', b = 'integer', c = 'integer', d = 'integer', e = 'integer' },
                           template = { en = 'x' } }
 ok, err = acting({ name = 'n', description = 'd',
@@ -368,9 +355,6 @@ ok, err = acting({ name = 'n', description = 'd',
 assert(ok, err)
 assert(math.type(HumalikeSelectedProvider('actions').Actions.give_map.requires[1].where.quantity) == 'integer')
 assert(exported.UnregisterProvider('actions', 'observer'))
--- Past 2^53 an integral float has no integer to become and would go out as
--- 1e+19: refused, exact match and bound alike, at the bound observations
--- report under.
 ok, err = acting({ name = 'n', description = 'd',
     requires = { { observation = 'item_given', where = { quantity = 2 ^ 63 } } } })
 assert(not ok and err == 'invalid value for quantity in requirement 1 of action give_map', tostring(err))
@@ -396,8 +380,6 @@ ok, err = acting({ name = 'n', description = 'd',
     requires = { { observation = 'item_given', where = { quantity = { gte = -(2 ^ 53), lte = 2 ^ 53 } } } } })
 assert(ok, err)
 assert(exported.UnregisterProvider('actions', 'observer'))
--- A bound on an integer field is a whole number, stored as one, like an
--- exact match; on a number field a fraction is a fraction.
 for _, fractional in ipairs({ { gte = 1.5 }, { lte = 0.5 }, { sum_gte = 2.5 } }) do
     ok, err = acting({ name = 'n', description = 'd',
         requires = { { observation = 'item_given', where = { quantity = fractional } } } })
@@ -489,8 +471,6 @@ assert(#declaredObservations == 1 and declaredObservations[1].key == 'srp:item_g
 assert(declaredObservations[1].fields.quantity == 'integer')
 assert(exported.UnregisterProvider('actions', 'observer'))
 
--- A shop: prices in a declared payment observation; deliver/refund are
--- declared for the script, never offered to the model.
 local function selling(catalog, overrides)
     local descriptor = {
         name = 'shop', apiVersion = 1, priority = 50, SupportedActions = {}, Namespace = 'srp',
@@ -510,8 +490,6 @@ ok, err = selling('water')
 assert(not ok and err == 'invalid Catalog')
 ok, err = selling({ currency = 'cash', payment = 'door_unlocked', items = { water = { price = 5 } } })
 assert(not ok and err == 'Catalog payment must be a declared observation with item (string) and quantity (integer)')
--- Money is whole units: a number-typed quantity is refused here as HumaLike
--- refuses it (422), never registered and then rejected at the door.
 ok, err = selling({ currency = 'cash', payment = 'item_given', items = { water = { price = 5 } } },
     { Observations = { item_given = {
         fields = { item = 'string', quantity = 'number' },
@@ -541,9 +519,6 @@ local _, deliverDef = HumalikeActions.Custom('srp:deliver')
 assert(deliverDef.passthrough.items and deliverDef.passthrough.change)
 assert(exported.UnregisterProvider('actions', 'shop'))
 assert(HumalikeActions.Catalog() == nil)
--- The backend's report takes 32 actions in all, the Catalog's deliver and
--- refund among them: 31 declared beside a Catalog is refused at
--- registration rather than as a whole report refused later.
 local function manyActions(count)
     local actions = {}
     for index = 1, count do
@@ -576,10 +551,8 @@ assert(wireKey == 'srp:item_given' and definition.fields.quantity == 'integer')
 assert(definition.template.en == 'the character handed you {quantity} x {item}')
 assert(HumalikeActions.Observation('door_unlocked') == nil)
 assert(HumalikeActions.Observation(nil) == nil)
--- An observation-only provider runs nothing.
 assert(not HumalikeActions.Run('custom_action', 7, {}, {}))
 assert(table.concat(GetSupportedActions(), ',') == 'wave,give_item')
--- A provider that declares none still carries an empty table, never nil.
 assert(next(HumalikeProviders.registered.actions.custom_actions.Observations) == nil)
 assert(exported.UnregisterProvider('actions', 'observer'))
 assert(HumalikeActions.Observation('item_given') == nil)

@@ -25,23 +25,13 @@ local DOMAINS = {
     },
     inventory = { required = { 'AddItem' } },
     dispatch = { required = { 'Report' } },
-    -- RunAction is required only once the provider implements an action (see
-    -- validateDescriptor): an integration that only reports observations has
-    -- nothing to run.
     actions = { required = {}, optional = { 'RunAction' } },
 }
 
--- `text` is the backend's ObservationText cap: a template is refused here
--- when its worst-case render (every placeholder at its field's widest value)
--- would exceed it, so a report can never overflow at the edge.
 local OBSERVATION_LIMITS = { observations = 32, fields = 8, template = 400, text = 912 }
 local OBSERVATION_FIELD_TYPES = { string = true, integer = true, number = true, boolean = true }
--- Widest render of one field value, in characters, as ReportObservation
--- bounds them: strings at most 64, numbers at most 2^53 in magnitude (an
--- integer renders in 17, a float in `%.14g` in 21: `-1.2345678901234e-300`).
+-- Widest render per field type under the bounds npc/server/observations.lua enforces.
 local OBSERVATION_FIELD_WIDTHS = { string = 64, integer = 17, number = 21, boolean = 5 }
--- Mirrors the edge's NpcLanguage enum; Config.NpcLabels.LanguageLabels is
--- label text for the client and lists languages no NPC can speak yet.
 local OBSERVATION_LANGUAGES = { en = true, pl = true }
 local ACTION_LIMITS = {
     actions = 32, name = 80, description = 400, params = 4, enum = 16, fixed = 16,
@@ -307,9 +297,6 @@ local COUNTER_ACTIONS = {
     },
 }
 
--- A declared observation: the fields the script will report and the line the
--- NPC reads, per language. Validated here, at RegisterProvider, so a typo
--- surfaces in the integration's own console instead of as a silent drop later.
 local function normalizedObservation(key, definition)
     if type(key) ~= 'string' or not key:match('^[a-z][a-z0-9_]*$') or #key > 32 then
         return nil, 'invalid observation key'
@@ -349,8 +336,6 @@ local function normalizedObservation(key, definition)
             return nil, ('template renders up to %d characters, over %d, in observation %s'):format(
                 rendered, OBSERVATION_LIMITS.text, key)
         end
-        -- A brace left over once every {placeholder} is taken out is a typo
-        -- that would otherwise reach the NPC verbatim.
         if text:gsub('{[^{}]*}', ''):find('[{}]') then
             return nil, ('invalid template in observation %s'):format(key)
         end
@@ -369,17 +354,13 @@ local function finite(value)
         and value ~= math.huge and value ~= -math.huge
 end
 
--- A number in a `where`: within the magnitude the backend takes for a
--- reported numeric field (2^53, the same bound observations report under),
--- so an integral float past it is never sent as 1e+19. Two comparisons
--- rather than math.abs: math.abs(math.mininteger) wraps to itself.
+-- Same bound as observations; not math.abs, which wraps on math.mininteger.
 local WHERE_NUMBER_LIMIT = 2 ^ 53
 local function bounded(value)
     return finite(value) and value >= -WHERE_NUMBER_LIMIT and value <= WHERE_NUMBER_LIMIT
 end
 
--- { a, b, c } and nothing else: a map or a hole would be walked as fewer
--- entries than the author wrote, or none.
+-- ipairs would silently stop at a hole.
 local function sequence(value)
     local count = 0
     for _ in pairs(value) do count = count + 1 end
@@ -387,10 +368,6 @@ local function sequence(value)
     return true
 end
 
--- A server-defined action: what the model reads, what it may fill in, what
--- the script fixes, and which reported facts must precede it. Mirrors the
--- backend contract so a mistake is refused here, at RegisterProvider, in the
--- integration's own console.
 local function normalizedAction(key, definition, observations)
     if type(key) ~= 'string' or not key:match('^[a-z][a-z0-9_]*$') or #key > 32 then
         return nil, 'invalid action key'
@@ -486,10 +463,7 @@ local function normalizedAction(key, definition, observations)
             end
             local numeric = fieldType == 'integer' or fieldType == 'number'
             if type(value) == 'table' then
-                -- A bound on a numeric field: { gte = 500 }, { lte = 3 }, both, or
-                -- { sum_gte = 2 } added up across hand-overs. On an integer
-                -- field the limit is a whole number, stored as one, like an
-                -- exact match: the backend takes no fraction there.
+                -- { gte = n }, { lte = n } or { sum_gte = n }.
                 local valid = numeric and next(value) ~= nil
                 for bound, limit in pairs(value) do
                     if (bound ~= 'gte' and bound ~= 'lte' and bound ~= 'sum_gte')
@@ -515,8 +489,6 @@ local function normalizedAction(key, definition, observations)
                     sum_gte = value.sum_gte and whole(value.sum_gte),
                 }
             else
-                -- An exact match on a numeric field is a whole number: the
-                -- backend takes no fraction there.
                 local fits = (fieldType == 'string' and type(value) == 'string')
                     or (fieldType == 'boolean' and type(value) == 'boolean')
                     or (numeric and bounded(value) and value % 1 == 0)
@@ -575,8 +547,7 @@ local function normalizedAction(key, definition, observations)
     if definition.auto == true and not spends then
         return nil, ('auto action %s needs a requirement with consume = true'):format(key)
     end
-    -- Values the deed takes from the facts that unlocked it, never from the
-    -- model: { amount = 'item_given.quantity' }.
+    -- { amount = 'item_given.quantity' }
     local paramsFrom, paramsFromCount = {}, 0
     for name, source in pairs(definition.params_from or {}) do
         paramsFromCount = paramsFromCount + 1
@@ -743,8 +714,7 @@ exports('RegisterProvider', function(domain, descriptor)
         return false, 'external provider resource required'
     end
     local ok, err = register(domain, descriptor, owner)
-    -- An export carries one return value across resources, so the reason a
-    -- descriptor was refused would otherwise never reach its author.
+    -- Exports carry one return value across resources, so print the reason.
     if not ok then
         print(('[humalike] %s provider from %s rejected: %s'):format(
             tostring(domain), owner, tostring(err)))

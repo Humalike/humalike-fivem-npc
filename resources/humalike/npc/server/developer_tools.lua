@@ -253,11 +253,6 @@ local function list(playerId)
     for _, row in ipairs(rows) do reply(playerId, row) end
 end
 
--- `/humalike_dev observe <npc_uuid> <key> [field=value ...]`: report a declared
--- observation without the inventory (or whatever) hook that would normally
--- fire it. Values are typed from the declaration, so `quantity=2` is an
--- integer and `stolen=true` a boolean. Chat splits on spaces, so a value
--- cannot contain one.
 local function observe(playerId, npcId, key, pairsList)
     local _, definition = HumalikeActions.Observation(key)
     if not definition then reply(playerId, ('unknown observation %s'):format(tostring(key))) return end

@@ -246,16 +246,11 @@ Client integrations can subscribe to
 
 ## Server observations
 
-Facts only the server knows -- an item handed to an NPC, a door unlocked, a job
-finished -- are declared on the actions provider and reported per occurrence.
-The NPC reads the rendered line as a world event in its own language and can
-react to it; a player saying "I gave you the amulet" is talk, a reported
-observation is fact.
-
-Observations belong to the one selected actions provider, so declare them on
-the actions provider the server already registers rather than on a second one
-(two providers at the same priority make the domain `ambiguous`, and a lower
-one is never consulted):
+Facts only the server knows (an item handed to an NPC, a door unlocked) are
+declared on the actions provider and reported per occurrence. The NPC reads
+the rendered line as a world event in its own language and can react to it.
+Declare them on the actions provider the server already registers; only the
+selected provider is consulted.
 
 ```lua
 exports.humalike:RegisterProvider('actions', {
@@ -280,49 +275,38 @@ local result = exports.humalike:ReportObservation(npcId, source, 'item_given', {
 })
 ```
 
-`Namespace` prefixes every key on the wire (`srp:item_given`), so a server key
-never collides with a built-in event. Each observation declares its `fields`
-(`string`, `integer`, `number` or `boolean`) and a `template` per NPC language
-(`en`, `pl`) whose `{placeholders}` name declared fields; an NPC whose language
-has no template reads the English one. A template is at most 400 characters
-and is also sized by its worst-case render (every placeholder occurrence at
-its field's widest value: 64 characters for a string, 21 for a number, 17 for
-an integer, 5 for a boolean), which must stay within the 912 characters the
-backend accepts. A provider that implements no action may omit `RunAction`.
-`RegisterProvider` returns `false` and prints the exact reason for a
-declaration it refuses, such as `unknown placeholder {item} in observation
-item_given` or `template renders up to 1328 characters, over 912, in
-observation item_given`.
+`Namespace` prefixes every key on the wire (`srp:item_given`). Each observation
+declares its `fields` (`string`, `integer`, `number` or `boolean`) and a
+`template` per NPC language (`en`, `pl`) whose `{placeholders}` name declared
+fields; a language without a template falls back to English. A template is at
+most 400 characters and its worst-case render (64 characters per string, 21
+per number, 17 per integer, 5 per boolean) must stay within 912. A provider
+that implements no action may omit `RunAction`. `RegisterProvider` returns
+`false` and prints the reason for a declaration it refuses.
 
-`ReportObservation(npcId, playerId, key, fields, options)` accepts a live roster
-NPC (static, or external and bound) or an ambient body the server currently
-leases. Every declared field is required and unknown fields are rejected: a
-`string` is at most 64 characters with no control characters (C0, DEL or C1,
-so no newline and no U+0085), an `integer` is whole, and an `integer` or
-`number` is finite and at most 2^53 in magnitude. It returns the export
-envelope: `value.key` and `value.text` on success, or an `error` code
-(`invalid_player`, `character_not_loaded`, `npc_not_found`, `npc_not_bound`,
-`unknown_observation`, `invalid_fields` when `fields` is not a table,
-`invalid_field:<name>`, `unknown_field:<name>`, `invalid_options`, and
-`text_too_long` should a rendered line still exceed 912 characters).
-`ok = true` means the observation is queued for delivery, not delivered: with
-the backend down it is retried a few times and then dropped. With
-`humalike_actions none` every report returns `unknown_observation`.
-`options.react = false` files the fact without a spoken reaction. With
-`humalike_developer_tools 1`, `/humalike_dev observe <npc_uuid> <key>
-[field=value ...]` reports one by hand.
+`ReportObservation(npcId, playerId, key, fields, options)` accepts a live
+roster NPC or an ambient body the server currently leases. Every declared
+field is required and unknown fields are rejected: a `string` is at most 64
+characters with no control characters, an `integer` is whole, and numbers are
+finite and at most 2^53 in magnitude. It returns the export envelope:
+`value.key` and `value.text` on success, or an `error` code (`invalid_player`,
+`character_not_loaded`, `npc_not_found`, `npc_not_bound`,
+`unknown_observation`, `invalid_fields`, `invalid_field:<name>`,
+`unknown_field:<name>`, `invalid_options`, `text_too_long`). `ok = true` means
+the observation is queued, not delivered. With `humalike_actions none` every
+report returns `unknown_observation`. `options.react = false` files the fact
+without a spoken reaction. With `humalike_developer_tools 1`,
+`/humalike_dev observe <npc_uuid> <key> [field=value ...]` reports one by hand.
 
-An observation is the script's own fact, so it is not gated on earshot and is
-filed and, with `react = true`, spoken even while a script holds `perception`
-on the NPC (`ReportObservation` does not check which resource holds it). Hold
-`speech` to keep the NPC silent. A repeat of the same key within about 2.5
-seconds is filed but not spoken again.
+An observation is not gated on earshot or a `perception` hold; hold `speech`
+to keep the NPC silent. A repeat of the same key within about 2.5 seconds is
+filed but not spoken again.
 
 ## Server-defined actions
 
-Beside reporting facts, the same provider can declare deeds of its own. The
-model chooses them like any built-in action, HumaLike gates each one on the
-facts the server has reported, and the server's `RunAction` performs it:
+The same provider can declare actions of its own. The model chooses them like
+any built-in action, HumaLike gates each one on the observations the server
+has reported, and the provider's `RunAction` performs it:
 
 ```lua
 exports.humalike:RegisterProvider('actions', {
@@ -357,76 +341,54 @@ exports.humalike:RegisterProvider('actions', {
 
 The key reaches the model as `srp:give_map` and comes back to `RunAction` as
 `give_map`. `description` (no square brackets) is the line the model reads.
-`params` are values the model writes inline in its tag -- `[srp:give_map
-copies=2]` -- typed `string`, `integer` or `boolean`, with `required` and, on
-a `string` or `integer` param only, an optional `enum` of bare words or
-integers (a boolean is its own two choices). `player_id` is the addressee,
-filled by HumaLike; when the edge cannot name one the push carries none and
-the resource answers `invalid_action_player`. `fixed` values never leave the
-server: merged under the model's values before `RunAction`, they always win
-and may not be named `player_id`. `requires` is a list (all must hold) of
-declared observations that must have been reported for this NPC and the
-player it is answering, matching `where` on declared fields -- a string, a
-boolean or a whole number exactly, or a bound on a numeric field (`quantity =
-{ gte = 500 }`, `{ lte = 3 }`, or both; whole on an `integer` field) --
-within `within_s` seconds (default 600); `consume` spends the fact once the
-deed is done, so one amulet buys one
-map. `locked_hint` is what the NPC is told, per language, while a requirement
-is unmet; a player saying it happened never unlocks anything. `limit = {
-per_player = 1, every_s = 86400, hint = { en = '...' } }` caps how often one
-player may get the deed (counted from the deeds HumaLike recorded, so chat
-cannot reset it); no limit unless declared. `uses_stock = { item = 'map',
-quantity = 1 }` ties the deed to the NPC's stock, which the server sets with
-`SetNpcStock` (below): the NPC reads its exact counts, the action locks at
-zero, and each delivered deed takes its share. In
-`where`, `quantity = { sum_gte = 2 }` adds matching hand-overs up, so one
-bottle and one bottle make two; paying spends them all. `auto = true` makes
-HumaLike perform the deed as soon as its requirements hold, the next time the
-NPC answers that player -- paid means served, whether or not the model writes
-the tag (needs a `consume = true` requirement). `params_from = { amount =
-'item_given.quantity' }` hands `RunAction` values read from the facts that
-unlocked the deed, never from the model -- numbers summed over the consumed
-hand-overs, so a refund is for exactly the cash received and can never be
-talked up or paid twice. Sizes and counts are capped; a declaration over a
-cap is refused at `RegisterProvider` with the field named in the console
-(`too many params in action give_map`, `invalid bound on quantity in
-requirement 1 of action give_map`), and the backend's own refusal is printed
-the same way.
+`params` are values the model fills in, typed `string`, `integer` or
+`boolean`, with `required` and, on a `string` or `integer` param, an optional
+`enum` of bare words or integers. `player_id` is the addressee, filled by
+HumaLike. `fixed` values never leave the server: they are merged over the
+model's values before `RunAction` and may not be named `player_id`.
+`requires` lists declared observations that must all have been reported for
+this NPC and player within `within_s` seconds (default 600), matching `where`
+on declared fields: a string, a boolean or a whole number exactly, or a bound
+on a numeric field (`{ gte = 500 }`, `{ lte = 3 }`, both, or `{ sum_gte = 2 }`
+which adds matching reports up). `consume` spends the matched facts once the
+action is done. `locked_hint` is what the NPC is told, per language, while a
+requirement is unmet. `limit = { per_player = 1, every_s = 86400, hint = {
+en = '...' } }` caps how often one player may get the action. `uses_stock = {
+item = 'map', quantity = 1 }` ties the action to the NPC's stock (below): it
+locks at zero and each delivery takes its share. `auto = true` performs the
+action as soon as its requirements hold, the next time the NPC answers that
+player (needs a `consume = true` requirement). `params_from = { amount =
+'item_given.quantity' }` hands `RunAction` values read from the consumed
+facts, numbers summed, never from the model. Sizes and counts are capped; a
+declaration over a cap is refused at `RegisterProvider` with the reason
+printed.
 
 Admins enable a declared action per NPC in the dashboard like any other. The
 resource re-declares everything whenever the actions provider changes, so
-re-registering the provider (or restarting the resource) is enough for a
-changed or removed action to take effect. Every deed reaches `RunAction`
-with the player within `Config.ServerActions.MaxDistance` of the NPC, as the
-built-in hand-overs demand; farther away it is refused like any other
-rejection. `RunAction` must return exactly `true` to accept; anything else
-(`false`, `nil`, a number, an error) marks the invocation rejected: nothing
-is recorded, the deed stays open and HumaLike may push it again (a counter
-hand-over, on the next turn), so returning `1` or `'ok'` would perform it
-twice. Prefer expressing state as observations over refusing at run time,
-since the NPC has already spoken.
+re-registering the provider or restarting the resource is enough for a change
+to take effect. Every action reaches `RunAction` with the player within
+`Config.ServerActions.MaxDistance` of the NPC. `RunAction` must return
+exactly `true` to accept; anything else marks the invocation rejected and
+HumaLike may push it again once its requirements hold, so returning `1` or
+`'ok'` would perform it twice.
 
-Stock is the server's to set: `exports.humalike:SetNpcStock(npcId, { map =
-50, bread = 'unlimited' })` puts exactly that shelf on the NPC, replacing
-whatever it had (an item left out is one the NPC has none of; `0` runs an
-item out), so restocking is calling it again. The NPC reads its exact
-counts; a deed with `uses_stock`, and every catalogue line, locks at zero and
-takes its share when delivered. Items are the server's own names
+`exports.humalike:SetNpcStock(npcId, { map = 50, bread = 'unlimited' })`
+replaces the NPC's whole shelf; an item left out is one the NPC has none of,
+and restocking is calling it again. Items are the server's own names
 (`[a-z0-9_.-]`, at most 48 characters, at most 32 of them), counts whole
-numbers up to 1,000,000 or the word `'unlimited'`. The export waits for
-HumaLike's answer, so call it from an event handler or a thread (once the
-NPC is on the roster -- `humalike:npc:ready` -- or, for an external one,
-after binding): `ok` means the shelf is stored and `value.stock` is what was
-stored. Refused with `invalid_npc`, `npc_not_found`, `npc_not_bound`,
-`invalid_stock`, `invalid_item:<name>`, `invalid_count:<name>`,
-`too_many_items`, `runtime_not_ready` before anything is sent, or with
-HumaLike's own code (its detail printed in the console) when it refuses.
+numbers up to 1,000,000 or `'unlimited'`. The export waits for the answer, so
+call it from an event handler or a thread once the NPC is on the roster
+(`humalike:npc:ready`, or after binding an external one). `ok` means the
+shelf is stored and `value.stock` is what was stored; otherwise `error` is
+`invalid_npc`, `npc_not_found`, `npc_not_bound`, `invalid_stock`,
+`invalid_item:<name>`, `invalid_count:<name>`, `too_many_items`,
+`runtime_not_ready` or the remote code.
 
 ## A shop counter
 
 For NPCs that sell, declare a `Catalog` instead of one action per product.
-HumaLike then runs the sale end to end -- the order, the price, the payment,
-the change -- and the script only hands things over and returns money:
+HumaLike runs the order, the price, the payment and the change; the script
+only hands things over and returns money:
 
 ```lua
 exports.humalike:RegisterProvider('actions', {
@@ -441,9 +403,7 @@ exports.humalike:RegisterProvider('actions', {
     },
     Catalog = {
         currency = 'cash',          -- the item_given `item` that counts as payment
-        payment = 'item_given',     -- the observation your inventory hook reports:
-                                    -- item (string) and quantity (integer -- money
-                                    -- is whole units; a number field is refused)
+        payment = 'item_given',     -- item (string) and quantity (integer) required
         items = {
             water = { price = 5 },
             bread = { price = 3 },
@@ -452,28 +412,28 @@ exports.humalike:RegisterProvider('actions', {
     },
     RunAction = function(action, source, npcCoords, params)
         if action == 'deliver' then
-            -- All or nothing: weigh the whole basket (per-line checks are
-            -- not additive), then add line by line and take everything back
-            -- on the first refusal. Return true only once every line and the
-            -- change are in the customer's hands.
+            -- All or nothing: return true only once every line and the change moved.
             local weight = 0
             for item, quantity in pairs(params.items) do
                 weight = weight + exports.ox_inventory:Items(item).weight * quantity
             end
             if not exports.ox_inventory:CanCarryWeight(source, weight) then return false end
             local added = {}
+            local function takeBack()
+                for _, line in ipairs(added) do
+                    exports.ox_inventory:RemoveItem(source, line.item, line.quantity)
+                end
+                return false
+            end
             for item, quantity in pairs(params.items) do
                 if exports.ox_inventory:AddItem(source, item, quantity) ~= true then
-                    for _, line in ipairs(added) do
-                        exports.ox_inventory:RemoveItem(source, line.item, line.quantity)
-                    end
-                    return false
+                    return takeBack()
                 end
                 added[#added + 1] = { item = item, quantity = quantity }
             end
             if params.change > 0
                 and exports.ox_inventory:AddItem(source, params.currency, params.change) ~= true then
-                return false
+                return takeBack()
             end
             return true
         elseif action == 'refund' then
@@ -485,36 +445,29 @@ exports.humalike:RegisterProvider('actions', {
 ```
 
 An NPC sells whatever of the catalogue the server stocked it with
-(`SetNpcStock`, above), at these prices. The model takes the
-order as one tag with every line (`[srp:order water=10 pistol=1]`); HumaLike
-checks each line against the shelf and the per-item limits, prices it, and
-tells the NPC the total. Payment is your reported `item_given` of the
-currency. The moment the money on the counter covers the total, HumaLike
-calls `RunAction('deliver', source, coords, { items = {...}, total, paid,
-change, currency })` itself and records the sale; every line leaves the
-NPC's stock. Return `false` when the hand-over cannot happen (the customer
-cannot carry it): nothing is recorded, the order and the money stay on the
-counter, the NPC is told the hand-over failed, and HumaLike tries again on
-the next turn -- so hand over everything or nothing, never a part. The same
-holds for a payment reported for a player who is not at the counter: it
-unlocks a delivery that is refused with `action_player_out_of_reach` (or
-`action_player_wrong_bucket` from another routing bucket) on every turn
-until the player is back within `Config.ServerActions.MaxDistance` of the
-NPC, so report a payment only for a player standing there.
-Underpaid, nothing happens and the NPC is told what is owed. If
-the customer backs out, the NPC's `[srp:cancel_order]` calls
-`RunAction('refund', source, coords, { amount, currency })` with exactly
-what is on the counter. `deliver` and `refund` are declared for you, never
-offered to the model, and the model never authors a number.
+(`SetNpcStock`), at these prices. The model takes the order as one tag with
+every line (`[srp:order water=10 pistol=1]`); HumaLike checks each line
+against the shelf and the per-item limits, prices it, and tells the NPC the
+total. Payment is a reported `item_given` of the currency. Once the money on
+the counter covers the total, HumaLike calls `RunAction('deliver', source,
+coords, { items = {...}, total, paid, change, currency })` and records the
+sale; every line leaves the NPC's stock. Return `false` when the hand-over
+cannot happen: nothing is recorded, the order and the money stay on the
+counter, the NPC is told, and it is tried again on the next turn, so hand
+over everything or nothing. A payment reported for a player who is not
+within `Config.ServerActions.MaxDistance` of the NPC (or in another routing
+bucket) is refused the same way until they are, so report a payment only for
+a player standing there. Underpaid, the NPC is told what is owed. If the
+customer backs out, `[srp:cancel_order]` calls `RunAction('refund', source,
+coords, { amount, currency })` with exactly what is on the counter.
+`deliver` and `refund` are declared for you and never offered to the model.
 
-A server with its own shop menu places the order directly instead of
-through conversation: `exports.humalike:PlaceOrder(npcId, playerId, { water
-= 2, burger = 1 })` sends the picked lines; HumaLike checks and prices them
-the same way and the NPC announces the total (or why a line cannot be
-filled). Returns the export envelope with `no_catalog`, `unknown_item:<name>`,
-`invalid_lines` (no basket), `invalid_quantity:<name>`, `too_many_lines` or the usual
-player/NPC codes.
-
+A server with its own shop menu places the order directly:
+`exports.humalike:PlaceOrder(npcId, playerId, { water = 2, burger = 1 })`
+sends the picked lines, checked and priced the same way, and the NPC
+announces the total. Returns the export envelope with `no_catalog`,
+`unknown_item:<name>`, `invalid_lines`, `invalid_quantity:<name>`,
+`too_many_lines` or the usual player/NPC codes.
 
 Keep customer-specific rewards, jobs, event names, dispatch payloads and UI
 hooks in the integration resource. This makes updating `humalike` a complete

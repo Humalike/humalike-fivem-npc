@@ -13,8 +13,6 @@ function HumalikeNpcReportCapabilities()
     }, function(ok, status, body)
         if population then population.CapabilitiesReported(features, ok) end
         if ok then return end
-        -- The backend's refusal names the field, so a bad declaration is
-        -- readable in the console instead of a bare status.
         print(('[humalike-npc] report_capabilities failed (%s)'):format(
             HumalikeHttp.DescribeFailure(status, body)))
     end)

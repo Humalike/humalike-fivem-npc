@@ -1,5 +1,4 @@
--- Stand-in for the server's inventory: wire `exports.ox_inventory:AddItem`
--- (or your own) here and return true only when the item was handed over.
+-- Replace with the server's inventory; return true only once the item moved.
 local function giveItem(_source, _item, _count)
     return false
 end
@@ -31,18 +30,11 @@ local function registerProviders()
         end,
     })
 
-    -- The server's one actions provider carries what the NPC can ask it to
-    -- run (built-in deeds, its own deeds) and what it can observe. One
-    -- provider owns all of it: HumaLike consults only the selected actions
-    -- provider, so a second one registered just for observations or actions
-    -- would shadow this one or leave the domain ambiguous.
     exports.humalike:RegisterProvider('actions', {
         name = 'example_actions',
         apiVersion = 1,
         priority = 100,
         SupportedActions = { 'hand_over_money' },
-        -- Facts only this server knows. Declare them once; report each
-        -- occurrence from the hook that makes it true (see below).
         Namespace = 'example',
         Observations = {
             item_given = {
@@ -69,9 +61,6 @@ local function registerProviders()
         },
         RunAction = function(action, source, _npcCoords, params)
             if action == 'give_map' then
-                -- Replace with your inventory's "give item" call; params.item is
-                -- the fixed value above. Return true only once the item really
-                -- moved: the NPC treats the return value as what happened.
                 local given = giveItem(source, params.item, 1)
                 if given then
                     TriggerClientEvent('chat:addMessage', source, {
@@ -81,9 +70,7 @@ local function registerProviders()
                 return given == true
             end
             if action == 'hand_over_money' then
-                -- Replace with your economy's "give cash to player" call and
-                -- return true only once the cash really moved; the NPC treats
-                -- the return value as what happened.
+                -- Return true only once the cash really moved.
                 print(('example adapter: no economy wired, %s for player %s (%s) not delivered'):format(
                     action, tostring(source), tostring(params.robber_description)))
                 return false
@@ -93,8 +80,7 @@ local function registerProviders()
     })
 end
 
--- Replace with your inventory's "gave item to ped" event. Report only after
--- the transfer really happened; the NPC treats this as fact.
+-- Report only after the transfer really happened.
 AddEventHandler('example:inventory:itemGivenToNpc', function(source, npcId, item, quantity)
     local result = exports.humalike:ReportObservation(npcId, source, 'item_given', {
         item = item,
