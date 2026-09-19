@@ -441,7 +441,9 @@ exports.humalike:RegisterProvider('actions', {
     },
     Catalog = {
         currency = 'cash',          -- the item_given `item` that counts as payment
-        payment = 'item_given',     -- the observation your inventory hook reports
+        payment = 'item_given',     -- the observation your inventory hook reports:
+                                    -- item (string) and quantity (integer -- money
+                                    -- is whole units; a number field is refused)
         items = {
             water = { price = 5 },
             bread = { price = 3 },

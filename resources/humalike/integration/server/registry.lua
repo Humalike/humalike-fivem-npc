@@ -257,10 +257,13 @@ local function normalizedCatalog(descriptor, observations)
     if type(currency) ~= 'string' or not currency:match('^[a-z0-9_.-]+$') or #currency > 48 then
         return nil, 'invalid Catalog currency'
     end
+    -- Money is whole units of the currency: the counter adds payments up,
+    -- prices in integers and refunds the sum, so a fractional quantity has
+    -- no place there and HumaLike refuses a number-typed one at the door.
     local observation = type(payment) == 'string' and observations[payment] or nil
     if not observation or observation.fields.item ~= 'string'
-        or (observation.fields.quantity ~= 'integer' and observation.fields.quantity ~= 'number') then
-        return nil, 'Catalog payment must be a declared observation with item (string) and quantity (integer or number)'
+        or observation.fields.quantity ~= 'integer' then
+        return nil, 'Catalog payment must be a declared observation with item (string) and quantity (integer)'
     end
     if type(catalog.items) ~= 'table' or next(catalog.items) == nil then
         return nil, 'invalid Catalog items'

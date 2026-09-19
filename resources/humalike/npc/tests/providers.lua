@@ -509,7 +509,15 @@ end
 ok, err = selling('water')
 assert(not ok and err == 'invalid Catalog')
 ok, err = selling({ currency = 'cash', payment = 'door_unlocked', items = { water = { price = 5 } } })
-assert(not ok and err:match('^Catalog payment must'))
+assert(not ok and err == 'Catalog payment must be a declared observation with item (string) and quantity (integer)')
+-- Money is whole units: a number-typed quantity is refused here as HumaLike
+-- refuses it (422), never registered and then rejected at the door.
+ok, err = selling({ currency = 'cash', payment = 'item_given', items = { water = { price = 5 } } },
+    { Observations = { item_given = {
+        fields = { item = 'string', quantity = 'number' },
+        template = { en = 'the character handed you {quantity} x {item}' },
+    } } })
+assert(not ok and err == 'Catalog payment must be a declared observation with item (string) and quantity (integer)', tostring(err))
 ok, err = selling({ currency = 'cash', payment = 'item_given', items = {} })
 assert(not ok and err == 'invalid Catalog items')
 ok, err = selling({ currency = 'cash', payment = 'item_given', items = { water = { price = 1.5 } } })
