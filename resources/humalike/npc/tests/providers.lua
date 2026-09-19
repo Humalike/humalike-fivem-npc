@@ -141,7 +141,6 @@ assert(HumalikeActions.Run('custom_action', 7, {}, {}))
 local supported = GetSupportedActions()
 assert(table.concat(supported, ',') == 'wave,give_item,custom_action')
 
--- Declared observations: validated at registration, namespaced on the wire.
 local function observing(overrides)
     local descriptor = {
         name = 'observer', apiVersion = 1, priority = 50,
@@ -181,26 +180,20 @@ ok, err = observing({ Observations = { item_given = { template = { en = 'got {it
 assert(not ok and err == 'unknown placeholder {item} in observation item_given')
 ok, err = observing({ Observations = { item_given = { template = { en = ('x'):rep(401) } } } })
 assert(not ok and err == 'invalid template in observation item_given')
--- C1 controls (U+0085 here) never pass, same as at the backend.
 ok, err = observing({ Observations = { item_given = { template = { en = 'a\u{85}b' } } } })
 assert(not ok and err == 'invalid template in observation item_given')
--- A template is sized by its worst-case render, every occurrence counted:
--- 16 x {item} at 64 characters + 288 = 1328 characters, past the backend's 912.
+-- Worst-case render: 16 x {item} at 64 + 288 = 1328.
 local function wide(placeholders, padding, fields)
     return { Observations = { item_given = { fields = fields,
         template = { en = ('{item} '):rep(placeholders) .. ('x'):rep(padding) } } } }
 end
 ok, err = observing(wide(16, 288, { item = 'string' }))
 assert(not ok and err == 'template renders up to 1328 characters, over 912, in observation item_given', err)
--- 9 x 65 + 327 = 912 fits; one more character does not.
 ok, err = observing(wide(9, 327, { item = 'string' }))
 assert(ok, err)
 assert(exported.UnregisterProvider('actions', 'observer'))
 ok, err = observing(wide(9, 328, { item = 'string' }))
 assert(not ok and err == 'template renders up to 913 characters, over 912, in observation item_given', err)
--- Numbers are bounded at 2^53 by ReportObservation, so they are sized at
--- their widest render (21 for a float, 17 for an integer), not as unbounded;
--- a boolean at `false`. 40 x 22 + 33 = 913; 50 x 18 + 13 = 913.
 ok, err = observing(wide(40, 33, { item = 'number' }))
 assert(not ok and err == 'template renders up to 913 characters, over 912, in observation item_given', err)
 ok, err = observing(wide(40, 32, { item = 'number' }))
@@ -211,11 +204,10 @@ assert(not ok and err == 'template renders up to 913 characters, over 912, in ob
 ok, err = observing(wide(50, 12, { item = 'integer' }))
 assert(ok, err)
 assert(exported.UnregisterProvider('actions', 'observer'))
--- A 400-character template of booleans renders 343 characters: it fits.
 ok, err = observing(wide(57, 1, { item = 'boolean' }))
 assert(ok, err)
 assert(exported.UnregisterProvider('actions', 'observer'))
--- Sized in characters, not bytes: 300 x ł is 300 characters.
+-- Characters, not bytes.
 ok, err = observing({ Observations = { item_given = { fields = { item = 'string' },
     template = { en = ('ł'):rep(300) .. '{item}' } } } })
 assert(ok, err)
@@ -508,10 +500,8 @@ assert(wireKey == 'srp:item_given' and definition.fields.quantity == 'integer')
 assert(definition.template.en == 'the character handed you {quantity} x {item}')
 assert(HumalikeActions.Observation('door_unlocked') == nil)
 assert(HumalikeActions.Observation(nil) == nil)
--- An observation-only provider runs nothing.
 assert(not HumalikeActions.Run('custom_action', 7, {}, {}))
 assert(table.concat(GetSupportedActions(), ',') == 'wave,give_item')
--- A provider that declares none still carries an empty table, never nil.
 assert(next(HumalikeProviders.registered.actions.custom_actions.Observations) == nil)
 assert(exported.UnregisterProvider('actions', 'observer'))
 assert(HumalikeActions.Observation('item_given') == nil)

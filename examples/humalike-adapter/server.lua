@@ -93,8 +93,7 @@ local function registerProviders()
     })
 end
 
--- Replace with your inventory's "gave item to ped" event. Report only after
--- the transfer really happened; the NPC treats this as fact.
+-- Report only after the transfer really happened.
 AddEventHandler('example:inventory:itemGivenToNpc', function(source, npcId, item, quantity)
     local result = exports.humalike:ReportObservation(npcId, source, 'item_given', {
         item = item,

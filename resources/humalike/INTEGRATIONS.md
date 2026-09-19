@@ -246,16 +246,11 @@ Client integrations can subscribe to
 
 ## Server observations
 
-Facts only the server knows -- an item handed to an NPC, a door unlocked, a job
-finished -- are declared on the actions provider and reported per occurrence.
-The NPC reads the rendered line as a world event in its own language and can
-react to it; a player saying "I gave you the amulet" is talk, a reported
-observation is fact.
-
-Observations belong to the one selected actions provider, so declare them on
-the actions provider the server already registers rather than on a second one
-(two providers at the same priority make the domain `ambiguous`, and a lower
-one is never consulted):
+Facts only the server knows (an item handed to an NPC, a door unlocked) are
+declared on the actions provider and reported per occurrence. The NPC reads
+the rendered line as a world event in its own language and can react to it.
+Declare them on the actions provider the server already registers; only the
+selected provider is consulted.
 
 ```lua
 exports.humalike:RegisterProvider('actions', {
@@ -280,43 +275,32 @@ local result = exports.humalike:ReportObservation(npcId, source, 'item_given', {
 })
 ```
 
-`Namespace` prefixes every key on the wire (`srp:item_given`), so a server key
-never collides with a built-in event. Each observation declares its `fields`
-(`string`, `integer`, `number` or `boolean`) and a `template` per NPC language
-(`en`, `pl`) whose `{placeholders}` name declared fields; an NPC whose language
-has no template reads the English one. A template is at most 400 characters
-and is also sized by its worst-case render (every placeholder occurrence at
-its field's widest value: 64 characters for a string, 21 for a number, 17 for
-an integer, 5 for a boolean), which must stay within the 912 characters the
-backend accepts. A provider that implements no action may omit `RunAction`.
-`RegisterProvider` returns `false` and prints the exact reason for a
-declaration it refuses, such as `unknown placeholder {item} in observation
-item_given` or `template renders up to 1328 characters, over 912, in
-observation item_given`.
+`Namespace` prefixes every key on the wire (`srp:item_given`). Each observation
+declares its `fields` (`string`, `integer`, `number` or `boolean`) and a
+`template` per NPC language (`en`, `pl`) whose `{placeholders}` name declared
+fields; a language without a template falls back to English. A template is at
+most 400 characters and its worst-case render (64 characters per string, 21
+per number, 17 per integer, 5 per boolean) must stay within 912. A provider
+that implements no action may omit `RunAction`. `RegisterProvider` returns
+`false` and prints the reason for a declaration it refuses.
 
-`ReportObservation(npcId, playerId, key, fields, options)` accepts a live roster
-NPC (static, or external and bound) or an ambient body the server currently
-leases. Every declared field is required and unknown fields are rejected: a
-`string` is at most 64 characters with no control characters (C0, DEL or C1,
-so no newline and no U+0085), an `integer` is whole, and an `integer` or
-`number` is finite and at most 2^53 in magnitude. It returns the export
-envelope: `value.key` and `value.text` on success, or an `error` code
-(`invalid_player`, `character_not_loaded`, `npc_not_found`, `npc_not_bound`,
-`unknown_observation`, `invalid_fields` when `fields` is not a table,
-`invalid_field:<name>`, `unknown_field:<name>`, `invalid_options`, and
-`text_too_long` should a rendered line still exceed 912 characters).
-`ok = true` means the observation is queued for delivery, not delivered: with
-the backend down it is retried a few times and then dropped. With
-`humalike_actions none` every report returns `unknown_observation`.
-`options.react = false` files the fact without a spoken reaction. With
-`humalike_developer_tools 1`, `/humalike_dev observe <npc_uuid> <key>
-[field=value ...]` reports one by hand.
+`ReportObservation(npcId, playerId, key, fields, options)` accepts a live
+roster NPC or an ambient body the server currently leases. Every declared
+field is required and unknown fields are rejected: a `string` is at most 64
+characters with no control characters, an `integer` is whole, and numbers are
+finite and at most 2^53 in magnitude. It returns the export envelope:
+`value.key` and `value.text` on success, or an `error` code (`invalid_player`,
+`character_not_loaded`, `npc_not_found`, `npc_not_bound`,
+`unknown_observation`, `invalid_fields`, `invalid_field:<name>`,
+`unknown_field:<name>`, `invalid_options`, `text_too_long`). `ok = true` means
+the observation is queued, not delivered. With `humalike_actions none` every
+report returns `unknown_observation`. `options.react = false` files the fact
+without a spoken reaction. With `humalike_developer_tools 1`,
+`/humalike_dev observe <npc_uuid> <key> [field=value ...]` reports one by hand.
 
-An observation is the script's own fact, so it is not gated on earshot and is
-filed and, with `react = true`, spoken even while a script holds `perception`
-on the NPC (`ReportObservation` does not check which resource holds it). Hold
-`speech` to keep the NPC silent. A repeat of the same key within about 2.5
-seconds is filed but not spoken again.
+An observation is not gated on earshot or a `perception` hold; hold `speech`
+to keep the NPC silent. A repeat of the same key within about 2.5 seconds is
+filed but not spoken again.
 
 ## Server-defined actions
 
