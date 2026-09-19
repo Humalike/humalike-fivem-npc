@@ -374,9 +374,9 @@ is unmet; a player saying it happened never unlocks anything. `limit = {
 per_player = 1, every_s = 86400, hint = { en = '...' } }` caps how often one
 player may get the deed (counted from the deeds HumaLike recorded, so chat
 cannot reset it); no limit unless declared. `uses_stock = { item = 'map',
-quantity = 1 }` ties the deed to the NPC's stock, which the admin sets per NPC
-in the dashboard (`map: 50`, `bread: unlimited`): the NPC reads its exact
-counts, the action locks at zero, and each delivered deed takes its share. In
+quantity = 1 }` ties the deed to the NPC's stock, which the server sets with
+`SetNpcStock` (below): the NPC reads its exact counts, the action locks at
+zero, and each delivered deed takes its share. In
 `where`, `quantity = { sum_gte = 2 }` adds matching hand-overs up, so one
 bottle and one bottle make two; paying spends them all. `auto = true` makes
 HumaLike perform the deed as soon as its requirements hold, the next time the
@@ -403,6 +403,22 @@ is recorded, the deed stays open and HumaLike may push it again (a counter
 hand-over, on the next turn), so returning `1` or `'ok'` would perform it
 twice. Prefer expressing state as observations over refusing at run time,
 since the NPC has already spoken.
+
+Stock is the server's to set: `exports.humalike:SetNpcStock(npcId, { map =
+50, bread = 'unlimited' })` puts exactly that shelf on the NPC, replacing
+whatever it had (an item left out is one the NPC has none of; `0` runs an
+item out), so restocking is calling it again. The NPC reads its exact
+counts; a deed with `uses_stock`, and every catalogue line, locks at zero and
+takes its share when delivered. Items are the server's own names
+(`[a-z0-9_.-]`, at most 48 characters, at most 32 of them), counts whole
+numbers up to 1,000,000 or the word `'unlimited'`. The export waits for
+HumaLike's answer, so call it from an event handler or a thread (once the
+NPC is on the roster -- `humalike:npc:ready` -- or, for an external one,
+after binding): `ok` means the shelf is stored and `value.stock` is what was
+stored. Refused with `invalid_npc`, `npc_not_found`, `npc_not_bound`,
+`invalid_stock`, `invalid_item:<name>`, `invalid_count:<name>`,
+`too_many_items`, `runtime_not_ready` before anything is sent, or with
+HumaLike's own code (its detail printed in the console) when it refuses.
 
 ## A shop counter
 
@@ -453,8 +469,8 @@ exports.humalike:RegisterProvider('actions', {
 })
 ```
 
-An NPC sells whatever of the catalogue the admin stocked it with (the
-dashboard's "What the NPC has to give"), at these prices. The model takes the
+An NPC sells whatever of the catalogue the server stocked it with
+(`SetNpcStock`, above), at these prices. The model takes the
 order as one tag with every line (`[srp:order water=10 pistol=1]`); HumaLike
 checks each line against the shelf and the per-item limits, prices it, and
 tells the NPC the total. Payment is your reported `item_given` of the

@@ -110,3 +110,14 @@ AddEventHandler('onResourceStart', function(resource)
 end)
 
 AddEventHandler('humalike:integration:ready', registerProviders)
+
+-- What each NPC has to give is the server's to set, once the roster is in:
+-- the whole shelf every time, so restocking is calling it again. Deeds with
+-- `uses_stock` and catalogue lines lock when an item runs out.
+AddEventHandler('humalike:npc:ready', function()
+    local npcId = 'replace-with-the-npc-uuid-from-the-dashboard'
+    local result = exports.humalike:SetNpcStock(npcId, { treasure_map = 5, water = 'unlimited' })
+    if not result.ok then
+        print(('example adapter: stock rejected (%s)'):format(result.error))
+    end
+end)
