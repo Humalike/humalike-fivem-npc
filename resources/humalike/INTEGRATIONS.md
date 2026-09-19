@@ -278,11 +278,13 @@ local result = exports.humalike:ReportObservation(npcId, source, 'item_given', {
 `Namespace` prefixes every key on the wire (`srp:item_given`). Each observation
 declares its `fields` (`string`, `integer`, `number` or `boolean`) and a
 `template` per NPC language (`en`, `pl`) whose `{placeholders}` name declared
-fields; a language without a template falls back to English. A template is at
-most 400 characters and its worst-case render (64 characters per string, 21
-per number, 17 per integer, 5 per boolean) must stay within 912. A provider
-that implements no action may omit `RunAction`. `RegisterProvider` returns
-`false` and prints the reason for a declaration it refuses.
+fields; a language without a template falls back to English. `spent` is a
+field HumaLike writes, and a key names either an observation or an action. A
+template is at most 400 characters and its worst-case render (64 characters
+per string, 21 per number, 17 per integer, 5 per boolean) must stay within
+912. A provider that implements no action may omit `RunAction`.
+`RegisterProvider` returns `false` and prints the reason for a declaration it
+refuses.
 
 `ReportObservation(npcId, playerId, key, fields, options)` accepts a live
 roster NPC or an ambient body the server currently leases. Every declared
@@ -355,7 +357,8 @@ action is done. `locked_hint` is what the NPC is told, per language, while a
 requirement is unmet. `limit = { per_player = 1, every_s = 86400, hint = {
 en = '...' } }` caps how often one player may get the action. `auto = true`
 performs the action as soon as its requirements hold, the next time the NPC
-answers that player (needs a `consume = true` requirement). `params_from = {
+answers that player (needs a `consume = true` requirement and no `required`
+param, as the model fills nothing in). `params_from = {
 amount = 'item_given.quantity' }` hands `RunAction` values read from the
 consumed facts, numbers summed, never from the model. Sizes and counts are
 capped; a declaration over a cap is refused at `RegisterProvider` with the
