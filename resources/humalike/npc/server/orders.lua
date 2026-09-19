@@ -1,6 +1,3 @@
--- The server's own menu placing an order at an NPC's counter: the lines the
--- player picked, as catalogue item names. Priced and checked by HumaLike
--- exactly like an order the NPC took in words; the NPC then says the total.
 function HumalikePlaceOrder(npcId, playerId, rawLines)
     playerId = tonumber(playerId)
     if not playerId or playerId <= 0 or playerId % 1 ~= 0 then
@@ -21,7 +18,6 @@ function HumalikePlaceOrder(npcId, playerId, rawLines)
         if type(item) ~= 'string' or not catalog.items[item] then
             return HumalikeExportResult.Failure(('unknown_item:%s'):format(tostring(item)))
         end
-        -- A whole number, integer or float (2 or 2.0), like a reported field.
         quantity = type(quantity) == 'number' and math.tointeger(quantity) or nil
         if not quantity or quantity < 1 or quantity > 1000 then
             return HumalikeExportResult.Failure(('invalid_quantity:%s'):format(item))

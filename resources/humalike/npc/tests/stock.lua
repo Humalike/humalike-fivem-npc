@@ -1,5 +1,3 @@
--- SetNpcStock: the shelf checked here, posted once as `set_npc_stock`, and
--- the answer awaited so `ok` means stored.
 local exported, posts, printed = {}, {}, {}
 local answer = { ok = true, status = 200, body = { stock = { map = 50, bread = 'unlimited' } } }
 local bound = true
@@ -44,7 +42,6 @@ local function refused(npcId, stock, code)
         ('expected %s, got %s'):format(code, tostring(result.error)))
 end
 
--- Which NPC: a uuid on the roster; an external one only once bound.
 refused(nil, { map = 1 }, 'invalid_npc')
 refused(42, { map = 1 }, 'invalid_npc')
 refused('sal', { map = 1 }, 'invalid_npc')
@@ -53,7 +50,6 @@ refused(GHOST, { map = 1 }, 'npc_not_found')
 bound = false
 refused(EXT, { map = 1 }, 'npc_not_bound')
 bound = true
--- What is on it.
 refused(SAL, nil, 'invalid_stock')
 refused(SAL, 'map', 'invalid_stock')
 refused(SAL, {}, 'invalid_stock')
@@ -73,8 +69,6 @@ for index = 1, 33 do crowded['item_' .. index] = 1 end
 refused(SAL, crowded, 'too_many_items')
 assert(#posts == 0, 'a refused shelf never reaches the poster')
 
--- The shelf as posted: whole counts (a float that is whole reads as an
--- integer), 'unlimited' as the word, one request, the stored shelf back.
 local result = set(SAL, { map = 50.0, bread = 'unlimited', [('m'):rep(48)] = 0, ['a.b-c_9'] = 1000000 })
 assert(result.ok, result.error)
 assert(#posts == 1 and posts[1].name == 'set_npc_stock')
@@ -87,16 +81,14 @@ local width = 0
 for _ in pairs(body.stock) do width = width + 1 end
 assert(width == 4)
 assert(result.value.stock == answer.body.stock, 'the answer carries what HumaLike stored')
--- A bound external NPC has a shelf too; 32 items fit.
 local full = {}
 for index = 1, 32 do full['item_' .. index] = index end
 assert(set(EXT, full).ok and posts[2].payload.npc_id == EXT)
--- An answer without the shelf falls back to what was sent.
+-- No shelf in the answer falls back to what was sent.
 answer = { ok = true, status = 200, body = {} }
 result = set(SAL, { cola = 3 })
 assert(result.ok and result.value.stock.cola == 3)
 
--- A refusal passes the backend's code through and prints its detail.
 answer = { ok = false, status = 400, body = { error = { code = 'VALIDATION_ERROR',
     details = { { field = 'stock.map', message = 'too many' } } } } }
 refused(SAL, { map = 1 }, 'VALIDATION_ERROR')
@@ -105,8 +97,7 @@ answer = { ok = false, status = 404, body = { error = { code = 'NPC_NOT_FOUND' }
 refused(SAL, { map = 1 }, 'NPC_NOT_FOUND')
 answer = { ok = false, status = 500, body = nil }
 refused(SAL, { map = 1 }, 'http_500')
--- No credentials yet: the poster answers 0 without a request.
 answer = { ok = false, status = 0, body = nil }
 refused(SAL, { map = 1 }, 'runtime_not_ready')
 
-io.write('stock: ok\n')
+print('stock: ok')

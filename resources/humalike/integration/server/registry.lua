@@ -237,9 +237,6 @@ local function validateDescriptor(domain, descriptor)
     return true
 end
 
--- The shop: what the server's NPCs may sell, at what unit price, paid in
--- which reported item. HumaLike runs the sale; the script gets `deliver`
--- (the basket, the total, the change) and `refund` (an amount).
 local function normalizedCatalog(descriptor, observations)
     local catalog = descriptor.Catalog
     if catalog == nil then return nil end
@@ -247,9 +244,7 @@ local function normalizedCatalog(descriptor, observations)
     if type(currency) ~= 'string' or not currency:match('^[a-z0-9_.-]+$') or #currency > 48 then
         return nil, 'invalid Catalog currency'
     end
-    -- Money is whole units of the currency: the counter adds payments up,
-    -- prices in integers and refunds the sum, so a fractional quantity has
-    -- no place there and HumaLike refuses a number-typed one at the door.
+    -- Money is whole units, so a number-typed quantity is refused.
     local observation = type(payment) == 'string' and observations[payment] or nil
     if not observation or observation.fields.item ~= 'string'
         or observation.fields.quantity ~= 'integer' then
@@ -282,8 +277,7 @@ local function normalizedCatalog(descriptor, observations)
     return { currency = currency, payment = payment, items = items }
 end
 
--- The two deeds a shop needs from the script, declared for it: the basket
--- and the money come from HumaLike, never from the model.
+-- Declared on behalf of a Catalog; never offered to the model.
 local COUNTER_ACTIONS = {
     deliver = {
         name = 'Fill the order', description = 'Hand over what the customer ordered and paid for.',
@@ -589,9 +583,7 @@ local function normalizedAction(key, definition, observations)
     }
 end
 
--- The backend's report takes ACTION_LIMITS.actions in all, and a Catalog
--- adds its counter deeds to the declared ones: 31 declared + deliver +
--- refund is a report refused whole, so it is refused here, by name.
+-- The counter actions count against ACTION_LIMITS.actions.
 local function normalizedActions(descriptor, observations, catalog)
     local reserved = 0
     if catalog then for _ in pairs(COUNTER_ACTIONS) do reserved = reserved + 1 end end

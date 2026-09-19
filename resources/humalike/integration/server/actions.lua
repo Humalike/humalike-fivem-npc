@@ -70,7 +70,6 @@ function HumalikeActions.Declarations()
     return actions, observations
 end
 
--- The shop in the backend's wire shape, or nil.
 function HumalikeActions.Catalog()
     local provider = HumalikeSelectedProvider('actions')
     local catalog = provider and provider.Catalog or nil

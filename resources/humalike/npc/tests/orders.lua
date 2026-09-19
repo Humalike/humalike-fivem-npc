@@ -1,5 +1,3 @@
--- PlaceOrder: the menu's lines, checked against the catalogue, posted as an
--- order request for HumaLike to price.
 local exported, posted = {}, {}
 local catalog
 function exports(name, callback) exported[name] = callback end
@@ -29,7 +27,6 @@ assert(place('npc-en', 7, { water = 0 }).error == 'invalid_quantity:water')
 assert(place('npc-en', 7, { water = 1.5 }).error == 'invalid_quantity:water')
 assert(place('npc-en', 7, { water = '2' }).error == 'invalid_quantity:water')
 assert(#posted == 0)
--- A whole number is a whole number, float or not, like a reported field.
 local order = place('ambient-1', 7, { water = 2.0, burger = 1 })
 assert(order.ok and order.value.lines.water == 2, order.error)
 assert(math.type(order.value.lines.water) == 'integer')

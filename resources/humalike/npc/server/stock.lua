@@ -1,13 +1,3 @@
--- The NPC's shelf, set by the server's script: what an NPC has to give, as
--- the server's framework spells its items. HumaLike stores the shelf on the
--- NPC; the NPC reads its exact counts, a deed with `uses_stock` or a
--- catalogue line locks at zero, and each delivered deed takes its share.
--- Every call replaces the whole shelf, so restocking is calling again.
---
--- The export waits for HumaLike's answer: `ok` means the shelf is stored,
--- and `value.stock` is what was stored. Call it from an event handler or a
--- thread (the caller is suspended, never the server).
-
 local ITEM_PATTERN = '^[a-z0-9_.-]+$'
 local ITEM_LIMIT = 48
 local COUNT_LIMIT = 1000000
@@ -16,9 +6,6 @@ local ITEMS_LIMIT = 32
 local UUID_PATTERN = ('^%s%%-%s%%-%s%%-%s%%-%s$'):format(
     ('%x'):rep(8), ('%x'):rep(4), ('%x'):rep(4), ('%x'):rep(4), ('%x'):rep(12))
 
--- Whose shelf this is: a roster NPC, and an external one only once its body
--- is bound (runtime control resolves it the same way). An ambient body has
--- no shelf of its own.
 local function resolveNpc(npcId)
     if type(npcId) ~= 'string' or not npcId:match(UUID_PATTERN) then
         return nil, 'invalid_npc'
@@ -31,9 +18,7 @@ local function resolveNpc(npcId)
     return persistent
 end
 
--- item -> whole count (integer or integral float, like an order line) or
--- 'unlimited'. An empty table would leave the box as a JSON array, so a
--- shelf names at least one item; a count of 0 is how an item runs out.
+-- An empty table encodes as [], so a shelf names at least one item.
 local function validatedStock(raw)
     if type(raw) ~= 'table' or next(raw) == nil then return nil, 'invalid_stock' end
     local stock, count = {}, 0
@@ -68,7 +53,7 @@ function HumalikeSetNpcStock(npcId, rawStock)
     if not stock then return HumalikeExportResult.Failure(stockError) end
     local answer = postStock(npcId, stock)
     if not answer.ok then
-        -- No credentials yet: the poster answers status 0 without a request.
+        -- Status 0 means no credentials yet, nothing was sent.
         if answer.status == 0 then return HumalikeExportResult.Failure('runtime_not_ready') end
         print(('[humalike-npc] set_npc_stock for %s refused (%s)'):format(
             npcId, HumalikeHttp.DescribeFailure(answer.status, answer.body)))
