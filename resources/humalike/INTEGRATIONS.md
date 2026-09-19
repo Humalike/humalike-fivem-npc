@@ -452,21 +452,32 @@ exports.humalike:RegisterProvider('actions', {
     },
     RunAction = function(action, source, npcCoords, params)
         if action == 'deliver' then
-            -- All or nothing: refuse before anything moves, or the sale stands.
+            -- All or nothing: weigh the whole basket (per-line checks are
+            -- not additive), then add line by line and take everything back
+            -- on the first refusal. Return true only once every line and the
+            -- change are in the customer's hands.
+            local weight = 0
             for item, quantity in pairs(params.items) do
-                if not exports.ox_inventory:CanCarryItem(source, item, quantity) then
+                weight = weight + exports.ox_inventory:Items(item).weight * quantity
+            end
+            if not exports.ox_inventory:CanCarryWeight(source, weight) then return false end
+            local added = {}
+            for item, quantity in pairs(params.items) do
+                if exports.ox_inventory:AddItem(source, item, quantity) ~= true then
+                    for _, line in ipairs(added) do
+                        exports.ox_inventory:RemoveItem(source, line.item, line.quantity)
+                    end
                     return false
                 end
+                added[#added + 1] = { item = item, quantity = quantity }
             end
-            for item, quantity in pairs(params.items) do
-                exports.ox_inventory:AddItem(source, item, quantity)
-            end
-            if params.change > 0 then
-                exports.ox_inventory:AddItem(source, params.currency, params.change)
+            if params.change > 0
+                and exports.ox_inventory:AddItem(source, params.currency, params.change) ~= true then
+                return false
             end
             return true
         elseif action == 'refund' then
-            return exports.ox_inventory:AddItem(source, params.currency, params.amount)
+            return exports.ox_inventory:AddItem(source, params.currency, params.amount) == true
         end
         return false
     end,
@@ -501,7 +512,8 @@ through conversation: `exports.humalike:PlaceOrder(npcId, playerId, { water
 = 2, burger = 1 })` sends the picked lines; HumaLike checks and prices them
 the same way and the NPC announces the total (or why a line cannot be
 filled). Returns the export envelope with `no_catalog`, `unknown_item:<name>`,
-`invalid_quantity:<name>`, `too_many_lines` or the usual player/NPC codes.
+`invalid_lines` (no basket), `invalid_quantity:<name>`, `too_many_lines` or the usual
+player/NPC codes.
 
 
 Keep customer-specific rewards, jobs, event names, dispatch payloads and UI
