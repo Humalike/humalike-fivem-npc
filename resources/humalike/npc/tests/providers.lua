@@ -396,6 +396,34 @@ ok, err = acting({ name = 'n', description = 'd',
     requires = { { observation = 'item_given', where = { quantity = { gte = -(2 ^ 53), lte = 2 ^ 53 } } } } })
 assert(ok, err)
 assert(exported.UnregisterProvider('actions', 'observer'))
+-- A bound on an integer field is a whole number, stored as one, like an
+-- exact match; on a number field a fraction is a fraction.
+for _, fractional in ipairs({ { gte = 1.5 }, { lte = 0.5 }, { sum_gte = 2.5 } }) do
+    ok, err = acting({ name = 'n', description = 'd',
+        requires = { { observation = 'item_given', where = { quantity = fractional } } } })
+    assert(not ok and err == 'invalid bound on quantity in requirement 1 of action give_map', tostring(err))
+end
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { { observation = 'item_given', where = { quantity = { gte = 2.0, lte = 2 ^ 53 } } } } })
+assert(ok, err)
+local stored = HumalikeSelectedProvider('actions').Actions.give_map.requires[1].where.quantity
+assert(stored.gte == 2 and math.type(stored.gte) == 'integer', tostring(stored.gte))
+assert(stored.lte == 9007199254740992 and math.type(stored.lte) == 'integer', tostring(stored.lte))
+assert(stored.sum_gte == nil)
+assert(exported.UnregisterProvider('actions', 'observer'))
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { { observation = 'item_given', where = { quantity = { sum_gte = 3.0 } } } } })
+assert(ok, err)
+stored = HumalikeSelectedProvider('actions').Actions.give_map.requires[1].where.quantity
+assert(stored.sum_gte == 3 and math.type(stored.sum_gte) == 'integer', tostring(stored.sum_gte))
+assert(exported.UnregisterProvider('actions', 'observer'))
+local weighed = { fields = { weight = 'number' }, template = { en = 'x' } }
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { { observation = 'weighed', where = { weight = { gte = 1.5 } } } } },
+    { Observations = { weighed = weighed } })
+assert(ok, err)
+assert(HumalikeSelectedProvider('actions').Actions.give_map.requires[1].where.weight.gte == 1.5)
+assert(exported.UnregisterProvider('actions', 'observer'))
 ok, err = acting({ name = 'n', description = 'd', fixed = { player_id = 3 } })
 assert(not ok and err == 'invalid fixed param player_id in action give_map')
 ok, err = acting({ name = 'n', description = 'd', fixed = { ['Item-Name'] = 'x' } })
