@@ -158,6 +158,9 @@ end
 -- State-changing callbacks are at-least-once, so deduplicate by invocation ID.
 -- Only delivered ones are kept: a refusal is re-pushed under the same ID for up to an hour.
 local completedInvocations = {}
+-- A delivery that yields (inventory, database) is reserved until it answers, so a
+-- retry overtaking it shares the answer instead of running the provider again.
+local pendingInvocations = {}
 local MAX_COMPLETED_INVOCATIONS = 4096
 local INVOCATION_TTL_SECONDS = 6 * 3600
 
@@ -179,31 +182,46 @@ local function pruneInvocations(now)
     end
 end
 
-local function dispatchAction(target, actionKey, params, invocationId)
-    if not IsSupportedAction(actionKey) then return false, 'unsupported_action' end
-    local customKey, customDefinition = HumalikeActions.Custom(actionKey)
-    local deduped = SERVER_ACTION_EVENTS[actionKey] ~= nil or customKey ~= nil
-    if deduped then
-        pruneInvocations(os.time())
-        if completedInvocations[invocationId] then return true end
-    end
+local function runAction(target, actionKey, customKey, customDefinition, params)
     if HumalikeNpcRuntimeControl then
         local allowed, controlReason = HumalikeNpcRuntimeControl.AllowsAction(
             target.npc_id, actionKey)
         if not allowed then return false, controlReason end
     end
-
-    local delivered, reason
     if customKey then
-        delivered, reason = dispatchCustomAction(target, customKey, customDefinition, params)
+        return dispatchCustomAction(target, customKey, customDefinition, params)
     elseif target.kind == 'static' then
-        delivered, reason = dispatchStaticAction(target, actionKey, params)
+        return dispatchStaticAction(target, actionKey, params)
     elseif target.kind == 'ambient' then
-        delivered, reason = dispatchAmbientAction(target, actionKey, params)
-    else
-        return false, 'invalid_target_kind'
+        return dispatchAmbientAction(target, actionKey, params)
     end
-    if deduped and delivered then
+    return false, 'invalid_target_kind'
+end
+
+local function dispatchAction(target, actionKey, params, invocationId)
+    if not IsSupportedAction(actionKey) then return false, 'unsupported_action' end
+    local customKey, customDefinition = HumalikeActions.Custom(actionKey)
+    if SERVER_ACTION_EVENTS[actionKey] == nil and customKey == nil then
+        return runAction(target, actionKey, customKey, customDefinition, params)
+    end
+    pruneInvocations(os.time())
+    if completedInvocations[invocationId] then return true end
+    local pending = pendingInvocations[invocationId]
+    if pending then
+        while pending.delivered == nil do Wait(0) end
+        return pending.delivered, pending.reason
+    end
+    pending = {}
+    pendingInvocations[invocationId] = pending
+    local ok, delivered, reason = pcall(runAction, target, actionKey, customKey,
+        customDefinition, params)
+    pendingInvocations[invocationId] = nil
+    if not ok then
+        pending.delivered, pending.reason = false, 'action_handler_failed'
+        error(delivered, 0)
+    end
+    pending.delivered, pending.reason = delivered, reason
+    if delivered then
         completedInvocations[invocationId] = { expires_at = os.time() + INVOCATION_TTL_SECONDS }
     end
     return delivered, reason

@@ -30,6 +30,8 @@ local DOMAINS = {
 
 local OBSERVATION_LIMITS = { observations = 32, fields = 8, template = 400, text = 912 }
 local OBSERVATION_FIELD_TYPES = { string = true, integer = true, number = true, boolean = true }
+-- Fields HumaLike writes on a reported fact; a declaration cannot claim them.
+local OBSERVATION_RESERVED_FIELDS = { spent = true }
 -- Widest render per field type under the bounds npc/server/observations.lua enforces.
 local OBSERVATION_FIELD_WIDTHS = { string = 64, integer = 17, number = 21, boolean = 5 }
 local OBSERVATION_LANGUAGES = { en = true, pl = true }
@@ -305,6 +307,9 @@ local function normalizedObservation(key, definition)
             or not OBSERVATION_FIELD_TYPES[fieldType] then
             return nil, ('invalid field %s in observation %s'):format(tostring(name), key)
         end
+        if OBSERVATION_RESERVED_FIELDS[name] then
+            return nil, ('%s is a field HumaLike writes; observation %s cannot'):format(name, key)
+        end
         fields[name] = fieldType
         fieldCount = fieldCount + 1
         if fieldCount > OBSERVATION_LIMITS.fields then
@@ -541,6 +546,13 @@ local function normalizedAction(key, definition, observations)
     if definition.auto == true and not spends then
         return nil, ('auto action %s needs a requirement with consume = true'):format(key)
     end
+    -- An auto deed is written as a bare tag, so the model never fills a param in.
+    for paramName, param in pairs(definition.auto == true and params or {}) do
+        if param.required then
+            return nil, ('auto action %s cannot require a model-written param %s'):format(
+                key, paramName)
+        end
+    end
     -- { amount = 'item_given.quantity' }
     local paramsFrom, paramsFromCount = {}, 0
     for name, source in pairs(definition.params_from or {}) do
@@ -657,6 +669,11 @@ local function register(domain, descriptor, owner)
                     return false, ('action %s is reserved for the Catalog'):format(key)
                 end
                 provider.Actions[key] = action
+            end
+        end
+        for key in pairs(provider.Actions) do
+            if provider.Observations[key] then
+                return false, ('a key cannot be both an action and an observation: %s'):format(key)
             end
         end
     end
