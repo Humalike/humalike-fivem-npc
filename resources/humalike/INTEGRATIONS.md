@@ -385,7 +385,8 @@ call it from an event handler or a thread once the NPC is on the roster
 shelf is stored and `value.stock` is what was stored; otherwise `error` is
 `invalid_npc`, `npc_not_found`, `npc_not_bound`, `invalid_stock`,
 `invalid_item:<name>`, `invalid_count:<name>`, `too_many_items`,
-`runtime_not_ready` or the remote code.
+`runtime_not_ready`, the backend's error code, or `http_<status>` when a
+failed answer carries none.
 
 ## A shop counter
 
