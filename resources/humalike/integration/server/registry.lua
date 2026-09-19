@@ -422,11 +422,14 @@ local function normalizedAction(key, definition, observations)
             local numeric = fieldType == 'integer' or fieldType == 'number'
             if type(value) == 'table' then
                 -- A bound on a numeric field: { gte = 500 }, { lte = 3 }, both, or
-                -- { sum_gte = 2 } added up across hand-overs.
+                -- { sum_gte = 2 } added up across hand-overs. On an integer
+                -- field the limit is a whole number, stored as one, like an
+                -- exact match: the backend takes no fraction there.
                 local valid = numeric and next(value) ~= nil
                 for bound, limit in pairs(value) do
                     if (bound ~= 'gte' and bound ~= 'lte' and bound ~= 'sum_gte')
-                        or not bounded(limit) then valid = false end
+                        or not bounded(limit)
+                        or (fieldType == 'integer' and limit % 1 ~= 0) then valid = false end
                 end
                 if valid and value.sum_gte and (value.gte or value.lte or value.sum_gte <= 0) then
                     valid = false
@@ -438,7 +441,14 @@ local function normalizedAction(key, definition, observations)
                     return nil, ('invalid bound on %s in requirement %d of action %s'):format(
                         field, index, key)
                 end
-                where[field] = { gte = value.gte, lte = value.lte, sum_gte = value.sum_gte }
+                local whole = fieldType == 'integer' and math.tointeger or function(limit)
+                    return limit
+                end
+                where[field] = {
+                    gte = value.gte and whole(value.gte),
+                    lte = value.lte and whole(value.lte),
+                    sum_gte = value.sum_gte and whole(value.sum_gte),
+                }
             else
                 -- An exact match on a numeric field is a whole number: the
                 -- backend takes no fraction there.

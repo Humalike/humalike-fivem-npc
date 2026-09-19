@@ -358,17 +358,19 @@ exports.humalike:RegisterProvider('actions', {
 The key reaches the model as `srp:give_map` and comes back to `RunAction` as
 `give_map`. `description` (no square brackets) is the line the model reads.
 `params` are values the model writes inline in its tag -- `[srp:give_map
-copies=2]` -- typed `string`, `integer` or `boolean`, with an optional `enum`
-of bare words or integers and `required`. `player_id` is the addressee, filled
-by HumaLike; when the edge cannot name one the push carries none and the
-resource answers `invalid_action_player`. `fixed` values never leave the
+copies=2]` -- typed `string`, `integer` or `boolean`, with `required` and, on
+a `string` or `integer` param only, an optional `enum` of bare words or
+integers (a boolean is its own two choices). `player_id` is the addressee,
+filled by HumaLike; when the edge cannot name one the push carries none and
+the resource answers `invalid_action_player`. `fixed` values never leave the
 server: merged under the model's values before `RunAction`, they always win
 and may not be named `player_id`. `requires` is a list (all must hold) of
 declared observations that must have been reported for this NPC and the
 player it is answering, matching `where` on declared fields -- a string, a
 boolean or a whole number exactly, or a bound on a numeric field (`quantity =
-{ gte = 500 }`, `{ lte = 3 }`, or both) -- within `within_s` seconds (default
-600); `consume` spends the fact once the deed is done, so one amulet buys one
+{ gte = 500 }`, `{ lte = 3 }`, or both; whole on an `integer` field) --
+within `within_s` seconds (default 600); `consume` spends the fact once the
+deed is done, so one amulet buys one
 map. `locked_hint` is what the NPC is told, per language, while a requirement
 is unmet; a player saying it happened never unlocks anything. `limit = {
 per_player = 1, every_s = 86400, hint = { en = '...' } }` caps how often one
