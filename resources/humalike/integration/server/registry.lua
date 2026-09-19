@@ -400,7 +400,7 @@ local function normalizedAction(key, definition, observations)
         return nil, ('invalid description in action %s'):format(key)
     end
     for _, collection in ipairs({ 'params', 'fixed', 'requires', 'locked_hint', 'limit',
-        'uses_stock', 'params_from' }) do
+        'params_from' }) do
         if definition[collection] ~= nil and type(definition[collection]) ~= 'table' then
             return nil, ('invalid %s in action %s'):format(collection, key)
         end
@@ -544,16 +544,6 @@ local function normalizedAction(key, definition, observations)
             end
         end
     end
-    local usesStock
-    if definition.uses_stock ~= nil then
-        local item, quantity = definition.uses_stock.item, definition.uses_stock.quantity
-        if quantity == nil then quantity = 1 end
-        if type(item) ~= 'string' or not item:match('^[a-z0-9_.-]+$') or #item > 48
-            or math.type(quantity) ~= 'integer' or quantity < 1 or quantity > 1000 then
-            return nil, ('invalid uses_stock in action %s'):format(key)
-        end
-        usesStock = { item = item, quantity = quantity }
-    end
     if definition.auto ~= nil and type(definition.auto) ~= 'boolean' then
         return nil, ('invalid auto in action %s'):format(key)
     end
@@ -600,7 +590,7 @@ local function normalizedAction(key, definition, observations)
     end
     return {
         name = name, description = description, params = params, fixed = fixed,
-        requires = requires, locked_hint = hint, limit = limit, uses_stock = usesStock,
+        requires = requires, locked_hint = hint, limit = limit,
         auto = definition.auto == true, params_from = paramsFrom,
     }
 end

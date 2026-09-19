@@ -266,7 +266,6 @@ local giveMap = {
     },
     locked_hint = { en = 'Only once the amulet is in your hands.' },
     limit = { per_player = 1, every_s = 86400, hint = { en = 'One a day.' } },
-    uses_stock = { item = 'map' },
 }
 ok, err = acting({ name = 'n', description = 'd', auto = true,
     requires = { { observation = 'item_given' } } })
@@ -290,10 +289,6 @@ assert(ok, err)
 local declared = HumalikeActions.Declarations()
 assert(declared[1].auto == true and declared[1].params_from.amount == 'srp:item_given.quantity')
 assert(exported.UnregisterProvider('actions', 'observer'))
-ok, err = acting({ name = 'n', description = 'd', uses_stock = { item = 'Map!' } })
-assert(not ok and err == 'invalid uses_stock in action give_map')
-ok, err = acting({ name = 'n', description = 'd', uses_stock = { item = 'map', quantity = 0 } })
-assert(not ok and err == 'invalid uses_stock in action give_map')
 ok, err = acting({ name = 'n', description = 'd',
     requires = { { observation = 'item_given', where = { quantity = { sum_gte = 2, gte = 1 } } } } })
 assert(not ok and err == 'invalid bound on quantity in requirement 1 of action give_map')
@@ -456,7 +451,6 @@ assert(declaredActions[1].locked_hint.en == 'Only once the amulet is in your han
 assert(declaredActions[1].fixed == nil, 'fixed values never leave the box')
 assert(declaredActions[1].limit.per_player == 1 and declaredActions[1].limit.every_s == 86400)
 assert(declaredActions[1].limit.hint.en == 'One a day.')
-assert(declaredActions[1].uses_stock.item == 'map' and declaredActions[1].uses_stock.quantity == 1)
 assert(#declaredObservations == 1 and declaredObservations[1].key == 'srp:item_given')
 assert(declaredObservations[1].fields.quantity == 'integer')
 assert(exported.UnregisterProvider('actions', 'observer'))
