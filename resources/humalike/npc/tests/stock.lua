@@ -52,8 +52,10 @@ refused(EXT, { map = 1 }, 'npc_not_bound')
 bound = true
 refused(SAL, nil, 'invalid_stock')
 refused(SAL, 'map', 'invalid_stock')
-refused(SAL, {}, 'invalid_stock')
 refused(SAL, { Map = 1 }, 'invalid_item:Map')
+refused(SAL, { ['water-bottle'] = 1 }, 'invalid_item:water-bottle')
+refused(SAL, { ['water.small'] = 1 }, 'invalid_item:water.small')
+refused(SAL, { ['3d_glasses'] = 1 }, 'invalid_item:3d_glasses')
 refused(SAL, { ['treasure map'] = 1 }, 'invalid_item:treasure map')
 refused(SAL, { 'map' }, 'invalid_item:1')
 refused(SAL, { [('m'):rep(49)] = 1 }, 'invalid_item:' .. ('m'):rep(49))
@@ -69,14 +71,14 @@ for index = 1, 33 do crowded['item_' .. index] = 1 end
 refused(SAL, crowded, 'too_many_items')
 assert(#posts == 0, 'a refused shelf never reaches the poster')
 
-local result = set(SAL, { map = 50.0, bread = 'unlimited', [('m'):rep(48)] = 0, ['a.b-c_9'] = 1000000 })
+local result = set(SAL, { map = 50.0, bread = 'unlimited', [('m'):rep(48)] = 0, a_b_c9 = 1000000 })
 assert(result.ok, result.error)
 assert(#posts == 1 and posts[1].name == 'set_npc_stock')
 local body = posts[1].payload
 assert(body.npc_id == SAL)
 assert(body.stock.map == 50 and math.type(body.stock.map) == 'integer')
 assert(body.stock.bread == 'unlimited')
-assert(body.stock[('m'):rep(48)] == 0 and body.stock['a.b-c_9'] == 1000000)
+assert(body.stock[('m'):rep(48)] == 0 and body.stock.a_b_c9 == 1000000)
 local width = 0
 for _ in pairs(body.stock) do width = width + 1 end
 assert(width == 4)
@@ -84,6 +86,9 @@ assert(result.value.stock == answer.body.stock, 'the answer carries what HumaLik
 local full = {}
 for index = 1, 32 do full['item_' .. index] = index end
 assert(set(EXT, full).ok and posts[2].payload.npc_id == EXT)
+-- An empty shelf is sent as is: it empties the NPC's stock.
+result = set(SAL, {})
+assert(result.ok and next(posts[#posts].payload.stock) == nil)
 -- No shelf in the answer falls back to what was sent.
 answer = { ok = true, status = 200, body = {} }
 result = set(SAL, { cola = 3 })

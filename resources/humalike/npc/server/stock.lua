@@ -1,4 +1,5 @@
-local ITEM_PATTERN = '^[a-z0-9_.-]+$'
+-- The model orders by these names as tag arguments.
+local ITEM_PATTERN = '^[a-z][a-z0-9_]*$'
 local ITEM_LIMIT = 48
 local COUNT_LIMIT = 1000000
 local ITEMS_LIMIT = 32
@@ -18,9 +19,8 @@ local function resolveNpc(npcId)
     return persistent
 end
 
--- An empty table encodes as [], so a shelf names at least one item.
 local function validatedStock(raw)
-    if type(raw) ~= 'table' or next(raw) == nil then return nil, 'invalid_stock' end
+    if type(raw) ~= 'table' then return nil, 'invalid_stock' end
     local stock, count = {}, 0
     for item, entry in pairs(raw) do
         if type(item) ~= 'string' or #item > ITEM_LIMIT or not item:match(ITEM_PATTERN) then

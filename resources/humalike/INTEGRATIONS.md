@@ -376,9 +376,10 @@ HumaLike may push it again once its requirements hold, so returning `1` or
 
 `exports.humalike:SetNpcStock(npcId, { map = 50, bread = 'unlimited' })`
 replaces the NPC's whole shelf; an item left out is one the NPC has none of,
-and restocking is calling it again. Items are the server's own names
-(`[a-z0-9_.-]`, at most 48 characters, at most 32 of them), counts whole
-numbers up to 1,000,000 or `'unlimited'`. The export waits for the answer, so
+restocking is calling it again and `{}` empties the shelf. Items are the
+server's own names (a letter, then `[a-z0-9_]`, at most 48 characters, at
+most 32 of them: the model orders by them), counts whole numbers up to
+1,000,000 or `'unlimited'`. The export waits for the answer, so
 call it from an event handler or a thread once the NPC is on the roster
 (`humalike:npc:ready`, or after binding an external one). `ok` means the
 shelf is stored and `value.stock` is what was stored; otherwise `error` is
@@ -463,6 +464,10 @@ a player standing there. Underpaid, the NPC is told what is owed. If the
 customer backs out, `[srp:cancel_order]` calls `RunAction('refund', source,
 coords, { amount, currency })` with exactly what is on the counter.
 `deliver` and `refund` are declared for you and never offered to the model.
+Catalog item names follow the stock's rule. The counter's keys are its own
+in every namespace: `order`, `cancel_order`, `order_placed` and
+`order_refused` cannot be declared as actions or observations, nor `deliver`
+and `refund` as observations.
 
 A server with its own shop menu places the order directly:
 `exports.humalike:PlaceOrder(npcId, playerId, { water = 2, burger = 1 })`

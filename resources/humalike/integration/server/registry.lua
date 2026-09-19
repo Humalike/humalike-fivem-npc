@@ -257,7 +257,7 @@ local function normalizedCatalog(descriptor, observations)
     end
     local items, count = {}, 0
     for name, spec in pairs(catalog.items) do
-        if type(name) ~= 'string' or not name:match('^[a-z0-9_.-]+$') or #name > 48
+        if type(name) ~= 'string' or not name:match('^[a-z][a-z0-9_]*$') or #name > 48
             or type(spec) ~= 'table' or math.type(spec.price) ~= 'integer'
             or spec.price < 0 or spec.price > 10000000 then
             return nil, ('invalid Catalog item %s'):format(tostring(name))
@@ -279,6 +279,10 @@ local function normalizedCatalog(descriptor, observations)
     return { currency = currency, payment = payment, items = items }
 end
 
+-- The counter's own deeds and records, in every namespace.
+local COUNTER_ROLES = {
+    order = true, cancel_order = true, order_placed = true, order_refused = true,
+}
 -- Declared on behalf of a Catalog; never offered to the model.
 local COUNTER_ACTIONS = {
     deliver = {
@@ -532,7 +536,7 @@ local function normalizedAction(key, definition, observations)
     if definition.uses_stock ~= nil then
         local item, quantity = definition.uses_stock.item, definition.uses_stock.quantity
         if quantity == nil then quantity = 1 end
-        if type(item) ~= 'string' or not item:match('^[a-z0-9_.-]+$') or #item > 48
+        if type(item) ~= 'string' or not item:match('^[a-z][a-z0-9_]*$') or #item > 48
             or math.type(quantity) ~= 'integer' or quantity < 1 or quantity > 1000 then
             return nil, ('invalid uses_stock in action %s'):format(key)
         end
@@ -663,6 +667,16 @@ local function register(domain, descriptor, owner)
         provider.Actions, err = normalizedActions(descriptor, provider.Observations,
             provider.Catalog)
         if not provider.Actions then return false, err end
+        for key in pairs(provider.Observations) do
+            if COUNTER_ROLES[key] or COUNTER_ACTIONS[key] then
+                return false, ('%s is reserved for the shop counter'):format(key)
+            end
+        end
+        for key in pairs(provider.Actions) do
+            if COUNTER_ROLES[key] then
+                return false, ('%s is reserved for the shop counter'):format(key)
+            end
+        end
         if provider.Catalog then
             for key, action in pairs(COUNTER_ACTIONS) do
                 if provider.Actions[key] then

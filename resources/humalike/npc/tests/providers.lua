@@ -281,6 +281,8 @@ assert(declared[1].auto == true and declared[1].params_from.amount == 'srp:item_
 assert(exported.UnregisterProvider('actions', 'observer'))
 ok, err = acting({ name = 'n', description = 'd', uses_stock = { item = 'Map!' } })
 assert(not ok and err == 'invalid uses_stock in action give_map')
+ok, err = acting({ name = 'n', description = 'd', uses_stock = { item = 'water-bottle' } })
+assert(not ok and err == 'invalid uses_stock in action give_map')
 ok, err = acting({ name = 'n', description = 'd', uses_stock = { item = 'map', quantity = 0 } })
 assert(not ok and err == 'invalid uses_stock in action give_map')
 ok, err = acting({ name = 'n', description = 'd',
@@ -500,12 +502,31 @@ ok, err = selling({ currency = 'cash', payment = 'item_given', items = {} })
 assert(not ok and err == 'invalid Catalog items')
 ok, err = selling({ currency = 'cash', payment = 'item_given', items = { water = { price = 1.5 } } })
 assert(not ok and err == 'invalid Catalog item water')
+-- The model orders by item name as a tag argument, so the name must parse as one.
+for _, name in ipairs({ 'water-bottle', 'water.small', '3d_glasses' }) do
+    ok, err = selling({ currency = 'cash', payment = 'item_given', items = { [name] = { price = 5 } } })
+    assert(not ok and err == 'invalid Catalog item ' .. name, tostring(err))
+end
 ok, err = selling({ currency = 'cash', payment = 'item_given',
     items = { pistol = { price = 150, limit = { per_player = 0, every_s = 60 } } } })
 assert(not ok and err == 'invalid limit for Catalog item pistol')
 ok, err = selling({ currency = 'cash', payment = 'item_given', items = { water = { price = 5 } } },
     { Actions = { deliver = { name = 'x', description = 'y' } } })
 assert(not ok and err == 'action deliver is reserved for the Catalog')
+ok, err = selling({ currency = 'cash', payment = 'item_given', items = { water = { price = 5 } } },
+    { Actions = { cancel_order = { name = 'x', description = 'y' } } })
+assert(not ok and err == 'cancel_order is reserved for the shop counter', tostring(err))
+ok, err = selling(nil, { Actions = { order = { name = 'x', description = 'y' } } })
+assert(not ok and err == 'order is reserved for the shop counter', tostring(err))
+ok, err = selling(nil, { Observations = {
+    item_given = { fields = { item = 'string', quantity = 'integer' }, template = { en = 'x' } },
+    order_placed = { template = { en = 'x' } } } })
+assert(not ok and err == 'order_placed is reserved for the shop counter', tostring(err))
+ok, err = selling(nil, { Observations = {
+    item_given = { fields = { item = 'string', quantity = 'integer' }, template = { en = 'x' } },
+    refund = { template = { en = 'x' } } } })
+assert(not ok and err == 'refund is reserved for the shop counter', tostring(err))
+assert(HumalikeProviders.registered.actions.shop == nil)
 ok, err = selling({ currency = 'cash', payment = 'item_given',
     items = { water = { price = 5 }, pistol = { price = 150, limit = { per_player = 1, every_s = 86400 } } } })
 assert(ok, err)
