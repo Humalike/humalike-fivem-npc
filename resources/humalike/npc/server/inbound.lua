@@ -88,6 +88,9 @@ end
 -- Fixed values win over pushed params.
 local function customParams(definition, params)
     local merged = { player_id = params.player_id }
+    for name in pairs(definition.passthrough or {}) do
+        if params[name] ~= nil then merged[name] = params[name] end
+    end
     for name in pairs(definition.params_from or {}) do
         local value = params[name]
         if value == nil or not (type(value) == 'string' or type(value) == 'number'

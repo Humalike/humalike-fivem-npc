@@ -96,3 +96,12 @@ AddEventHandler('onResourceStart', function(resource)
 end)
 
 AddEventHandler('humalike:integration:ready', registerProviders)
+
+-- Replaces the whole shelf, so restocking is calling it again.
+AddEventHandler('humalike:npc:ready', function()
+    local npcId = 'replace-with-the-npc-uuid-from-the-dashboard'
+    local result = exports.humalike:SetNpcStock(npcId, { treasure_map = 5, water = 'unlimited' })
+    if not result.ok then
+        print(('example adapter: stock rejected (%s)'):format(result.error))
+    end
+end)

@@ -50,6 +50,8 @@ local provider = {
         requires = { { observation = 'item_given', consume = true } },
         params_from = { paid = 'item_given.quantity' },
     } },
+    Catalog = { currency = 'cash', payment = 'item_given',
+                items = { water = { price = 5 }, bread = { price = 3 } } },
     RunAction = function(action, source, coords, params)
         runCalls[#runCalls + 1] = { action = action, source = source, coords = coords, params = params }
         if type(runResult) == 'function' then return runResult() end
@@ -394,6 +396,25 @@ assert(select(2, give('map-9', { player_id = 7, note = 'x', paid = 50 }, {
     lease_token = 'lease-token',
 })).ok == true)
 
+-- Undeclared params are dropped.
+local _, basket = request({
+    invocation_id = 'order-1', target = { kind = 'static', npc_id = 'static-1' },
+    action = 'srp:deliver',
+    params = { player_id = 7, items = { water = 2, bread = 1 }, total = 13, paid = 15, change = 2,
+               currency = 'cash', hacked = true },
+})
+assert(basket.ok == true, tostring(basket.reason))
+local delivered = runCalls[#runCalls]
+assert(delivered.action == 'deliver' and delivered.params.items.water == 2)
+assert(delivered.params.change == 2 and delivered.params.currency == 'cash')
+assert(delivered.params.hacked == nil)
+local _, again = request({
+    invocation_id = 'order-1', target = { kind = 'static', npc_id = 'static-1' },
+    action = 'srp:deliver',
+    params = { player_id = 7, items = { water = 2, bread = 1 }, total = 13, paid = 15, change = 2,
+               currency = 'cash' },
+})
+assert(again.ok == true and runCalls[#runCalls] == delivered)
 assert(HumalikeProviders.registered.actions.srp_actions)
 HumalikeProviders.registered.actions.srp_actions = nil
 HumalikeProviders.selected.actions = nil

@@ -55,7 +55,7 @@ function HumalikeActions.Declarations()
             key = prefix .. key, name = action.name, description = action.description,
             params = mapOrNil(action.params), preconditions = requires,
             locked_hint = action.locked_hint, limit = action.limit,
-            auto = action.auto or nil,
+            uses_stock = action.uses_stock, auto = action.auto or nil,
             params_from = mapOrNil(paramsFrom),
         }
     end
@@ -68,6 +68,14 @@ function HumalikeActions.Declarations()
         }
     end
     return actions, observations
+end
+
+function HumalikeActions.Catalog()
+    local provider = HumalikeSelectedProvider('actions')
+    local catalog = provider and provider.Catalog or nil
+    if not catalog then return nil end
+    return { currency = catalog.currency, payment = provider.Namespace .. ':' .. catalog.payment,
+             items = catalog.items }
 end
 
 function HumalikeActions.Observation(key)

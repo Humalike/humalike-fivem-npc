@@ -255,6 +255,7 @@ local giveMap = {
     },
     locked_hint = { en = 'Only once the amulet is in your hands.' },
     limit = { per_player = 1, every_s = 86400, hint = { en = 'One a day.' } },
+    uses_stock = { item = 'map' },
 }
 ok, err = acting({ name = 'n', description = 'd', auto = true,
     requires = { { observation = 'item_given' } } })
@@ -278,6 +279,12 @@ assert(ok, err)
 local declared = HumalikeActions.Declarations()
 assert(declared[1].auto == true and declared[1].params_from.amount == 'srp:item_given.quantity')
 assert(exported.UnregisterProvider('actions', 'observer'))
+ok, err = acting({ name = 'n', description = 'd', uses_stock = { item = 'Map!' } })
+assert(not ok and err == 'invalid uses_stock in action give_map')
+ok, err = acting({ name = 'n', description = 'd', uses_stock = { item = 'water-bottle' } })
+assert(not ok and err == 'invalid uses_stock in action give_map')
+ok, err = acting({ name = 'n', description = 'd', uses_stock = { item = 'map', quantity = 0 } })
+assert(not ok and err == 'invalid uses_stock in action give_map')
 ok, err = acting({ name = 'n', description = 'd',
     requires = { { observation = 'item_given', where = { quantity = { sum_gte = 2, gte = 1 } } } } })
 assert(not ok and err == 'invalid bound on quantity in requirement 1 of action give_map')
@@ -461,10 +468,78 @@ assert(declaredActions[1].locked_hint.en == 'Only once the amulet is in your han
 assert(declaredActions[1].fixed == nil, 'fixed values never leave the box')
 assert(declaredActions[1].limit.per_player == 1 and declaredActions[1].limit.every_s == 86400)
 assert(declaredActions[1].limit.hint.en == 'One a day.')
+assert(declaredActions[1].uses_stock.item == 'map' and declaredActions[1].uses_stock.quantity == 1)
 assert(#declaredObservations == 1 and declaredObservations[1].key == 'srp:item_given')
 assert(declaredObservations[1].fields.quantity == 'integer')
 assert(exported.UnregisterProvider('actions', 'observer'))
 
+local function selling(catalog, overrides)
+    local descriptor = {
+        name = 'shop', apiVersion = 1, priority = 50, SupportedActions = {}, Namespace = 'srp',
+        RunAction = function() return true end,
+        Observations = {
+            item_given = {
+                fields = { item = 'string', quantity = 'integer' },
+                template = { en = 'the character handed you {quantity} x {item}' },
+            },
+        },
+        Catalog = catalog,
+    }
+    for key, value in pairs(overrides or {}) do descriptor[key] = value end
+    return exported.RegisterProvider('actions', descriptor)
+end
+ok, err = selling('water')
+assert(not ok and err == 'invalid Catalog')
+ok, err = selling({ currency = 'cash', payment = 'door_unlocked', items = { water = { price = 5 } } })
+assert(not ok and err == 'Catalog payment must be a declared observation with item (string) and quantity (integer)')
+ok, err = selling({ currency = 'cash', payment = 'item_given', items = { water = { price = 5 } } },
+    { Observations = { item_given = {
+        fields = { item = 'string', quantity = 'number' },
+        template = { en = 'the character handed you {quantity} x {item}' },
+    } } })
+assert(not ok and err == 'Catalog payment must be a declared observation with item (string) and quantity (integer)', tostring(err))
+ok, err = selling({ currency = 'cash', payment = 'item_given', items = {} })
+assert(not ok and err == 'invalid Catalog items')
+ok, err = selling({ currency = 'cash', payment = 'item_given', items = { water = { price = 1.5 } } })
+assert(not ok and err == 'invalid Catalog item water')
+-- The model orders by item name as a tag argument, so the name must parse as one.
+for _, name in ipairs({ 'water-bottle', 'water.small', '3d_glasses' }) do
+    ok, err = selling({ currency = 'cash', payment = 'item_given', items = { [name] = { price = 5 } } })
+    assert(not ok and err == 'invalid Catalog item ' .. name, tostring(err))
+end
+ok, err = selling({ currency = 'cash', payment = 'item_given',
+    items = { pistol = { price = 150, limit = { per_player = 0, every_s = 60 } } } })
+assert(not ok and err == 'invalid limit for Catalog item pistol')
+ok, err = selling({ currency = 'cash', payment = 'item_given', items = { water = { price = 5 } } },
+    { Actions = { deliver = { name = 'x', description = 'y' } } })
+assert(not ok and err == 'action deliver is reserved for the Catalog')
+ok, err = selling({ currency = 'cash', payment = 'item_given', items = { water = { price = 5 } } },
+    { Actions = { cancel_order = { name = 'x', description = 'y' } } })
+assert(not ok and err == 'cancel_order is reserved for the shop counter', tostring(err))
+ok, err = selling(nil, { Actions = { order = { name = 'x', description = 'y' } } })
+assert(not ok and err == 'order is reserved for the shop counter', tostring(err))
+ok, err = selling(nil, { Observations = {
+    item_given = { fields = { item = 'string', quantity = 'integer' }, template = { en = 'x' } },
+    order_placed = { template = { en = 'x' } } } })
+assert(not ok and err == 'order_placed is reserved for the shop counter', tostring(err))
+ok, err = selling(nil, { Observations = {
+    item_given = { fields = { item = 'string', quantity = 'integer' }, template = { en = 'x' } },
+    refund = { template = { en = 'x' } } } })
+assert(not ok and err == 'refund is reserved for the shop counter', tostring(err))
+assert(HumalikeProviders.registered.actions.shop == nil)
+ok, err = selling({ currency = 'cash', payment = 'item_given',
+    items = { water = { price = 5 }, pistol = { price = 150, limit = { per_player = 1, every_s = 86400 } } } })
+assert(ok, err)
+local wire = HumalikeActions.Catalog()
+assert(wire.currency == 'cash' and wire.payment == 'srp:item_given')
+assert(wire.items.pistol.price == 150 and wire.items.pistol.limit.per_player == 1)
+assert(table.concat(GetSupportedActions(), ',') == 'wave,give_item,srp:deliver,srp:refund')
+local declaredShop = HumalikeActions.Declarations()
+assert(#declaredShop == 2 and declaredShop[1].key == 'srp:deliver' and declaredShop[2].key == 'srp:refund')
+local _, deliverDef = HumalikeActions.Custom('srp:deliver')
+assert(deliverDef.passthrough.items and deliverDef.passthrough.change)
+assert(exported.UnregisterProvider('actions', 'shop'))
+assert(HumalikeActions.Catalog() == nil)
 local function manyActions(count)
     local actions = {}
     for index = 1, count do
@@ -472,13 +547,22 @@ local function manyActions(count)
     end
     return actions
 end
-ok, err = acting(nil, { Actions = manyActions(33) })
+local shelf = { currency = 'cash', payment = 'item_given', items = { water = { price = 5 } } }
+ok, err = selling(shelf, { Actions = manyActions(31) })
+assert(not ok and err == "too many actions: at most 30 with the Catalog's 2", tostring(err))
+assert(printed[#printed]:find("rejected: too many actions: at most 30 with the Catalog's 2", 1, true),
+    printed[#printed])
+ok, err = selling(shelf, { Actions = manyActions(30) })
+assert(ok, err)
+local reported = HumalikeActions.Declarations()
+assert(#reported == 32 and reported[#reported].key == 'srp:refund')
+assert(exported.UnregisterProvider('actions', 'shop'))
+ok, err = selling(nil, { Actions = manyActions(33) })
 assert(not ok and err == 'too many actions: at most 32', tostring(err))
-assert(printed[#printed]:find('rejected: too many actions: at most 32', 1, true), printed[#printed])
-ok, err = acting(nil, { Actions = manyActions(32) })
+ok, err = selling(nil, { Actions = manyActions(32) })
 assert(ok, err)
 assert(#HumalikeActions.Declarations() == 32)
-assert(exported.UnregisterProvider('actions', 'observer'))
+assert(exported.UnregisterProvider('actions', 'shop'))
 
 ok, err = observing({ priority = 100 })
 assert(ok, err)
