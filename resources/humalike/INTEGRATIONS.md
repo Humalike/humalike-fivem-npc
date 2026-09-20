@@ -244,6 +244,64 @@ payload and loaded character before forwarding it.
 Client integrations can subscribe to
 `humalike:voice:transmittingChanged(active)` to update a custom HUD.
 
+## Server observations
+
+Facts only the server knows (an item handed to an NPC, a door unlocked) are
+declared on the actions provider and reported per occurrence. The NPC reads
+the rendered line as a world event in its own language and can react to it.
+Declare them on the actions provider the server already registers; only the
+selected provider is consulted.
+
+```lua
+exports.humalike:RegisterProvider('actions', {
+    name = 'my_actions', apiVersion = 1, priority = 100,
+    SupportedActions = { 'hand_over_money' },
+    RunAction = function(action, source, npcCoords, params) return true end,
+    Namespace = 'srp',
+    Observations = {
+        item_given = {
+            fields = { item = 'string', quantity = 'integer' },
+            template = {
+                en = 'the character handed you {quantity} x {item}',
+                pl = 'postać wręczyła ci {quantity} x {item}',
+            },
+        },
+    },
+})
+
+-- from your inventory hook, once the transfer is real:
+local result = exports.humalike:ReportObservation(npcId, source, 'item_given', {
+    item = 'amulet', quantity = 1,
+})
+```
+
+`Namespace` prefixes every key on the wire (`srp:item_given`). Each observation
+declares its `fields` (`string`, `integer`, `number` or `boolean`) and a
+`template` per NPC language (`en`, `pl`) whose `{placeholders}` name declared
+fields; a language without a template falls back to English. A template is at
+most 400 characters and its worst-case render (64 characters per string, 21
+per number, 17 per integer, 5 per boolean) must stay within 912. A provider
+that implements no action may omit `RunAction`. `RegisterProvider` returns
+`false` and prints the reason for a declaration it refuses.
+
+`ReportObservation(npcId, playerId, key, fields, options)` accepts a live
+roster NPC or an ambient body the server currently leases. Every declared
+field is required and unknown fields are rejected: a `string` is at most 64
+characters with no control characters, an `integer` is whole, and numbers are
+finite and at most 2^53 in magnitude. It returns the export envelope:
+`value.key` and `value.text` on success, or an `error` code (`invalid_player`,
+`character_not_loaded`, `npc_not_found`, `npc_not_bound`,
+`unknown_observation`, `invalid_fields`, `invalid_field:<name>`,
+`unknown_field:<name>`, `invalid_options`, `text_too_long`). `ok = true` means
+the observation is queued, not delivered. With `humalike_actions none` every
+report returns `unknown_observation`. `options.react = false` files the fact
+without a spoken reaction. With `humalike_developer_tools 1`,
+`/humalike_dev observe <npc_uuid> <key> [field=value ...]` reports one by hand.
+
+An observation is not gated on earshot or a `perception` hold; hold `speech`
+to keep the NPC silent. A repeat of the same key within about 2.5 seconds is
+filed but not spoken again.
+
 Keep customer-specific rewards, jobs, event names, dispatch payloads and UI
 hooks in the integration resource. This makes updating `humalike` a complete
 directory replacement without losing server customizations.

@@ -102,6 +102,7 @@ HumalikeHttp = {
     end,
 }
 
+dofile('../server/core/text.lua')
 dofile('server/world_events.lua')
 dofile('server/weapon_state.lua')
 

@@ -47,6 +47,8 @@ local function targetForNpc(npcId)
     return nil
 end
 
+function HumalikeNpcRuntimeControl.Target(npcId) return targetForNpc(npcId) end
+
 local function normalizeDomains(value)
     if type(value) ~= 'table' or #value == 0 or #value > 5 then
         return nil, 'invalid_domains'

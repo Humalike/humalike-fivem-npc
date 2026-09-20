@@ -253,10 +253,43 @@ local function list(playerId)
     for _, row in ipairs(rows) do reply(playerId, row) end
 end
 
+local function observe(playerId, npcId, key, pairsList)
+    local _, definition = HumalikeActions.Observation(key)
+    if not definition then reply(playerId, ('unknown observation %s'):format(tostring(key))) return end
+    local fields = {}
+    for _, pair in ipairs(pairsList) do
+        local name, raw = pair:match('^([^=]+)=(.*)$')
+        if not name then reply(playerId, ('expected field=value, got %s'):format(pair)) return end
+        local fieldType = definition.fields[name]
+        if fieldType == 'integer' or fieldType == 'number' then fields[name] = tonumber(raw)
+        elseif fieldType == 'boolean' then
+            if raw ~= 'true' and raw ~= 'false' then
+                reply(playerId, ('%s must be true or false'):format(name))
+                return
+            end
+            fields[name] = raw == 'true'
+        else fields[name] = raw end
+    end
+    local result = HumalikeReportObservation(npcId, playerId, key, fields)
+    if result.ok then
+        reply(playerId, ('reported %s: %s'):format(result.value.key, result.value.text))
+    else
+        reply(playerId, ('observation rejected: %s'):format(result.error))
+    end
+end
+
+local USAGE = 'usage: /humalike_dev ambient <spawn|goto|remove|list> [npc_uuid]'
+    .. ' | observe <npc_uuid> <key> [field=value ...] (values cannot contain spaces)'
+
 RegisterCommand('humalike_dev', function(playerId, args)
     if not allowed(playerId) then return end
+    if args[1] == 'observe' then
+        if not validNpcId(args[2]) then reply(playerId, 'a canonical NPC UUID is required') return end
+        observe(playerId, args[2], args[3], { table.unpack(args, 4) })
+        return
+    end
     if args[1] ~= 'ambient' then
-        reply(playerId, 'usage: /humalike_dev ambient <spawn|goto|remove|list> [npc_uuid]')
+        reply(playerId, USAGE)
         return
     end
     local operation, npcId = args[2], args[3]
@@ -265,7 +298,7 @@ RegisterCommand('humalike_dev', function(playerId, args)
     if operation == 'spawn' then spawn(playerId, npcId)
     elseif operation == 'goto' then gotoNpc(playerId, npcId)
     elseif operation == 'remove' then remove(playerId, npcId)
-    else reply(playerId, 'usage: /humalike_dev ambient <spawn|goto|remove|list> [npc_uuid]') end
+    else reply(playerId, USAGE) end
 end, false)
 
 CreateThread(function()

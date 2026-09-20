@@ -25,8 +25,14 @@ local DOMAINS = {
     },
     inventory = { required = { 'AddItem' } },
     dispatch = { required = { 'Report' } },
-    actions = { required = { 'RunAction' } },
+    actions = { required = {}, optional = { 'RunAction' } },
 }
+
+local OBSERVATION_LIMITS = { observations = 32, fields = 8, template = 400, text = 912 }
+local OBSERVATION_FIELD_TYPES = { string = true, integer = true, number = true, boolean = true }
+-- Widest render per field type under the bounds npc/server/observations.lua enforces.
+local OBSERVATION_FIELD_WIDTHS = { string = 64, integer = 17, number = 21, boolean = 5 }
+local OBSERVATION_LANGUAGES = { en = true, pl = true }
 
 for domain in pairs(DOMAINS) do HumalikeProviders.registered[domain] = {} end
 
@@ -192,10 +198,85 @@ local function validateDescriptor(domain, descriptor)
     if descriptor.Available ~= nil and not callable(descriptor.Available) then
         return false, 'invalid Available'
     end
-    if domain == 'actions' and type(descriptor.SupportedActions) ~= 'table' then
-        return false, 'missing SupportedActions'
+    if domain == 'actions' then
+        if type(descriptor.SupportedActions) ~= 'table' then
+            return false, 'missing SupportedActions'
+        end
+        if next(descriptor.SupportedActions) ~= nil and not callable(descriptor.RunAction) then
+            return false, 'invalid RunAction'
+        end
+        if descriptor.Namespace ~= nil and (type(descriptor.Namespace) ~= 'string'
+            or not descriptor.Namespace:match('^[a-z][a-z0-9]+$')
+            or #descriptor.Namespace > 16) then
+            return false, 'invalid Namespace'
+        end
+        if descriptor.Observations ~= nil then
+            if type(descriptor.Observations) ~= 'table' then return false, 'invalid Observations' end
+            if next(descriptor.Observations) ~= nil and not descriptor.Namespace then
+                return false, 'missing Namespace'
+            end
+        end
     end
     return true
+end
+
+local function normalizedObservation(key, definition)
+    if type(key) ~= 'string' or not key:match('^[a-z][a-z0-9_]*$') or #key > 32 then
+        return nil, 'invalid observation key'
+    end
+    if type(definition) ~= 'table' or (definition.fields ~= nil
+        and type(definition.fields) ~= 'table') then
+        return nil, ('invalid observation %s'):format(key)
+    end
+    local fields, fieldCount = {}, 0
+    for name, fieldType in pairs(definition.fields or {}) do
+        if type(name) ~= 'string' or not name:match('^[a-z][a-z0-9_]*$') or #name > 32
+            or not OBSERVATION_FIELD_TYPES[fieldType] then
+            return nil, ('invalid field %s in observation %s'):format(tostring(name), key)
+        end
+        fields[name] = fieldType
+        fieldCount = fieldCount + 1
+        if fieldCount > OBSERVATION_LIMITS.fields then
+            return nil, ('too many fields in observation %s'):format(key)
+        end
+    end
+    if type(definition.template) ~= 'table' or next(definition.template) == nil then
+        return nil, ('missing template in observation %s'):format(key)
+    end
+    local template = {}
+    for language, text in pairs(definition.template) do
+        text = OBSERVATION_LANGUAGES[language]
+            and HumaLike.CleanText(text, OBSERVATION_LIMITS.template)
+        if not text then return nil, ('invalid template in observation %s'):format(key) end
+        local rendered = utf8.len(text)
+        for placeholder in text:gmatch('{([^{}]*)}') do
+            if not fields[placeholder] then
+                return nil, ('unknown placeholder {%s} in observation %s'):format(placeholder, key)
+            end
+            rendered = rendered - (#placeholder + 2) + OBSERVATION_FIELD_WIDTHS[fields[placeholder]]
+        end
+        if rendered > OBSERVATION_LIMITS.text then
+            return nil, ('template renders up to %d characters, over %d, in observation %s'):format(
+                rendered, OBSERVATION_LIMITS.text, key)
+        end
+        if text:gsub('{[^{}]*}', ''):find('[{}]') then
+            return nil, ('invalid template in observation %s'):format(key)
+        end
+        template[language] = text
+    end
+    return { fields = fields, template = template }
+end
+
+local function normalizedObservations(descriptor)
+    local observations, count = {}, 0
+    for key, definition in pairs(descriptor.Observations or {}) do
+        local observation, err = normalizedObservation(key, definition)
+        if not observation then return nil, err end
+        observations[key] = observation
+        count = count + 1
+        if count > OBSERVATION_LIMITS.observations then return nil, 'too many observations' end
+    end
+    return observations
 end
 
 local function normalizedActions(descriptor)
@@ -226,6 +307,8 @@ local function register(domain, descriptor, owner)
     if domain == 'actions' then
         provider.SupportedActions, err = normalizedActions(descriptor)
         if not provider.SupportedActions then return false, err end
+        provider.Observations, err = normalizedObservations(descriptor)
+        if not provider.Observations then return false, err end
     end
     provider.ownerResource = owner
     provider.priority = descriptor.priority
@@ -272,7 +355,13 @@ exports('RegisterProvider', function(domain, descriptor)
     if not owner or owner == GetCurrentResourceName() then
         return false, 'external provider resource required'
     end
-    return register(domain, descriptor, owner)
+    local ok, err = register(domain, descriptor, owner)
+    -- Exports carry one return value across resources, so print the reason.
+    if not ok then
+        print(('[humalike] %s provider from %s rejected: %s'):format(
+            tostring(domain), owner, tostring(err)))
+    end
+    return ok, err
 end)
 
 exports('UnregisterProvider', function(domain, name)

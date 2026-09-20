@@ -10,6 +10,13 @@ function HumalikeActions.Supported()
     return result
 end
 
+function HumalikeActions.Observation(key)
+    local provider = HumalikeSelectedProvider('actions')
+    local definition = provider and type(key) == 'string' and provider.Observations[key] or nil
+    if not definition then return nil end
+    return provider.Namespace .. ':' .. key, definition
+end
+
 function HumalikeActions.Run(action, source, coords, params)
     local ok, value = HumalikeProviderCall(
         'actions', 'RunAction', action, source, coords, params)
