@@ -25,8 +25,9 @@ HumaLike = {
         }
     end,
 }
+local request
 SetHttpHandler = function(callback)
-    local request = {
+    request = {
         path = '/runtime',
         method = 'POST',
         headers = { authorization = 'Bearer callback-one' },
@@ -52,5 +53,19 @@ dataHandler('{}')
 assert(responseStatus == 401 and responseSent == 1,
     'callback authorization must be rechecked after asynchronous body collection')
 assert(handlerCalls == 0, 'a callback crossing assignment replacement must not execute')
+
+-- Refusals are not remembered.
+activeToken = 'callback-one'
+local answer = { ok = false }
+HumaLike.RegisterCallback('/deed', function()
+    handlerCalls = handlerCalls + 1
+    return 200, answer
+end)
+request.path = '/deed'
+for _ = 1, 2 do dispatch() dataHandler('{}') end
+assert(handlerCalls == 2, 'a refusal is retriable')
+answer = { ok = true }
+for _ = 1, 2 do dispatch() dataHandler('{}') end
+assert(handlerCalls == 3, 'a done deed is remembered')
 
 print('core_callbacks: ok')

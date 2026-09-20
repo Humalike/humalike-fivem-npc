@@ -100,3 +100,5 @@ end
 exports('ReportObservation', function(npcId, playerId, key, fields, options)
     return HumalikeReportObservation(npcId, playerId, key, fields, options)
 end)
+
+HumalikeObservationTarget = resolveTarget

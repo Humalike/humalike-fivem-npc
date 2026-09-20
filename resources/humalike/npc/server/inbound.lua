@@ -7,24 +7,36 @@ local SERVER_ACTION_ANIMATIONS = {
     hand_over_money = true,
 }
 
+local function staticEntity(npcId)
+    local npc = NpcRegistry[npcId]
+    if not npc then return nil, 'unknown_static_npc' end
+    local entity = npc.entity_id
+    if type(entity) ~= 'number' or entity <= 0 or not DoesEntityExist(entity)
+        or GetEntityType(entity) ~= 1 or IsPedAPlayer(entity)
+        or GetEntityHealth(entity) <= 0 then return nil, 'static_entity_unavailable' end
+    return entity
+end
+
+local function actionPlayer(params, bucket)
+    local playerId = params and params.player_id
+    if type(playerId) ~= 'number' or playerId % 1 ~= 0 or playerId < 1
+        or not GetPlayerName(playerId) then return nil, 'invalid_action_player' end
+    if not HumalikePlayer.IsCharacterLoaded(playerId) then return nil, 'character_not_loaded' end
+    if GetPlayerRoutingBucket(playerId) ~= bucket then return nil, 'action_player_wrong_bucket' end
+    return playerId
+end
+
 local function dispatchStaticAction(target, actionKey, params)
-    local npc = NpcRegistry[target.npc_id]
-    if not npc then
+    if not NpcRegistry[target.npc_id] then
         HumalikeDebug('inbound push: unknown static npc %s, ignoring', target.npc_id)
         return false, 'unknown_static_npc'
     end
     local serverActionEvent = SERVER_ACTION_EVENTS[actionKey]
     if serverActionEvent then
-        local entity = npc.entity_id
-        if type(entity) ~= 'number' or entity <= 0 or not DoesEntityExist(entity)
-            or GetEntityType(entity) ~= 1 or IsPedAPlayer(entity)
-            or GetEntityHealth(entity) <= 0 then return false, 'static_entity_unavailable' end
-        local playerId = params and params.player_id
-        if type(playerId) ~= 'number' or playerId % 1 ~= 0 or playerId < 1
-            or not GetPlayerName(playerId) then return false, 'invalid_action_player' end
-        if GetPlayerRoutingBucket(playerId) ~= GetEntityRoutingBucket(entity) then
-            return false, 'action_player_wrong_bucket'
-        end
+        local entity, reason = staticEntity(target.npc_id)
+        if not entity then return false, reason end
+        local playerId, playerReason = actionPlayer(params, GetEntityRoutingBucket(entity))
+        if not playerId then return false, playerReason end
         local delivered = nil
         TriggerEvent(serverActionEvent, GetEntityCoords(entity), params or {}, function(result)
             delivered = result == true
@@ -36,7 +48,8 @@ local function dispatchStaticAction(target, actionKey, params)
         if delivered and SERVER_ACTION_ANIMATIONS[actionKey] then
             TriggerClientEvent('humalike:npc:playAction', -1, target.npc_id, actionKey, params or {})
         end
-        return delivered, delivered and nil or 'action_rejected'
+        if not delivered then return false, 'action_rejected' end
+        return true
     end
     TriggerClientEvent('humalike:npc:playAction', -1, target.npc_id, actionKey, params or {})
     RecordNpcPose(target.npc_id, actionKey, target)
@@ -51,12 +64,8 @@ local function dispatchAmbientAction(target, actionKey, params)
     if movementApplied == false then return false, movementReason end
     local serverActionEvent = SERVER_ACTION_EVENTS[actionKey]
     if serverActionEvent then
-        local playerId = params and params.player_id
-        if type(playerId) ~= 'number' or playerId % 1 ~= 0 or playerId < 1
-            or not GetPlayerName(playerId) then return false, 'invalid_action_player' end
-        if GetPlayerRoutingBucket(playerId) ~= target.routing_bucket then
-            return false, 'action_player_wrong_bucket'
-        end
+        local playerId, playerReason = actionPlayer(params, target.routing_bucket)
+        if not playerId then return false, playerReason end
         local delivered = nil
         TriggerEvent(serverActionEvent, GetEntityCoords(entity), params or {}, function(result)
             delivered = result == true
@@ -65,7 +74,8 @@ local function dispatchAmbientAction(target, actionKey, params)
         if delivered and SERVER_ACTION_ANIMATIONS[actionKey] then
             SendAmbientActionToOwner(target, entity, actionKey, params)
         end
-        return delivered, delivered and nil or 'action_rejected'
+        if not delivered then return false, 'action_rejected' end
+        return true
     end
     if not SendAmbientActionToOwner(target, entity, actionKey, params)
         and movementApplied ~= true then
@@ -75,25 +85,84 @@ local function dispatchAmbientAction(target, actionKey, params)
     return true
 end
 
-local completedInvocations = {}
-local MAX_COMPLETED_INVOCATIONS = 1024
-local INVOCATION_TTL_SECONDS = 600
+-- Fixed values win over pushed params.
+local function customParams(definition, params)
+    local merged = { player_id = params.player_id }
+    for name in pairs(definition.passthrough or {}) do
+        if params[name] ~= nil then merged[name] = params[name] end
+    end
+    for name in pairs(definition.params_from or {}) do
+        local value = params[name]
+        if value == nil or not (type(value) == 'string' or type(value) == 'number'
+            or type(value) == 'boolean') then
+            return nil, ('missing_param:%s'):format(name)
+        end
+        merged[name] = value
+    end
+    for name, spec in pairs(definition.params) do
+        local value = params[name]
+        if value ~= nil then
+            local valid = (spec.type == 'string' and type(value) == 'string')
+                or (spec.type == 'integer' and math.type(value) == 'integer')
+                or (spec.type == 'boolean' and type(value) == 'boolean')
+            if valid and spec.enum then
+                valid = false
+                for _, choice in ipairs(spec.enum) do
+                    if choice == value then valid = true break end
+                end
+            end
+            if not valid then return nil, ('invalid_param:%s'):format(name) end
+            merged[name] = value
+        elseif spec.required then
+            return nil, ('missing_param:%s'):format(name)
+        end
+    end
+    for name, value in pairs(definition.fixed) do merged[name] = value end
+    return merged
+end
+
+local function withinReach(playerId, npcCoords)
+    local ped = GetPlayerPed(playerId)
+    if not ped or ped == 0 or not DoesEntityExist(ped) then return false end
+    local at = GetEntityCoords(ped)
+    local dx, dy, dz = at.x - npcCoords.x, at.y - npcCoords.y, at.z - npcCoords.z
+    return dx * dx + dy * dy + dz * dz <= Config.ServerActions.MaxDistance ^ 2
+end
+
+local function dispatchCustomAction(target, localKey, definition, params)
+    local entity, bucket, reason
+    if target.kind == 'static' then
+        entity, reason = staticEntity(target.npc_id)
+        if not entity then return false, reason end
+        bucket = GetEntityRoutingBucket(entity)
+    elseif target.kind == 'ambient' then
+        local lease
+        lease, entity, reason = ValidateAmbientActionTarget(target)
+        if not lease then return false, reason end
+        bucket = target.routing_bucket
+    else
+        return false, 'invalid_target_kind'
+    end
+    local playerId, playerReason = actionPlayer(params, bucket)
+    if not playerId then return false, playerReason end
+    local coords = GetEntityCoords(entity)
+    if not withinReach(playerId, coords) then return false, 'action_player_out_of_reach' end
+    local merged, paramsReason = customParams(definition, params or {})
+    if not merged then return false, paramsReason end
+    if not HumalikeActions.Run(localKey, playerId, coords, merged) then
+        return false, 'action_rejected'
+    end
+    return true
+end
 
 -- State-changing callbacks are at-least-once, so deduplicate by invocation ID.
-
-local function invocationFingerprint(actionKey, target, params)
-    return table.concat({
-        actionKey,
-        target.kind,
-        target.npc_id,
-        tostring(target.entity_id or ''),
-        tostring(target.routing_bucket or ''),
-        tostring(target.lease_token or ''),
-        tostring(params.player_id or ''),
-        tostring(params.item_name or ''),
-        tostring(params.quantity or ''),
-    }, '\0')
-end
+-- Only delivered ones are kept: a refusal is re-pushed under the same ID for up to an hour.
+local completedInvocations = {}
+-- A delivery that yields (inventory, database) is reserved until it answers, so a
+-- retry overtaking it shares the answer instead of running the provider again.
+local pendingInvocations = {}
+local MAX_COMPLETED_INVOCATIONS = 4096
+local INVOCATION_TTL_SECONDS = 6 * 3600
 
 local function pruneInvocations(now)
     local count = 0
@@ -108,45 +177,52 @@ local function pruneInvocations(now)
             end
         end
     end
-    if count >= MAX_COMPLETED_INVOCATIONS and oldestId then
+    if count > MAX_COMPLETED_INVOCATIONS and oldestId then
         completedInvocations[oldestId] = nil
     end
 end
 
-local function dispatchAction(target, actionKey, params, invocationId)
-    if not IsSupportedAction(actionKey) then return false, 'unsupported_action' end
-    local deduped = SERVER_ACTION_EVENTS[actionKey] ~= nil
-    local fingerprint
-    if deduped then
-        local now = os.time()
-        pruneInvocations(now)
-        fingerprint = invocationFingerprint(actionKey, target, params or {})
-        local completed = completedInvocations[invocationId]
-        if completed then
-            if completed.fingerprint ~= fingerprint then return false, 'invocation_conflict' end
-            return completed.result
-        end
-    end
+local function runAction(target, actionKey, customKey, customDefinition, params)
     if HumalikeNpcRuntimeControl then
         local allowed, controlReason = HumalikeNpcRuntimeControl.AllowsAction(
             target.npc_id, actionKey)
         if not allowed then return false, controlReason end
     end
-
-    local delivered, reason
-    if target.kind == 'static' then
-        delivered, reason = dispatchStaticAction(target, actionKey, params)
+    if customKey then
+        return dispatchCustomAction(target, customKey, customDefinition, params)
+    elseif target.kind == 'static' then
+        return dispatchStaticAction(target, actionKey, params)
     elseif target.kind == 'ambient' then
-        delivered, reason = dispatchAmbientAction(target, actionKey, params)
-    else
-        return false, 'invalid_target_kind'
+        return dispatchAmbientAction(target, actionKey, params)
     end
-    if deduped and delivered then
-        completedInvocations[invocationId] = {
-            result = true,
-            fingerprint = fingerprint,
-            expires_at = os.time() + INVOCATION_TTL_SECONDS,
-        }
+    return false, 'invalid_target_kind'
+end
+
+local function dispatchAction(target, actionKey, params, invocationId)
+    if not IsSupportedAction(actionKey) then return false, 'unsupported_action' end
+    local customKey, customDefinition = HumalikeActions.Custom(actionKey)
+    if SERVER_ACTION_EVENTS[actionKey] == nil and customKey == nil then
+        return runAction(target, actionKey, customKey, customDefinition, params)
+    end
+    pruneInvocations(os.time())
+    if completedInvocations[invocationId] then return true end
+    local pending = pendingInvocations[invocationId]
+    if pending then
+        while pending.delivered == nil do Wait(0) end
+        return pending.delivered, pending.reason
+    end
+    pending = {}
+    pendingInvocations[invocationId] = pending
+    local ok, delivered, reason = pcall(runAction, target, actionKey, customKey,
+        customDefinition, params)
+    pendingInvocations[invocationId] = nil
+    if not ok then
+        pending.delivered, pending.reason = false, 'action_handler_failed'
+        error(delivered, 0)
+    end
+    pending.delivered, pending.reason = delivered, reason
+    if delivered then
+        completedInvocations[invocationId] = { expires_at = os.time() + INVOCATION_TTL_SECONDS }
     end
     return delivered, reason
 end
@@ -208,9 +284,7 @@ HumaLike.RegisterCallback('/action', function(body)
         target.kind, body.action, json.encode(body.params or {}))
     local delivered, reason = dispatchAction(target, body.action, body.params,
         body.invocation_id)
-    return 200, {
-        ok = delivered,
-        invocation_id = body.invocation_id,
-        reason = delivered and nil or reason,
-    }
+    local response = { ok = delivered == true, invocation_id = body.invocation_id }
+    if not delivered then response.reason = reason end
+    return 200, response
 end)

@@ -247,3 +247,6 @@ Config.Robbery = {
     MaxDistance = 5.0,
     HandoverAnimMs = 1500,
 }
+Config.ServerActions = {
+    MaxDistance = 5.0,
+}

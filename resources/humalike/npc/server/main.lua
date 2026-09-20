@@ -3,14 +3,18 @@ function HumalikeNpcReportCapabilities()
     local population = HumalikeNpcPopulation
     local features = population and population.Features() or nil
     if population then population.CapabilitiesPosted() end
+    local actions, observations = HumalikeActions.Declarations()
     HumalikeHttp.PostAction('report_capabilities', {
         supported_actions = GetSupportedActions(),
         features = features,
-    }, function(ok, status)
+        actions = actions,
+        observations = observations,
+        catalog = HumalikeActions.Catalog(),
+    }, function(ok, status, body)
         if population then population.CapabilitiesReported(features, ok) end
-        if not ok then
-            print(('[humalike-npc] report_capabilities failed (HTTP %s)'):format(tostring(status)))
-        end
+        if ok then return end
+        print(('[humalike-npc] report_capabilities failed (%s)'):format(
+            HumalikeHttp.DescribeFailure(status, body)))
     end)
 end
 local reportCapabilities = HumalikeNpcReportCapabilities

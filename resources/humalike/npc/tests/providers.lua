@@ -10,6 +10,8 @@ Config = {
     SupportedActions = { 'wave' },
 }
 
+local printed, consolePrint = {}, print
+function print(line) printed[#printed + 1] = line end
 function GetCurrentResourceName() return 'humalike' end
 function GetInvokingResource() return owner end
 function GetResourceState(resource) return started[resource] and 'started' or 'stopped' end
@@ -225,6 +227,343 @@ for index = 1, 9 do tooWide['f' .. index] = 'string' end
 ok, err = observing({ Observations = { item_given = { fields = tooWide, template = { en = 'x' } } } })
 assert(not ok and err == 'too many fields in observation item_given')
 
+local function acting(action, overrides)
+    local descriptor = {
+        name = 'observer', apiVersion = 1, priority = 50,
+        SupportedActions = {},
+        Namespace = 'srp',
+        RunAction = function() return true end,
+        Observations = {
+            item_given = {
+                fields = { item = 'string', quantity = 'integer' },
+                template = { en = 'the character handed you {quantity} x {item}' },
+            },
+        },
+        Actions = { give_map = action },
+    }
+    for key, value in pairs(overrides or {}) do descriptor[key] = value end
+    return exported.RegisterProvider('actions', descriptor)
+end
+local giveMap = {
+    name = 'Give the treasure map',
+    description = 'Hand the player the map to the hidden chest.',
+    params = { copies = { type = 'integer', enum = { 1, 2 }, description = 'How many' } },
+    fixed = { item = 'treasure_map' },
+    requires = {
+        { observation = 'item_given', where = { item = 'cash', quantity = { gte = 500 } },
+          consume = true },
+    },
+    locked_hint = { en = 'Only once the amulet is in your hands.' },
+    limit = { per_player = 1, every_s = 86400, hint = { en = 'One a day.' } },
+    uses_stock = { item = 'map' },
+}
+ok, err = acting({ name = 'n', description = 'd', auto = true,
+    requires = { { observation = 'item_given' } } })
+assert(not ok and err == 'auto action give_map needs a requirement with consume = true')
+ok, err = acting({ name = 'n', description = 'd',
+    params_from = { amount = 'item_given.quantity' } })
+assert(not ok and err == 'invalid params_from amount in action give_map', tostring(err))
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { { observation = 'item_given', consume = true } },
+    params_from = { amount = 'item_given.weight' } })
+assert(not ok and err == 'invalid params_from amount in action give_map')
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { { observation = 'item_given', consume = true } },
+    params = { amount = { type = 'integer' } },
+    params_from = { amount = 'item_given.quantity' } })
+assert(not ok and err == 'invalid params_from amount in action give_map')
+ok, err = acting({ name = 'n', description = 'd', auto = true,
+    requires = { { observation = 'item_given', where = { item = 'cash' }, consume = true } },
+    params_from = { amount = 'item_given.quantity' } })
+assert(ok, err)
+local declared = HumalikeActions.Declarations()
+assert(declared[1].auto == true and declared[1].params_from.amount == 'srp:item_given.quantity')
+assert(exported.UnregisterProvider('actions', 'observer'))
+ok, err = acting({ name = 'n', description = 'd', uses_stock = { item = 'Map!' } })
+assert(not ok and err == 'invalid uses_stock in action give_map')
+ok, err = acting({ name = 'n', description = 'd', uses_stock = { item = 'water-bottle' } })
+assert(not ok and err == 'invalid uses_stock in action give_map')
+ok, err = acting({ name = 'n', description = 'd', uses_stock = { item = 'map', quantity = 0 } })
+assert(not ok and err == 'invalid uses_stock in action give_map')
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { { observation = 'item_given', where = { quantity = { sum_gte = 2, gte = 1 } } } } })
+assert(not ok and err == 'invalid bound on quantity in requirement 1 of action give_map')
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { { observation = 'item_given', where = { quantity = { sum_gte = 2 } } } } })
+assert(ok, err)
+assert(HumalikeSelectedProvider('actions').Actions.give_map.requires[1].where.quantity.sum_gte == 2)
+assert(exported.UnregisterProvider('actions', 'observer'))
+ok, err = acting({ name = 'n', description = 'd', limit = 3 })
+assert(not ok and err == 'invalid limit in action give_map')
+ok, err = acting({ name = 'n', description = 'd', limit = { per_player = 0, every_s = 60 } })
+assert(not ok and err == 'invalid limit in action give_map')
+ok, err = acting({ name = 'n', description = 'd', limit = { per_player = 1, every_s = 1.5 } })
+assert(not ok and err == 'invalid limit in action give_map')
+ok, err = acting({ name = 'n', description = 'd', limit = { per_player = 1, every_s = 60, hint = { de = 'x' } } })
+assert(not ok and err == 'invalid limit hint in action give_map')
+ok, err = acting(giveMap, { RunAction = false })
+assert(not ok and err == 'invalid RunAction', tostring(err))
+ok, err = exported.RegisterProvider('actions', {
+    name = 'observer', apiVersion = 1, priority = 50, SupportedActions = {},
+    RunAction = function() return true end, Actions = { give_map = giveMap },
+})
+assert(not ok and err == 'missing Namespace', tostring(err))
+ok, err = acting({ description = 'x' })
+assert(not ok and err == 'invalid name in action give_map')
+ok, err = acting({ name = 'n', description = 'write [give_map]' })
+assert(not ok and err == 'invalid description in action give_map')
+ok, err = acting({ name = 'n', description = 'd', params = { player_id = { type = 'string' } } })
+assert(not ok and err == 'invalid param player_id in action give_map')
+ok, err = acting({ name = 'n', description = 'd', params = { copies = { type = 'float' } } })
+assert(not ok and err == 'invalid param copies in action give_map')
+ok, err = acting({ name = 'n', description = 'd', params = { copies = { type = 'string', enum = { 'A B' } } } })
+assert(not ok and err == 'invalid enum for copies in action give_map')
+ok, err = acting({ name = 'n', description = 'd', params = { copies = { type = 'integer', enum = { 'one' } } } })
+assert(not ok and err == 'invalid enum for copies in action give_map')
+ok, err = acting({ name = 'n', description = 'd', params = { gift = { type = 'boolean', enum = { 'true' } } } })
+assert(not ok and err == 'invalid enum for gift in action give_map')
+ok, err = acting({ name = 'n', description = 'd', params = 'copies' })
+assert(not ok and err == 'invalid params in action give_map')
+ok, err = acting({ name = 'n', description = 'd', requires = true })
+assert(not ok and err == 'invalid requires in action give_map')
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { amulet = { observation = 'item_given' } } })
+assert(not ok and err == 'requires must be a list in action give_map', tostring(err))
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { nil, { observation = 'item_given' } } })
+assert(not ok and err == 'requires must be a list in action give_map', tostring(err))
+ok, err = acting({ name = 'n', description = 'd',
+    params = { copies = { type = 'integer', enum = { one = 1 } } } })
+assert(not ok and err == 'invalid enum for copies in action give_map')
+local wideObservation = { fields = { a = 'integer', b = 'integer', c = 'integer', d = 'integer', e = 'integer' },
+                          template = { en = 'x' } }
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { { observation = 'wide', where = { a = 1, b = 1, c = 1, d = 1, e = 1 } } } },
+    { Observations = { wide = wideObservation } })
+assert(not ok and err == 'too many fields in where of requirement 1 of action give_map', tostring(err))
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { { observation = 'wide', consume = true } },
+    params_from = { a = 'wide.a', b = 'wide.b', c = 'wide.c', d = 'wide.d', e = 'wide.e' } },
+    { Observations = { wide = wideObservation } })
+assert(not ok and err == 'too many params_from in action give_map', tostring(err))
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { { observation = 'item_given', where = { quantity = { gte = math.huge } } } } })
+assert(not ok and err == 'invalid bound on quantity in requirement 1 of action give_map')
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { { observation = 'item_given', where = { quantity = 1.5 } } } })
+assert(not ok and err == 'invalid value for quantity in requirement 1 of action give_map')
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { { observation = 'item_given', where = { quantity = 2.0 } } } })
+assert(ok, err)
+assert(math.type(HumalikeSelectedProvider('actions').Actions.give_map.requires[1].where.quantity) == 'integer')
+assert(exported.UnregisterProvider('actions', 'observer'))
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { { observation = 'item_given', where = { quantity = 2 ^ 63 } } } })
+assert(not ok and err == 'invalid value for quantity in requirement 1 of action give_map', tostring(err))
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { { observation = 'item_given', where = { quantity = -(2 ^ 53) - 2 } } } })
+assert(not ok and err == 'invalid value for quantity in requirement 1 of action give_map', tostring(err))
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { { observation = 'item_given', where = { quantity = { gte = 2 ^ 53 + 2 } } } } })
+assert(not ok and err == 'invalid bound on quantity in requirement 1 of action give_map', tostring(err))
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { { observation = 'item_given', where = { quantity = { lte = -(2 ^ 63) } } } } })
+assert(not ok and err == 'invalid bound on quantity in requirement 1 of action give_map', tostring(err))
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { { observation = 'item_given', where = { quantity = { sum_gte = 1e19 } } } } })
+assert(not ok and err == 'invalid bound on quantity in requirement 1 of action give_map', tostring(err))
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { { observation = 'item_given', where = { quantity = 2 ^ 53, } } } })
+assert(ok, err)
+assert(HumalikeSelectedProvider('actions').Actions.give_map.requires[1].where.quantity == 9007199254740992)
+assert(math.type(HumalikeSelectedProvider('actions').Actions.give_map.requires[1].where.quantity) == 'integer')
+assert(exported.UnregisterProvider('actions', 'observer'))
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { { observation = 'item_given', where = { quantity = { gte = -(2 ^ 53), lte = 2 ^ 53 } } } } })
+assert(ok, err)
+assert(exported.UnregisterProvider('actions', 'observer'))
+for _, fractional in ipairs({ { gte = 1.5 }, { lte = 0.5 }, { sum_gte = 2.5 } }) do
+    ok, err = acting({ name = 'n', description = 'd',
+        requires = { { observation = 'item_given', where = { quantity = fractional } } } })
+    assert(not ok and err == 'invalid bound on quantity in requirement 1 of action give_map', tostring(err))
+end
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { { observation = 'item_given', where = { quantity = { gte = 2.0, lte = 2 ^ 53 } } } } })
+assert(ok, err)
+local stored = HumalikeSelectedProvider('actions').Actions.give_map.requires[1].where.quantity
+assert(stored.gte == 2 and math.type(stored.gte) == 'integer', tostring(stored.gte))
+assert(stored.lte == 9007199254740992 and math.type(stored.lte) == 'integer', tostring(stored.lte))
+assert(stored.sum_gte == nil)
+assert(exported.UnregisterProvider('actions', 'observer'))
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { { observation = 'item_given', where = { quantity = { sum_gte = 3.0 } } } } })
+assert(ok, err)
+stored = HumalikeSelectedProvider('actions').Actions.give_map.requires[1].where.quantity
+assert(stored.sum_gte == 3 and math.type(stored.sum_gte) == 'integer', tostring(stored.sum_gte))
+assert(exported.UnregisterProvider('actions', 'observer'))
+local weighed = { fields = { weight = 'number' }, template = { en = 'x' } }
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { { observation = 'weighed', where = { weight = { gte = 1.5 } } } } },
+    { Observations = { weighed = weighed } })
+assert(ok, err)
+assert(HumalikeSelectedProvider('actions').Actions.give_map.requires[1].where.weight.gte == 1.5)
+assert(exported.UnregisterProvider('actions', 'observer'))
+ok, err = acting({ name = 'n', description = 'd', fixed = { player_id = 3 } })
+assert(not ok and err == 'invalid fixed param player_id in action give_map')
+ok, err = acting({ name = 'n', description = 'd', fixed = { ['Item-Name'] = 'x' } })
+assert(not ok and err == 'invalid fixed param Item-Name in action give_map')
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { { observation = 'item_given', where = 'item' } } })
+assert(not ok and err == 'invalid where in requirement 1 of action give_map')
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { { observation = 'item_given', where = { quantity = 'many' } } } })
+assert(not ok and err == 'invalid value for quantity in requirement 1 of action give_map')
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { { observation = 'item_given', where = { quantity = { gte = 10, lte = 3 } } } } })
+assert(not ok and err == 'invalid bound on quantity in requirement 1 of action give_map')
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { { observation = 'item_given', where = { quantity = { gte = 1, lte = 'x' } } } } })
+assert(not ok and err == 'invalid bound on quantity in requirement 1 of action give_map')
+ok, err = acting({ name = 'n', description = 'd', params = { item = { type = 'string' } },
+    fixed = { item = 'x' } })
+assert(not ok and err == 'invalid fixed param item in action give_map')
+ok, err = acting({ name = 'n', description = 'd', requires = { { observation = 'door_unlocked' } } })
+assert(not ok and err == 'unknown observation in requirement 1 of action give_map')
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { { observation = 'item_given', where = { color = 'red' } } } })
+assert(not ok and err == 'unknown field color in requirement 1 of action give_map')
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { { observation = 'item_given', where = { item = { gte = 1 } } } } })
+assert(not ok and err == 'invalid bound on item in requirement 1 of action give_map')
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { { observation = 'item_given', where = { quantity = { gte = 'x' } } } } })
+assert(not ok and err == 'invalid bound on quantity in requirement 1 of action give_map')
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { { observation = 'item_given', where = { quantity = { above = 5 } } } } })
+assert(not ok and err == 'invalid bound on quantity in requirement 1 of action give_map')
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { { observation = 'item_given', where = { item = {} } } } })
+assert(not ok and err == 'invalid bound on item in requirement 1 of action give_map')
+ok, err = acting({ name = 'n', description = 'd',
+    requires = { { observation = 'item_given', within_s = 2 } } })
+assert(not ok and err == 'invalid within_s in requirement 1 of action give_map')
+ok, err = acting({ name = 'n', description = 'd', locked_hint = { de = 'nein' } })
+assert(not ok and err == 'invalid locked_hint in action give_map')
+
+ok, err = acting(giveMap)
+assert(ok, err)
+local localKey, definition = HumalikeActions.Custom('srp:give_map')
+assert(localKey == 'give_map' and definition.fixed.item == 'treasure_map')
+assert(definition.params.copies.enum[2] == 2 and definition.requires[1].within_s == 600)
+assert(HumalikeActions.Custom('srp:other') == nil and HumalikeActions.Custom('give_map') == nil)
+assert(table.concat(GetSupportedActions(), ',') == 'wave,give_item,srp:give_map')
+local declaredActions, declaredObservations = HumalikeActions.Declarations()
+assert(#declaredActions == 1 and declaredActions[1].key == 'srp:give_map')
+assert(declaredActions[1].params.copies.enum[1] == 1)
+assert(declaredActions[1].preconditions[1].observation == 'srp:item_given')
+assert(declaredActions[1].preconditions[1].where.item == 'cash')
+assert(declaredActions[1].preconditions[1].where.quantity.gte == 500)
+assert(declaredActions[1].preconditions[1].consume == true)
+assert(declaredActions[1].locked_hint.en == 'Only once the amulet is in your hands.')
+assert(declaredActions[1].fixed == nil, 'fixed values never leave the box')
+assert(declaredActions[1].limit.per_player == 1 and declaredActions[1].limit.every_s == 86400)
+assert(declaredActions[1].limit.hint.en == 'One a day.')
+assert(declaredActions[1].uses_stock.item == 'map' and declaredActions[1].uses_stock.quantity == 1)
+assert(#declaredObservations == 1 and declaredObservations[1].key == 'srp:item_given')
+assert(declaredObservations[1].fields.quantity == 'integer')
+assert(exported.UnregisterProvider('actions', 'observer'))
+
+local function selling(catalog, overrides)
+    local descriptor = {
+        name = 'shop', apiVersion = 1, priority = 50, SupportedActions = {}, Namespace = 'srp',
+        RunAction = function() return true end,
+        Observations = {
+            item_given = {
+                fields = { item = 'string', quantity = 'integer' },
+                template = { en = 'the character handed you {quantity} x {item}' },
+            },
+        },
+        Catalog = catalog,
+    }
+    for key, value in pairs(overrides or {}) do descriptor[key] = value end
+    return exported.RegisterProvider('actions', descriptor)
+end
+ok, err = selling('water')
+assert(not ok and err == 'invalid Catalog')
+ok, err = selling({ currency = 'cash', payment = 'door_unlocked', items = { water = { price = 5 } } })
+assert(not ok and err == 'Catalog payment must be a declared observation with item (string) and quantity (integer)')
+ok, err = selling({ currency = 'cash', payment = 'item_given', items = { water = { price = 5 } } },
+    { Observations = { item_given = {
+        fields = { item = 'string', quantity = 'number' },
+        template = { en = 'the character handed you {quantity} x {item}' },
+    } } })
+assert(not ok and err == 'Catalog payment must be a declared observation with item (string) and quantity (integer)', tostring(err))
+ok, err = selling({ currency = 'cash', payment = 'item_given', items = {} })
+assert(not ok and err == 'invalid Catalog items')
+ok, err = selling({ currency = 'cash', payment = 'item_given', items = { water = { price = 1.5 } } })
+assert(not ok and err == 'invalid Catalog item water')
+-- The model orders by item name as a tag argument, so the name must parse as one.
+for _, name in ipairs({ 'water-bottle', 'water.small', '3d_glasses' }) do
+    ok, err = selling({ currency = 'cash', payment = 'item_given', items = { [name] = { price = 5 } } })
+    assert(not ok and err == 'invalid Catalog item ' .. name, tostring(err))
+end
+ok, err = selling({ currency = 'cash', payment = 'item_given',
+    items = { pistol = { price = 150, limit = { per_player = 0, every_s = 60 } } } })
+assert(not ok and err == 'invalid limit for Catalog item pistol')
+ok, err = selling({ currency = 'cash', payment = 'item_given', items = { water = { price = 5 } } },
+    { Actions = { deliver = { name = 'x', description = 'y' } } })
+assert(not ok and err == 'action deliver is reserved for the Catalog')
+ok, err = selling({ currency = 'cash', payment = 'item_given', items = { water = { price = 5 } } },
+    { Actions = { cancel_order = { name = 'x', description = 'y' } } })
+assert(not ok and err == 'cancel_order is reserved for the shop counter', tostring(err))
+ok, err = selling(nil, { Actions = { order = { name = 'x', description = 'y' } } })
+assert(not ok and err == 'order is reserved for the shop counter', tostring(err))
+ok, err = selling(nil, { Observations = {
+    item_given = { fields = { item = 'string', quantity = 'integer' }, template = { en = 'x' } },
+    order_placed = { template = { en = 'x' } } } })
+assert(not ok and err == 'order_placed is reserved for the shop counter', tostring(err))
+ok, err = selling(nil, { Observations = {
+    item_given = { fields = { item = 'string', quantity = 'integer' }, template = { en = 'x' } },
+    refund = { template = { en = 'x' } } } })
+assert(not ok and err == 'refund is reserved for the shop counter', tostring(err))
+assert(HumalikeProviders.registered.actions.shop == nil)
+ok, err = selling({ currency = 'cash', payment = 'item_given',
+    items = { water = { price = 5 }, pistol = { price = 150, limit = { per_player = 1, every_s = 86400 } } } })
+assert(ok, err)
+local wire = HumalikeActions.Catalog()
+assert(wire.currency == 'cash' and wire.payment == 'srp:item_given')
+assert(wire.items.pistol.price == 150 and wire.items.pistol.limit.per_player == 1)
+assert(table.concat(GetSupportedActions(), ',') == 'wave,give_item,srp:deliver,srp:refund')
+local declaredShop = HumalikeActions.Declarations()
+assert(#declaredShop == 2 and declaredShop[1].key == 'srp:deliver' and declaredShop[2].key == 'srp:refund')
+local _, deliverDef = HumalikeActions.Custom('srp:deliver')
+assert(deliverDef.passthrough.items and deliverDef.passthrough.change)
+assert(exported.UnregisterProvider('actions', 'shop'))
+assert(HumalikeActions.Catalog() == nil)
+local function manyActions(count)
+    local actions = {}
+    for index = 1, count do
+        actions['deed_' .. index] = { name = 'Deed ' .. index, description = 'One of many.' }
+    end
+    return actions
+end
+local shelf = { currency = 'cash', payment = 'item_given', items = { water = { price = 5 } } }
+ok, err = selling(shelf, { Actions = manyActions(31) })
+assert(not ok and err == "too many actions: at most 30 with the Catalog's 2", tostring(err))
+assert(printed[#printed]:find("rejected: too many actions: at most 30 with the Catalog's 2", 1, true),
+    printed[#printed])
+ok, err = selling(shelf, { Actions = manyActions(30) })
+assert(ok, err)
+local reported = HumalikeActions.Declarations()
+assert(#reported == 32 and reported[#reported].key == 'srp:refund')
+assert(exported.UnregisterProvider('actions', 'shop'))
+ok, err = selling(nil, { Actions = manyActions(33) })
+assert(not ok and err == 'too many actions: at most 32', tostring(err))
+ok, err = selling(nil, { Actions = manyActions(32) })
+assert(ok, err)
+assert(#HumalikeActions.Declarations() == 32)
+assert(exported.UnregisterProvider('actions', 'shop'))
+
 ok, err = observing({ priority = 100 })
 assert(ok, err)
 assert(HumalikeSelectedProvider('actions').name == 'observer')
@@ -278,4 +617,4 @@ handlers.onResourceStart('humalike')
 assert(ready.apiVersion == 1)
 assert(ready.runtimeEpoch == exported.GetProviderStatus().runtimeEpoch)
 
-print('providers: ok')
+consolePrint('providers: ok')

@@ -141,6 +141,7 @@ function HumalikeFindAmbientLease() return lease end
 function TriggerEvent() end
 function SyncNpcRoster() end
 function GetSupportedActions() return { 'wave' } end
+HumalikeActions = { Declarations = function() return {}, {} end, Catalog = function() return nil end }
 function RegisterCommand() end
 function print() end
 HumaLike = { RuntimeCredentials = function() return credentials end }
@@ -170,6 +171,7 @@ HumalikeHttp = {
             callback(capabilityOk, capabilityOk and 200 or 500)
         end
     end,
+    DescribeFailure = function(status) return 'HTTP ' .. tostring(status) end,
 }
 
 dofile('server/population.lua')
