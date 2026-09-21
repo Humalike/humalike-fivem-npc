@@ -75,6 +75,35 @@ source = 7
 handlers['humalike:world:cabinState']({ networkId = 999, seat = -1 })
 assert(HumalikeWorldCabins.playerMembers[7] == nil)
 
+WorldConfig.cabins.enabled = true
+handlers['humalike:world:cabinState']({ networkId = 502, seat = -1 })
+local oldVoiceRequest = requests[#requests]
+local successesBeforeMove = HumalikeWorldCabins.sentSnapshots
+handlers['humalike:runtime:voiceChanged']()
+local newVoiceRequest = requests[#requests]
+assert(newVoiceRequest ~= oldVoiceRequest,
+    'voice assignment change must publish the cabin snapshot to the new node')
+oldVoiceRequest.callback(204)
+assert(HumalikeWorldCabins.sentSnapshots == successesBeforeMove,
+    'an old voice-node callback must not mark current cabin state as published')
+newVoiceRequest.callback(204)
+assert(HumalikeWorldCabins.sentSnapshots == successesBeforeMove + 1,
+    'the new voice-node callback must publish current cabin state')
+
+source = 7
+handlers['humalike:world:cabinState']({ networkId = 503, seat = -1 })
+local abandonedSameAssignmentCabin = requests[#requests]
+local successesBeforeRecovery = HumalikeWorldCabins.sentSnapshots
+handlers['humalike:runtime:refreshed']({ voiceChanged = false })
+local recoveredSameAssignmentCabin = requests[#requests]
+assert(recoveredSameAssignmentCabin ~= abandonedSameAssignmentCabin,
+    'same-assignment credential recovery must replay cabin state')
+abandonedSameAssignmentCabin.callback(204)
+assert(HumalikeWorldCabins.sentSnapshots == successesBeforeRecovery,
+    'an abandoned cabin callback must remain fenced after credential recovery')
+recoveredSameAssignmentCabin.callback(204)
+assert(HumalikeWorldCabins.sentSnapshots == successesBeforeRecovery + 1)
+
 local beforeStop = #requests
 handlers['humalike:core:stopping']()
 assert(#requests == beforeStop + 1)

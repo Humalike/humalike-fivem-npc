@@ -77,13 +77,20 @@ function IsEntityDead() return false end
 function IsPedRagdoll() return false end
 function SetBlockingOfNonTemporaryEvents(ped, value) blocking[ped] = value end
 function SetPedKeepTask(ped, value) keepTask[ped] = value end
+local populationPeds = {}
 function Entity(ped)
-    return { state = { set = function(_self, key, value) bags[ped .. key] = value end } }
+    return { state = {
+        set = function(_self, key, value) bags[ped .. key] = value end,
+        humalike_npc_kind = populationPeds[ped] and 'population' or nil,
+    } }
 end
 
 local sustainThread
 local function loadClient()
     threads = {}
+    HumalikeNpcDriving = HumalikeNpcDriving or { DrivesOwnVehicle = function() return false end }
+NpcActionDrivesOwnVehicle = NpcActionDrivesOwnVehicle or function() return false end
+dofile('client/reactions.lua')
     dofile('client/actions/state.lua')
     dofile('client/actions/follow_player.lua')
     dofile('client/actions/stop_following.lua')
@@ -106,6 +113,25 @@ MarkActionControl(1, 'hands_up', {})
 bagHandler('entity:1', 'humalike_action', nil)
 assert(ActionControlledPeds[1] == nil and keepTask[1] == false and blocking[1] == false,
     'clearing replicated action state stops local sustain without clearing native tasks')
+populationPeds[1] = true
+HumalikeNpcPopulationClient = {
+    OwnsReactions = function(ped) return populationPeds[ped] == true end,
+    OwnPace = function() end,
+    RestorePace = function() end,
+}
+MarkActionControl(1, 'hands_up', {})
+bagHandler('entity:1', 'humalike_action', nil)
+assert(ActionControlledPeds[1] == nil and keepTask[1] == false and blocking[1] == true,
+    'a population body stays blocked when replicated state clears')
+MarkActionControl(1, 'hands_up', {})
+ReleaseActionControl(1)
+assert(ActionControlledPeds[1] == nil and keepTask[1] == false and blocking[1] == true,
+    'a population body stays blocked after a local release')
+populationPeds[1] = nil
+MarkActionControl(1, 'hands_up', {})
+ReleaseActionControl(1)
+assert(blocking[1] == false, 'any other ped gets its reactions back on release')
+HumalikeNpcPopulationClient = nil
 MarkActionControl(1, 'hands_up', {})
 local clearsBeforeFollow = #clears
 NpcActions.follow_player(1, { player_id = 7 })

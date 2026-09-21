@@ -30,6 +30,7 @@ for _, entry in pairs(peds) do setmetatable(entry.coords, mt) end
 function CreateThread() end
 function AddStateBagChangeHandler() end
 
+dofile('client/reactions.lua')
 dofile('client/actions/state.lua')
 assert(ActionTargetPed(npcPed, { player_id = 7 }, 4.0) == 10)
 assert(ActionTargetPed(npcPed, {}, 4.0) == 11)

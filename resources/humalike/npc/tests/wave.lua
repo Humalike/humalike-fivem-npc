@@ -20,6 +20,7 @@ function Wait() end
 function GetActivePlayers() return {} end
 function GetPlayerPed() return 0 end
 
+dofile('client/reactions.lua')
 dofile('client/actions/state.lua')
 dofile('client/actions/wave.lua')
 NpcActions['wave'](ped, {})

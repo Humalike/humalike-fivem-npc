@@ -5,17 +5,16 @@ local VALID_DOMAINS = {
 }
 local ACTION_DOMAINS = {
     follow_player = 'movement', stop_following = 'movement', hold_position = 'movement',
-    release_movement = 'movement', enter_vehicle = 'movement', exit_vehicle = 'movement',
-    walk_away = 'movement', wave = 'animation', start_dancing = 'animation',
+    release_movement = 'movement', enter_vehicle = 'movement', enter_own_vehicle = 'movement',
+    exit_vehicle = 'movement',
+    walk_away = 'movement', run_away = 'movement', wave = 'animation', start_dancing = 'animation',
     interrupt_animation = 'animation', kneel = 'animation', hands_up = 'animation',
     punch = 'animation', stand_up = 'animation', hand_over_money = 'animation',
 }
 local DEFAULT_TTL_MS, MIN_TTL_MS, MAX_TTL_MS = 30000, 1000, 300000
 
 local leases, domainsByNpc = {}, {}
-local sequence, revision = 0, 0
-local syncInFlight, syncQueued, retryAttempt = false, false, 0
-local retryScheduled, retryGeneration = false, 0
+local sequence, clientRevision = 0, 0
 
 local function nowMs() return GetGameTimer() end
 
@@ -27,12 +26,28 @@ local function copy(value)
 end
 
 local function targetForNpc(npcId)
-    local static = NpcRegistry and NpcRegistry[npcId] or nil
-    if static then return 'static', static, nil end
+    local persistent = NpcRegistry and NpcRegistry[npcId] or nil
+    if persistent and persistent.type == 'external' then
+        local entity = HumalikeNpcEntityOwnership
+            and HumalikeNpcEntityOwnership.ExternalEntity(npcId) or nil
+        if entity then
+            persistent.entity_id = entity
+            persistent.network_id = NetworkGetNetworkIdFromEntity(entity)
+            return 'external', persistent, nil
+        end
+        return nil
+    end
+    if persistent and persistent.type == 'static' then
+        local entity = persistent.entity_id
+        if entity and DoesEntityExist(entity) then return 'static', persistent, nil end
+        return nil
+    end
     local ambient = HumalikeFindAmbientLease and HumalikeFindAmbientLease(npcId) or nil
     if ambient then return 'ambient', ambient, ambient.lease_token end
     return nil
 end
+
+function HumalikeNpcRuntimeControl.Target(npcId) return targetForNpc(npcId) end
 
 local function normalizeDomains(value)
     if type(value) ~= 'table' or #value == 0 or #value > 5 then
@@ -82,7 +97,7 @@ local function publicDomains()
     return result
 end
 
-local function edgeSnapshot()
+function HumalikeNpcRuntimeControl.EdgeControls()
     local npcs = {}
     for npcId, held in pairs(domainsByNpc) do
         local domains = {}
@@ -91,56 +106,13 @@ local function edgeSnapshot()
         npcs[#npcs + 1] = { npc_id = npcId, domains = domains }
     end
     table.sort(npcs, function(left, right) return left.npc_id < right.npc_id end)
-    local credentials = HumaLike.RuntimeCredentials()
-    return { boot_id = credentials and credentials.bootId or '', revision = revision, npcs = npcs }
-end
-
-local function cancelRetry()
-    retryGeneration = retryGeneration + 1
-    retryScheduled = false
-end
-
-local syncControls
-local function scheduleRetry()
-    if retryScheduled then return end
-    retryScheduled = true
-    retryGeneration = retryGeneration + 1
-    local generation = retryGeneration
-    SetTimeout(500 * (2 ^ (retryAttempt - 1)), function()
-        if not retryScheduled or retryGeneration ~= generation then return end
-        retryScheduled = false
-        syncControls()
-    end)
-end
-
-syncControls = function()
-    if syncInFlight or not HumaLike.RuntimeCredentials() then
-        syncQueued = true
-        return
-    end
-    cancelRetry()
-    syncInFlight, syncQueued = true, false
-    local sentRevision = revision
-    HumalikeHttp.PostAction('sync_npc_runtime_controls', edgeSnapshot(), function(ok)
-        syncInFlight = false
-        if ok then
-            retryAttempt = 0
-            cancelRetry()
-        else
-            retryAttempt = math.min(retryAttempt + 1, 6)
-        end
-        if syncQueued or revision ~= sentRevision then
-            syncControls()
-        elseif not ok then
-            scheduleRetry()
-        end
-    end)
+    return npcs
 end
 
 local function publish()
-    revision = revision + 1
-    TriggerClientEvent('humalike:npc:runtimeControlSnapshot', -1, revision, publicDomains())
-    syncControls()
+    clientRevision = clientRevision + 1
+    TriggerClientEvent('humalike:npc:runtimeControlSnapshot', -1, clientRevision, publicDomains())
+    HumalikeNpcRuntimeState.Publish()
 end
 
 local function releaseLease(lease)
@@ -205,7 +177,7 @@ function HumalikeNpcRuntimeControl.NeutralizeAction(npcId, domains)
 
     local kind, target = targetForNpc(npcId)
     if not kind then return end
-    local entity = kind == 'static' and target.entity_id or target.entity_handle
+    local entity = kind == 'ambient' and target.entity_handle or target.entity_id
     if kind == 'ambient' and (not entity or not DoesEntityExist(entity))
         and HumalikeResolveAmbientEntity then
         entity = HumalikeResolveAmbientEntity(target.entity_id)
@@ -228,8 +200,12 @@ end
 
 function HumalikeNpcRuntimeControl.State(npcId)
     local kind, target = targetForNpc(npcId)
-    if not kind then return nil, 'npc_not_active' end
-    local entity = kind == 'static' and target.entity_id or target.entity_handle
+    local definition = NpcRegistry and NpcRegistry[npcId] or nil
+    if not kind and not definition then return nil, 'npc_not_found' end
+    if not kind then
+        kind, target = definition.type, definition
+    end
+    local entity = kind == 'ambient' and target.entity_handle or target.entity_id
     if kind == 'ambient' and (not entity or not DoesEntityExist(entity))
         and HumalikeResolveAmbientEntity then entity = HumalikeResolveAmbientEntity(target.entity_id) end
     local controlled = {}
@@ -247,58 +223,93 @@ function HumalikeNpcRuntimeControl.State(npcId)
         controlled.movement ~= nil and controlled.animation ~= nil
         and controlled.speech ~= nil and controlled.perception ~= nil
     )
+    local ownership = kind ~= 'ambient' and HumalikeNpcEntityOwnership
+        and HumalikeNpcEntityOwnership.State(npcId) or nil
     return {
         apiVersion = 1, npcId = npcId, kind = kind, active = exists,
         entity = entity,
-        networkId = kind == 'static' and target.network_id or target.network_id or target.entity_id,
-        routingBucket = exists and GetEntityRoutingBucket(entity) or target.routing_bucket,
+        networkId = target.network_id or (kind == 'ambient' and target.entity_id or nil),
+        routingBucket = exists and GetEntityRoutingBucket(entity)
+            or ownership and ownership.routingBucket or target.routing_bucket,
         modelHash = exists and GetEntityModel(entity) or nil,
-        aiEnabled = not fullyControlled, controlledDomains = controlled,
+        aiEnabled = exists and not fullyControlled, controlledDomains = controlled,
+        entityOwner = ownership and ownership.entityOwner or 'humalike',
+        bindingId = ownership and ownership.bindingId or nil,
+        despawnId = ownership and ownership.despawnId or nil,
+        entityOwnerResource = ownership and ownership.ownerResource or nil,
     }
 end
 
 exports('GetNpcRuntimeState', function(npcId)
     local state, err = HumalikeNpcRuntimeControl.State(npcId)
-    return state and copy(state) or nil, err
+    if not state then return HumalikeExportResult.Failure(err) end
+    return HumalikeExportResult.Success(copy(state))
+end)
+
+exports('ListNpcRuntimeStates', function()
+    local rows = {}
+    for npcId, definition in pairs(NpcRegistry or {}) do
+        local state = HumalikeNpcRuntimeControl.State(npcId)
+        if state then
+            state.name = definition.name
+            state.model = definition.model
+            rows[#rows + 1] = copy(state)
+        end
+    end
+    local seen = {}
+    for _, row in ipairs(rows) do seen[row.npcId] = true end
+    for _, lease in pairs(AmbientNpcLeases or {}) do
+        if not seen[lease.npc_id] then
+            local state = HumalikeNpcRuntimeControl.State(lease.npc_id)
+            if state and state.kind == 'ambient' then
+                state.name = 'Dynamic NPC'
+                state.model = state.modelHash and tostring(state.modelHash) or nil
+                rows[#rows + 1] = copy(state)
+                seen[lease.npc_id] = true
+            end
+        end
+    end
+    table.sort(rows, function(left, right) return left.npcId < right.npcId end)
+    return HumalikeExportResult.Success(rows)
 end)
 
 exports('AcquireNpcControl', function(npcId, options)
     local owner = invokingOwner()
-    if not owner then return nil, 'external_resource_required' end
-    return acquire(npcId, options, owner)
+    if not owner then return HumalikeExportResult.Failure('external_resource_required') end
+    local lease, err = acquire(npcId, options, owner)
+    if not lease then return HumalikeExportResult.Failure(err) end
+    return HumalikeExportResult.Success(lease)
 end)
 
 exports('RenewNpcControl', function(leaseId, ttlMs)
     local owner = invokingOwner()
-    if not owner then return nil, 'external_resource_required' end
+    if not owner then return HumalikeExportResult.Failure('external_resource_required') end
     local lease = type(leaseId) == 'string' and leases[leaseId] or nil
-    if not lease then return nil, 'lease_not_found' end
-    if lease.ownerResource ~= owner then return nil, 'not_owner' end
+    if not lease then return HumalikeExportResult.Failure('lease_not_found') end
+    if lease.ownerResource ~= owner then return HumalikeExportResult.Failure('not_owner') end
     local ttl = normalizeTtl(ttlMs)
-    if not ttl then return nil, 'invalid_ttl' end
+    if not ttl then return HumalikeExportResult.Failure('invalid_ttl') end
     lease.expiresAtMs = nowMs() + ttl
     local result = copy(lease)
     result.expiresInMs, result.expiresAtMs, result.incarnation = ttl, nil, nil
-    return result
+    return HumalikeExportResult.Success(result)
 end)
 
 exports('ReleaseNpcControl', function(leaseId)
     local owner = invokingOwner()
-    if not owner then return false, 'external_resource_required' end
+    if not owner then return HumalikeExportResult.Failure('external_resource_required') end
     local lease = type(leaseId) == 'string' and leases[leaseId] or nil
-    if not lease then return false, 'lease_not_found' end
-    if lease.ownerResource ~= owner then return false, 'not_owner' end
+    if not lease then return HumalikeExportResult.Failure('lease_not_found') end
+    if lease.ownerResource ~= owner then return HumalikeExportResult.Failure('not_owner') end
     releaseLease(lease)
     publish()
-    return true
+    return HumalikeExportResult.Success()
 end)
 
 RegisterNetEvent('humalike:npc:requestRuntimeControls')
 AddEventHandler('humalike:npc:requestRuntimeControls', function()
-    TriggerClientEvent('humalike:npc:runtimeControlSnapshot', source, revision, publicDomains())
+    TriggerClientEvent('humalike:npc:runtimeControlSnapshot', source, clientRevision, publicDomains())
 end)
-
-AddEventHandler('humalike:core:ready', syncControls)
 
 AddEventHandler('onResourceStop', function(resourceName)
     if resourceName == GetCurrentResourceName() then return end

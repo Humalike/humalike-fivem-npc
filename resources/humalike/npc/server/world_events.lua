@@ -23,7 +23,7 @@ local function send(observation, delay, attempt)
     end)
 end
 
-local function post(playerId, event)
+function HumalikePostPlayerEvent(playerId, event)
     send({
         fivem_session_id = playerId,
         source_event_id = HumalikeHttp.NextSourceEventId(playerId),
@@ -32,26 +32,18 @@ local function post(playerId, event)
     }, 1000)
 end
 
-local function cleanText(value, maxLength)
-    if type(value) ~= 'string' or value:find('%c') then return nil end
-    value = value:match('^%s*(.-)%s*$')
-    local length = utf8.len(value)
-    if value == '' or not length or length > maxLength then return nil end
-    return value
-end
-
 local function validatedEvent(value)
     if type(value) ~= 'table' or type(value.type) ~= 'string' then return nil end
     if SIMPLE_EVENTS[value.type] then return { type = value.type } end
     if value.type == 'rp_action' then
         if value.kind ~= 'me' and value.kind ~= 'do' then return nil end
-        local text = cleanText(value.text, 1000)
+        local text = HumaLike.CleanText(value.text, 1000)
         return text and { type = value.type, kind = value.kind, text = text } or nil
     end
     if value.type == 'identity_document_shown' then
         local event = { type = value.type }
         for _, key in ipairs({ 'full_name', 'sex', 'ssn', 'issued_at', 'last_name' }) do
-            event[key] = cleanText(value[key], 128)
+            event[key] = HumaLike.CleanText(value[key], 128)
             if not event[key] then return nil end
         end
         return event
@@ -72,7 +64,7 @@ function HumalikeReportPlayerEvent(playerId, rawEvent)
         or not HumalikePlayer.IsCharacterLoaded(playerId) then return false end
     local event = validatedEvent(rawEvent)
     if not event then return false end
-    post(playerId, event)
+    HumalikePostPlayerEvent(playerId, event)
     return true
 end
 

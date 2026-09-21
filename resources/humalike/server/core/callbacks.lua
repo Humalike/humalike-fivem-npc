@@ -66,6 +66,11 @@ SetHttpHandler(function(request, response)
     end
 
     request.setDataHandler(function(rawBody)
+        if not callbackAuthorized(authorization) then
+            response.writeHead(401)
+            response.send()
+            return
+        end
         local decoded, payload = pcall(json.decode, rawBody or '')
         if not decoded or type(payload) ~= 'table' or type(payload.request_id) ~= 'string'
             or payload.request_id == '' then
@@ -87,8 +92,8 @@ SetHttpHandler(function(request, response)
         end
         status = type(status) == 'number' and status or 200
         body = type(body) == 'table' and body or { ok = true }
-        remember(payload.request_id, status, body)
+        -- Refusals are retriable, so only remember accepted requests.
+        if body.ok ~= false then remember(payload.request_id, status, body) end
         sendJson(response, status, body)
     end)
 end)
-

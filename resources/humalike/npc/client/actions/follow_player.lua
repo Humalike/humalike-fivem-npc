@@ -141,6 +141,9 @@ local function sustainVehicleFollow(ped, target)
             return
         end
         updateReservation(ped)
+        if NpcActionDrivesOwnVehicle(ped) then
+            HumalikeNpcDriving.Dismiss(ped) -- on foot with the player from here on
+        end
         leaveIfNeeded(ped, pedVehicle, false)
         return
     end
@@ -234,6 +237,12 @@ NpcActionSustain['follow_player'] = function(ped)
 end
 function BeginStopFollowing(ped)
     taskedGait[ped] = nil
+    if NpcActionDrivesOwnVehicle(ped) then
+        -- Nothing to stop: a driver stays at its wheel.
+        resetVehicleState(ped)
+        ReleaseActionControl(ped)
+        return
+    end
     local vehicle = GetVehiclePedIsIn(ped, false)
     if vehicle ~= 0 then
         MarkActionControl(ped, 'stop_following', {})

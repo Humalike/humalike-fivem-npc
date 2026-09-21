@@ -39,6 +39,7 @@ local function npcSample(candidate)
         heading = GetEntityHeading(ped),
         zone_code = GetNameOfZone(position.x, position.y, position.z),
         vehicle = HumalikeWorldVehicle.StreamState(ped),
+        own_vehicle = HumalikeWorldVehicle.OwnState(ped),
     }
 end
 
@@ -125,6 +126,14 @@ RegisterNetEvent('humalike:world:npcEdgeTicket', function(ticket, expectedBootId
     SendNUIMessage(ticket)
 end)
 
+RegisterNetEvent('humalike:world:npcEdgeReconnect', function()
+    HumalikeWorldNpcEdge.ticketGeneration = HumalikeWorldNpcEdge.ticketGeneration + 1
+    HumalikeWorldNpcEdge.ticketPending = false
+    HumalikeWorldNpcEdge.connected = false
+    SendNUIMessage({ type = 'npc_edge_disconnect' })
+    HumalikeWorldNpcEdge.RequestTicket()
+end)
+
 RegisterNUICallback('npcEdgeReady', function(_, callback)
     HumalikeWorldNpcEdge.connected = true
     HumalikeWorldNpcEdge.lastError = nil
@@ -206,16 +215,4 @@ function HumalikeWorldNpcEdge.Start()
             wasConnected = c
         end
     end)
-end
-
-function HumalikeWorldNpcEdge.ReportAmbientCandidates(candidates)
-    if not WorldConfig.npcEdge.enabled or not HumalikeWorldNpcEdge.connected
-        or type(candidates) ~= 'table' then return false end
-    local bounded = {}
-    for index = 1, math.min(#candidates, 64) do bounded[index] = candidates[index] end
-    SendNUIMessage({
-        type = 'npc_edge_frame',
-        frame = { type = 'ambient_candidates', candidates = bounded },
-    })
-    return true
 end

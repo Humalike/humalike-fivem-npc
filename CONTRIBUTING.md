@@ -71,4 +71,3 @@ guaranteed.
 
 Do not disclose vulnerabilities in a public issue or on Discord. Use
 [GitHub private vulnerability reporting](https://github.com/Humalike/humalike-fivem-npc/security/advisories/new).
-

@@ -24,6 +24,7 @@ function IsEntityDead() return false end
 function IsPedRagdoll() return false end
 function NetworkHasControlOfEntity() return true end
 
+dofile('client/reactions.lua')
 dofile('client/actions/state.lua')
 dofile('client/actions/hand_over_money.lua')
 NpcActions['hand_over_money'](ped, {})

@@ -4,6 +4,10 @@ NpcActionSustain = {}
 function NpcActionPedInVehicle(ped)
     return GetVehiclePedIsIn(ped, false) ~= 0
 end
+-- A driver in its own car is never a passenger to send out of it.
+function NpcActionDrivesOwnVehicle(ped)
+    return HumalikeNpcDriving.DrivesOwnVehicle(ped)
+end
 local function nearestPlayerPedWithin(ped, maxDistance)
     local npcCoords = GetEntityCoords(ped)
     local best, bestDistance = nil, maxDistance
@@ -44,8 +48,9 @@ function MarkActionControl(ped, actionKey, params)
         else
             Entity(ped).state:set('humalike_action', nil, true)
         end
-        SetBlockingOfNonTemporaryEvents(ped, true)
+        HumalikeNpcReactions.Own(ped)
         SetPedKeepTask(ped, true)
+        if HumalikeNpcPopulationClient then HumalikeNpcPopulationClient.OwnPace(ped) end
     end
 end
 
@@ -55,7 +60,8 @@ function ReleaseActionControl(ped)
     if DoesEntityExist(ped) then
         Entity(ped).state:set('humalike_action', nil, true)
         SetPedKeepTask(ped, false)
-        SetBlockingOfNonTemporaryEvents(ped, false)
+        HumalikeNpcReactions.Release(ped)
+        if HumalikeNpcPopulationClient then HumalikeNpcPopulationClient.RestorePace(ped) end
     end
 end
 AddStateBagChangeHandler('humalike_action', nil, function(bagName, _key, value)
@@ -70,7 +76,8 @@ AddStateBagChangeHandler('humalike_action', nil, function(bagName, _key, value)
             ActionControlledPeds[ped] = nil
             ActionParams[ped] = nil
             SetPedKeepTask(ped, false)
-            SetBlockingOfNonTemporaryEvents(ped, false)
+            HumalikeNpcReactions.Release(ped)
+            if HumalikeNpcPopulationClient then HumalikeNpcPopulationClient.RestorePace(ped) end
         end
     end
 end)
@@ -95,7 +102,7 @@ CreateThread(function()
                 ReleaseActionControl(ped)
             elseif NetworkHasControlOfEntity(ped)
                 and not IsEntityDead(ped) and not IsPedRagdoll(ped) then
-                SetBlockingOfNonTemporaryEvents(ped, true)
+                HumalikeNpcReactions.Own(ped)
                 SetPedKeepTask(ped, true)
                 local sustain = NpcActionSustain[actionKey]
                 if sustain then sustain(ped) end

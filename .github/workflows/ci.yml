@@ -48,6 +48,12 @@ jobs:
           for test in tests/*.lua; do
             lua5.4 "$test"
           done
+      - name: NPC test panel
+        run: |
+          lua5.4 examples/humalike-control-test/tests/server.lua
+          lua5.4 examples/humalike-control-test/tests/client.lua
+          node --check examples/humalike-control-test/web/app.js
+          node examples/humalike-control-test/tests/web.cjs
       - name: Voice Lua tests
         working-directory: resources/humalike/voice
         run: |

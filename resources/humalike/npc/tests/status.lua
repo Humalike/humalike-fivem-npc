@@ -49,5 +49,16 @@ assert(lines[3]:find('domain=player'))
 assert(lines[3]:find('selected=standalone'))
 assert(lines[4]:find('reason=no available provider'))
 
+HumalikeNpcPopulation = {
+    Enabled = function() return true end,
+    Bodies = function() return { {}, {}, {} } end,
+    Vehicles = function() return false end,
+    Drivers = function() return 2 end,
+}
+lines = {}
+command(0)
+assert(#lines == 7)
+assert(lines[2] == '[humalike] population enabled=true bodies=3 npc_vehicles=false drivers=2')
+
 print = originalPrint
 io.write('status tests passed\n')

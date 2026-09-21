@@ -8,6 +8,8 @@ providers.
 ## What it includes
 
 - Persistent and ambient AI NPCs synchronized through OneSync.
+- HumaLike-owned street population: planned bodies spawn on pavement and
+  player contact (a bump, a knock-down) reaches the AI as a world event.
 - Proximity voice with direct NPC targeting and in-vehicle routing.
 - World-state collection, NPC actions, injuries and interactions.
 - Standalone operation with optional ESX, QBCore, Qbox, inventory and target
@@ -33,7 +35,21 @@ ensure humalike
 
 The license is server-only and must use `set`, never `setr`. HumaLike exchanges
 it for short-lived runtime credentials; service URLs and voice secrets do not
-need to be configured manually.
+need to be configured manually. The resource becomes ready only when the
+control plane returns complete edge and voice assignments. Each assignment
+must include its assignment ID, node ID, node boot ID and positive integer
+generation. A malformed successful bootstrap response stops a newly started
+resource, so a strict release cannot run against an older control-plane
+contract. Updating an installed resource follows the Update section of the
+archive's `INSTALL.md` (`refresh`, then `restart humalike`).
+
+For the first cutover of an existing server, keep the assignment-capable
+transition control plane running while healthy edge and voice nodes start.
+Enable both sharding planes and verify complete active assignments, then deploy
+the strict control plane and this resource. The transition release is not part
+of the final architecture. There is no static runtime fallback after cutover;
+reversing this order intentionally leaves the resource stopped instead of
+issuing or accepting assignment-unbound credentials.
 
 Detailed installation and configuration documentation is available at
 [docs.humalike.com/ai-npc](https://docs.humalike.com/ai-npc).
@@ -69,6 +85,13 @@ Verbose runtime logging is disabled by default and can be enabled temporarily:
 ```cfg
 setr humalike_debug 1
 ```
+
+While HumaLike owns the street population, GTA's random police stay off unless
+`set humalike_population_cops true` is set; the convar is read every few seconds.
+
+Some persona NPCs spawn at the wheel of a car or motorbike and drive around like
+traffic; a player who talks to one makes it pull over. `set humalike_npc_vehicles
+false` keeps everyone on foot (read every few seconds).
 
 ## Development
 

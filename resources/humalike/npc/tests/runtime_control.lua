@@ -7,12 +7,21 @@ local forgottenPoses = {}
 local entityStates = {
     [101] = { humalike_action = { key = 'follow_player', params = { player_id = 7 } } },
     [202] = { humalike_action = { key = 'kneel', params = {} } },
+    [303] = {},
 }
 source = 7
 
 NpcRegistry = {
     ['static-1'] = {
-        npc_id = 'static-1', entity_id = 101, network_id = 51, routing_bucket = 2,
+        npc_id = 'static-1', type = 'static', entity_id = 101, network_id = 51,
+        routing_bucket = 2,
+    },
+    ['external-1'] = {
+        npc_id = 'external-1', type = 'external', entity_id = 303, network_id = 53,
+        routing_bucket = 4,
+    },
+    ['external-offline'] = {
+        npc_id = 'external-offline', type = 'external', routing_bucket = 0,
     },
 }
 
@@ -20,9 +29,13 @@ function exports(name, callback) exported[name] = callback end
 function GetInvokingResource() return owner end
 function GetCurrentResourceName() return 'humalike' end
 function GetGameTimer() return now end
-function DoesEntityExist(entity) return entity == 101 or entity == 202 end
-function GetEntityRoutingBucket(entity) return entity == 101 and 2 or 3 end
-function GetEntityModel(entity) return entity == 101 and 10 or 20 end
+function DoesEntityExist(entity) return entity == 101 or entity == 202 or entity == 303 end
+function GetEntityRoutingBucket(entity)
+    if entity == 101 then return 2 end
+    return entity == 202 and 3 or 4
+end
+function GetEntityModel(entity) return entity == 101 and 10 or entity == 202 and 20 or 30 end
+function NetworkGetNetworkIdFromEntity(entity) return entity == 303 and 53 or 0 end
 function RegisterNetEvent() end
 function AddEventHandler(name, callback) handlers[name] = callback end
 function TriggerClientEvent(name, target, revision, controls)
@@ -49,6 +62,16 @@ function HumalikeFindAmbientLease(npcId)
 end
 HumaLike = {
     RuntimeCredentials = function() return { bootId = 'boot-1' } end,
+    EdgeAssignmentKey = function() return 'edge-a:7' end,
+    IsCurrentEdgeAssignment = function(expected) return expected == 'edge-a:7' end,
+}
+HumalikeNpcEntityOwnership = {
+    ExternalEntity = function(npcId) return npcId == 'external-1' and 303 or nil end,
+    SuppressedStaticNpcIds = function() return { 'static-offline' } end,
+    State = function(npcId)
+        return npcId == 'external-1' and { entityOwner = 'external', bindingId = 'binding-1' }
+            or { entityOwner = 'humalike' }
+    end,
 }
 HumalikeHttp = {
     PostAction = function(name, body, callback)
@@ -57,45 +80,80 @@ HumalikeHttp = {
     end,
 }
 
+dofile('../server/core/export_result.lua')
+dofile('server/runtime_state.lua')
 dofile('server/runtime_control.lua')
 
-local state = assert(exported.GetNpcRuntimeState('static-1'))
-assert(state.kind == 'static' and state.active == true and state.networkId == 51)
+local function success(result)
+    assert(result.apiVersion == 1 and result.ok == true and result.error == nil)
+    return result.value
+end
 
-local lease = assert(exported.AcquireNpcControl('static-1', {
+local function failure(result, expected)
+    assert(result.apiVersion == 1 and result.ok == false and result.error == expected)
+    assert(result.value == nil)
+end
+
+local state = success(exported.GetNpcRuntimeState('static-1'))
+assert(state.kind == 'static' and state.active == true and state.networkId == 51)
+local externalState = success(exported.GetNpcRuntimeState('external-1'))
+assert(externalState.kind == 'external' and externalState.active == true)
+assert(externalState.networkId == 53 and externalState.bindingId == 'binding-1')
+local offlineState = success(exported.GetNpcRuntimeState('external-offline'))
+assert(offlineState.kind == 'external' and offlineState.active == false)
+assert(offlineState.aiEnabled == false)
+NpcRegistry['external-offline'].name = 'Offline character'
+NpcRegistry['external-offline'].model = 'a_m_m_business_01'
+NpcRegistry['external-offline'].runtime_token = 'must-not-leak'
+local roster = success(exported.ListNpcRuntimeStates())
+assert(#roster == 3 and roster[1].npcId == 'external-1')
+assert(roster[2].npcId == 'external-offline' and roster[2].active == false)
+assert(roster[2].name == 'Offline character' and roster[2].model == 'a_m_m_business_01')
+assert(roster[2].runtime_token == nil)
+roster[2].name = 'Changed by caller'
+assert(NpcRegistry['external-offline'].name == 'Offline character')
+AmbientNpcLeases = { [202] = {npc_id='ambient-1', lease_token='secret'}, [203] = {npc_id='ambient-1'} }
+local withAmbient = success(exported.ListNpcRuntimeStates())
+assert(#withAmbient == 4 and withAmbient[1].npcId == 'ambient-1')
+assert(withAmbient[1].kind == 'ambient' and withAmbient[1].active)
+assert(withAmbient[1].lease_token == nil and withAmbient[1].networkId == 52)
+AmbientNpcLeases = {}
+assert(#success(exported.ListNpcRuntimeStates()) == 3, 'Expired ambient leases disappear')
+failure(exported.AcquireNpcControl('external-offline', { domains = { 'speech' } }),
+    'npc_not_active')
+
+local lease = success(exported.AcquireNpcControl('static-1', {
     domains = { 'movement', 'animation' }, ttlMs = 30000, reason = 'mission',
 }))
 assert(lease.ownerResource == 'mission-one' and lease.expiresInMs == 30000)
-assert(posts[#posts].name == 'sync_npc_runtime_controls')
-assert(posts[#posts].body.npcs[1].npc_id == 'static-1')
+assert(posts[#posts].name == 'sync_npc_runtime_state')
+assert(posts[#posts].body.controls[1].npc_id == 'static-1')
+assert(posts[#posts].body.suppressed_static_npc_ids[1] == 'static-offline')
 assert(clientEvents[#clientEvents].controls['static-1'].movement == true)
 assert(entityStates[101].humalike_action == nil, 'takeover stops sustained HumaLike actions')
 assert(forgottenPoses[#forgottenPoses] == 'static-1', 'animation takeover forgets replayable poses')
 
-local controlled = assert(exported.GetNpcRuntimeState('static-1'))
+local controlled = success(exported.GetNpcRuntimeState('static-1'))
 assert(controlled.controlledDomains.movement.ownerResource == 'mission-one')
 assert(HumalikeNpcRuntimeControl.AllowsAction('static-1', 'follow_player') == false)
 assert(HumalikeNpcRuntimeControl.AllowsAction('static-1', 'wave') == false)
 assert(HumalikeNpcRuntimeControl.AllowsAction('static-1', 'give_item') == true)
 
-local _, conflict = exported.AcquireNpcControl('static-1', {
+failure(exported.AcquireNpcControl('static-1', {
     domains = { 'movement' }, ttlMs = 1000,
-})
-assert(conflict == 'domain_conflict')
-local _, invalidAll = exported.AcquireNpcControl('ambient-1', {
+}), 'domain_conflict')
+failure(exported.AcquireNpcControl('ambient-1', {
     domains = { 'all', 'speech' }, ttlMs = 1000,
-})
-assert(invalidAll == 'all_domain_must_be_exclusive')
+}), 'all_domain_must_be_exclusive')
 
 owner = 'mission-two'
-local released, releaseError = exported.ReleaseNpcControl(lease.id)
-assert(released == false and releaseError == 'not_owner')
+failure(exported.ReleaseNpcControl(lease.id), 'not_owner')
 owner = 'mission-one'
-assert(exported.RenewNpcControl(lease.id, 5000).expiresInMs == 5000)
-assert(exported.ReleaseNpcControl(lease.id) == true)
+assert(success(exported.RenewNpcControl(lease.id, 5000)).expiresInMs == 5000)
+assert(exported.ReleaseNpcControl(lease.id).ok == true)
 assert(HumalikeNpcRuntimeControl.AllowsAction('static-1', 'follow_player') == true)
 
-local ambient = assert(exported.AcquireNpcControl('ambient-1', {
+local ambient = success(exported.AcquireNpcControl('ambient-1', {
     domains = { 'all' }, ttlMs = 1000,
 }))
 assert(ambient.kind == 'ambient')
@@ -104,7 +162,7 @@ assert(entityStates[202].humalike_action == nil, 'all takeover also stops ambien
 handlers.onResourceStop('mission-one')
 assert(HumalikeNpcRuntimeControl.AllowsAction('ambient-1', 'give_item') == true)
 
-local incarnated = assert(exported.AcquireNpcControl('ambient-1', {
+local incarnated = success(exported.AcquireNpcControl('ambient-1', {
     domains = { 'movement' }, ttlMs = 1000,
 }))
 ambientToken = 'ambient-token-2'
@@ -112,11 +170,11 @@ local cleanup = coroutine.create(cleanupThread)
 assert(coroutine.resume(cleanup))
 assert(coroutine.resume(cleanup))
 assert(HumalikeNpcRuntimeControl.AllowsAction('ambient-1', 'follow_player') == true)
-assert(exported.ReleaseNpcControl(incarnated.id) == false)
+failure(exported.ReleaseNpcControl(incarnated.id), 'lease_not_found')
 
 owner = nil
-local _, ownerError = exported.AcquireNpcControl('static-1', { domains = { 'speech' } })
-assert(ownerError == 'external_resource_required')
+failure(exported.AcquireNpcControl('static-1', { domains = { 'speech' } }),
+    'external_resource_required')
 
 handlers['humalike:npc:requestRuntimeControls']()
 assert(clientEvents[#clientEvents].target == 7)
@@ -132,11 +190,11 @@ end
 local postsBeforeRetry = #posts
 assert(exported.AcquireNpcControl('static-1', {
     domains = { 'speech' }, ttlMs = 1000,
-}))
+}).ok)
 assert(#retryTimers == 1)
 assert(exported.AcquireNpcControl('static-1', {
     domains = { 'perception' }, ttlMs = 1000,
-}))
+}).ok)
 assert(#retryTimers == 2 and #posts == postsBeforeRetry + 2)
 HumalikeHttp.PostAction = function(name, body, callback)
     posts[#posts + 1] = { name = name, body = body }

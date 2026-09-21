@@ -97,6 +97,13 @@ export function installNpcEdgeTransport(): void {
     if (!data || typeof data !== "object") return;
     const message = data as ConnectMessage | FrameMessage | { type?: string };
     if (message.type === "npc_edge_connect") connect(message as ConnectMessage);
+    else if (message.type === "npc_edge_disconnect") {
+      const current = socket;
+      socket = null;
+      current?.close(1000, "assignment changed");
+      pending.clear();
+      clearConnectionTimers();
+    }
     else if (message.type === "npc_edge_frame") {
       const frame = (message as FrameMessage).frame;
       frame.observed_at_ms = Date.now();

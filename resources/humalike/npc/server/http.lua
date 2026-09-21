@@ -23,3 +23,16 @@ function HumalikeHttp.PostAction(name, payload, callback)
         if callback then callback(ok, status, decoded) end
     end)
 end
+
+function HumalikeHttp.DescribeFailure(status, body)
+    local failure = type(body) == 'table' and type(body.error) == 'table' and body.error or {}
+    local details = {}
+    for _, detail in ipairs(type(failure.details) == 'table' and failure.details or {}) do
+        if type(detail) == 'table' then
+            details[#details + 1] = ('%s: %s'):format(tostring(detail.field), tostring(detail.message))
+        end
+    end
+    return ('HTTP %s%s%s'):format(tostring(status),
+        failure.code and ' ' .. tostring(failure.code) or '',
+        #details > 0 and ': ' .. table.concat(details, '; ') or '')
+end

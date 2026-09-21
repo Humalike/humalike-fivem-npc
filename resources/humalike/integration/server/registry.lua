@@ -25,8 +25,21 @@ local DOMAINS = {
     },
     inventory = { required = { 'AddItem' } },
     dispatch = { required = { 'Report' } },
-    actions = { required = { 'RunAction' } },
+    actions = { required = {}, optional = { 'RunAction' } },
 }
+
+local OBSERVATION_LIMITS = { observations = 32, fields = 8, template = 400, text = 912 }
+local OBSERVATION_FIELD_TYPES = { string = true, integer = true, number = true, boolean = true }
+-- Fields HumaLike writes on a reported fact; a declaration cannot claim them.
+local OBSERVATION_RESERVED_FIELDS = { spent = true }
+-- Widest render per field type under the bounds npc/server/observations.lua enforces.
+local OBSERVATION_FIELD_WIDTHS = { string = 64, integer = 17, number = 21, boolean = 5 }
+local OBSERVATION_LANGUAGES = { en = true, pl = true }
+local ACTION_LIMITS = {
+    actions = 32, name = 80, description = 400, params = 4, enum = 16, fixed = 16,
+    requires = 4, where = 4, paramsFrom = 4, hint = 300, withinMin = 5, withinMax = 3600,
+}
+local ACTION_PARAM_TYPES = { string = true, integer = true, boolean = true }
 
 for domain in pairs(DOMAINS) do HumalikeProviders.registered[domain] = {} end
 
@@ -192,13 +205,434 @@ local function validateDescriptor(domain, descriptor)
     if descriptor.Available ~= nil and not callable(descriptor.Available) then
         return false, 'invalid Available'
     end
-    if domain == 'actions' and type(descriptor.SupportedActions) ~= 'table' then
-        return false, 'missing SupportedActions'
+    if domain == 'actions' then
+        if type(descriptor.SupportedActions) ~= 'table' then
+            return false, 'missing SupportedActions'
+        end
+        if next(descriptor.SupportedActions) ~= nil and not callable(descriptor.RunAction) then
+            return false, 'invalid RunAction'
+        end
+        if descriptor.Namespace ~= nil and (type(descriptor.Namespace) ~= 'string'
+            or not descriptor.Namespace:match('^[a-z][a-z0-9]+$')
+            or #descriptor.Namespace > 16) then
+            return false, 'invalid Namespace'
+        end
+        if descriptor.Observations ~= nil then
+            if type(descriptor.Observations) ~= 'table' then return false, 'invalid Observations' end
+            if next(descriptor.Observations) ~= nil and not descriptor.Namespace then
+                return false, 'missing Namespace'
+            end
+        end
+        if descriptor.Actions ~= nil then
+            if type(descriptor.Actions) ~= 'table' then return false, 'invalid Actions' end
+            if next(descriptor.Actions) ~= nil then
+                if not descriptor.Namespace then return false, 'missing Namespace' end
+                if not callable(descriptor.RunAction) then return false, 'invalid RunAction' end
+            end
+        end
+        if descriptor.Catalog ~= nil then
+            if type(descriptor.Catalog) ~= 'table' then return false, 'invalid Catalog' end
+            if not descriptor.Namespace then return false, 'missing Namespace' end
+            if not callable(descriptor.RunAction) then return false, 'invalid RunAction' end
+        end
     end
     return true
 end
 
-local function normalizedActions(descriptor)
+local function normalizedCatalog(descriptor, observations)
+    local catalog = descriptor.Catalog
+    if catalog == nil then return nil end
+    local currency, payment = catalog.currency, catalog.payment
+    if type(currency) ~= 'string' or not currency:match('^[a-z0-9_.-]+$') or #currency > 48 then
+        return nil, 'invalid Catalog currency'
+    end
+    -- Money is whole units, so a number-typed quantity is refused.
+    local observation = type(payment) == 'string' and observations[payment] or nil
+    if not observation or observation.fields.item ~= 'string'
+        or observation.fields.quantity ~= 'integer' then
+        return nil, 'Catalog payment must be a declared observation with item (string) and quantity (integer)'
+    end
+    if type(catalog.items) ~= 'table' or next(catalog.items) == nil then
+        return nil, 'invalid Catalog items'
+    end
+    local items, count = {}, 0
+    for name, spec in pairs(catalog.items) do
+        if type(name) ~= 'string' or not name:match('^[a-z][a-z0-9_]*$') or #name > 48
+            or type(spec) ~= 'table' or math.type(spec.price) ~= 'integer'
+            or spec.price < 0 or spec.price > 10000000 then
+            return nil, ('invalid Catalog item %s'):format(tostring(name))
+        end
+        local item = { price = spec.price }
+        if spec.limit ~= nil then
+            local per, every = type(spec.limit) == 'table' and spec.limit.per_player or nil,
+                type(spec.limit) == 'table' and spec.limit.every_s or nil
+            if math.type(per) ~= 'integer' or per < 1 or per > 1000
+                or math.type(every) ~= 'integer' or every < 1 or every > 604800 then
+                return nil, ('invalid limit for Catalog item %s'):format(name)
+            end
+            item.limit = { per_player = per, every_s = every }
+        end
+        items[name] = item
+        count = count + 1
+        if count > 64 then return nil, 'too many Catalog items' end
+    end
+    return { currency = currency, payment = payment, items = items }
+end
+
+-- The counter's own deeds and records, in every namespace.
+local COUNTER_ROLES = {
+    order = true, cancel_order = true, order_placed = true, order_refused = true,
+}
+-- Declared on behalf of a Catalog; never offered to the model.
+local COUNTER_ACTIONS = {
+    deliver = {
+        name = 'Fill the order', description = 'Hand over what the customer ordered and paid for.',
+        params = {}, fixed = {}, requires = {}, params_from = {},
+        passthrough = { items = true, total = true, paid = true, change = true, currency = true },
+    },
+    refund = {
+        name = 'Give money back', description = 'Return money from the counter to the customer.',
+        params = {}, fixed = {}, requires = {}, params_from = {},
+        passthrough = { amount = true, currency = true },
+    },
+}
+
+local function normalizedObservation(key, definition)
+    if type(key) ~= 'string' or not key:match('^[a-z][a-z0-9_]*$') or #key > 32 then
+        return nil, 'invalid observation key'
+    end
+    if type(definition) ~= 'table' or (definition.fields ~= nil
+        and type(definition.fields) ~= 'table') then
+        return nil, ('invalid observation %s'):format(key)
+    end
+    local fields, fieldCount = {}, 0
+    for name, fieldType in pairs(definition.fields or {}) do
+        if type(name) ~= 'string' or not name:match('^[a-z][a-z0-9_]*$') or #name > 32
+            or not OBSERVATION_FIELD_TYPES[fieldType] then
+            return nil, ('invalid field %s in observation %s'):format(tostring(name), key)
+        end
+        if OBSERVATION_RESERVED_FIELDS[name] then
+            return nil, ('%s is a field HumaLike writes; observation %s cannot'):format(name, key)
+        end
+        fields[name] = fieldType
+        fieldCount = fieldCount + 1
+        if fieldCount > OBSERVATION_LIMITS.fields then
+            return nil, ('too many fields in observation %s'):format(key)
+        end
+    end
+    if type(definition.template) ~= 'table' or next(definition.template) == nil then
+        return nil, ('missing template in observation %s'):format(key)
+    end
+    local template = {}
+    for language, text in pairs(definition.template) do
+        text = OBSERVATION_LANGUAGES[language]
+            and HumaLike.CleanText(text, OBSERVATION_LIMITS.template)
+        if not text then return nil, ('invalid template in observation %s'):format(key) end
+        local rendered = utf8.len(text)
+        for placeholder in text:gmatch('{([^{}]*)}') do
+            if not fields[placeholder] then
+                return nil, ('unknown placeholder {%s} in observation %s'):format(placeholder, key)
+            end
+            rendered = rendered - (#placeholder + 2) + OBSERVATION_FIELD_WIDTHS[fields[placeholder]]
+        end
+        if rendered > OBSERVATION_LIMITS.text then
+            return nil, ('template renders up to %d characters, over %d, in observation %s'):format(
+                rendered, OBSERVATION_LIMITS.text, key)
+        end
+        if text:gsub('{[^{}]*}', ''):find('[{}]') then
+            return nil, ('invalid template in observation %s'):format(key)
+        end
+        template[language] = text
+    end
+    return { fields = fields, template = template }
+end
+
+local function scalar(value)
+    local kind = type(value)
+    return kind == 'string' or kind == 'number' or kind == 'boolean'
+end
+
+local function finite(value)
+    return type(value) == 'number' and value == value
+        and value ~= math.huge and value ~= -math.huge
+end
+
+-- Same bound as observations; not math.abs, which wraps on math.mininteger.
+local WHERE_NUMBER_LIMIT = 2 ^ 53
+local function bounded(value)
+    return finite(value) and value >= -WHERE_NUMBER_LIMIT and value <= WHERE_NUMBER_LIMIT
+end
+
+-- ipairs would silently stop at a hole.
+local function sequence(value)
+    local count = 0
+    for _ in pairs(value) do count = count + 1 end
+    for index = 1, count do if value[index] == nil then return false end end
+    return true
+end
+
+local function normalizedAction(key, definition, observations)
+    if type(key) ~= 'string' or not key:match('^[a-z][a-z0-9_]*$') or #key > 32 then
+        return nil, 'invalid action key'
+    end
+    if type(definition) ~= 'table' then return nil, ('invalid action %s'):format(key) end
+    local name = HumaLike.CleanText(definition.name, ACTION_LIMITS.name)
+    local description = HumaLike.CleanText(definition.description, ACTION_LIMITS.description)
+    if not name then return nil, ('invalid name in action %s'):format(key) end
+    if not description or description:find('[%[%]]') then
+        return nil, ('invalid description in action %s'):format(key)
+    end
+    for _, collection in ipairs({ 'params', 'fixed', 'requires', 'locked_hint', 'limit',
+        'uses_stock', 'params_from' }) do
+        if definition[collection] ~= nil and type(definition[collection]) ~= 'table' then
+            return nil, ('invalid %s in action %s'):format(collection, key)
+        end
+    end
+    local params, paramCount = {}, 0
+    for paramName, spec in pairs(definition.params or {}) do
+        if type(paramName) ~= 'string' or not paramName:match('^[a-z][a-z0-9_]*$')
+            or #paramName > 32 or paramName == 'player_id' or type(spec) ~= 'table'
+            or not ACTION_PARAM_TYPES[spec.type] then
+            return nil, ('invalid param %s in action %s'):format(tostring(paramName), key)
+        end
+        local param = { type = spec.type, required = spec.required == true }
+        if spec.enum ~= nil then
+            if type(spec.enum) ~= 'table' or not sequence(spec.enum) or #spec.enum == 0
+                or #spec.enum > ACTION_LIMITS.enum or spec.type == 'boolean' then
+                return nil, ('invalid enum for %s in action %s'):format(paramName, key)
+            end
+            param.enum = {}
+            for index, choice in ipairs(spec.enum) do
+                local valid = (spec.type == 'string' and type(choice) == 'string'
+                    and choice:match('^[a-z0-9_.-]+$') and #choice <= 32)
+                    or (spec.type == 'integer' and math.type(choice) == 'integer')
+                if not valid then
+                    return nil, ('invalid enum for %s in action %s'):format(paramName, key)
+                end
+                param.enum[index] = choice
+            end
+        end
+        if spec.description ~= nil then
+            param.description = HumaLike.CleanText(spec.description, 120)
+            if not param.description then
+                return nil, ('invalid description for %s in action %s'):format(paramName, key)
+            end
+        end
+        params[paramName] = param
+        paramCount = paramCount + 1
+        if paramCount > ACTION_LIMITS.params then
+            return nil, ('too many params in action %s'):format(key)
+        end
+    end
+    local fixed, fixedCount = {}, 0
+    for fixedName, value in pairs(definition.fixed or {}) do
+        if type(fixedName) ~= 'string' or not fixedName:match('^[a-z][a-z0-9_]*$')
+            or #fixedName > 32 or fixedName == 'player_id' or params[fixedName]
+            or not scalar(value) then
+            return nil, ('invalid fixed param %s in action %s'):format(tostring(fixedName), key)
+        end
+        fixed[fixedName] = value
+        fixedCount = fixedCount + 1
+        if fixedCount > ACTION_LIMITS.fixed then
+            return nil, ('too many fixed params in action %s'):format(key)
+        end
+    end
+    if definition.requires ~= nil and not sequence(definition.requires) then
+        return nil, ('requires must be a list in action %s'):format(key)
+    end
+    local requires = {}
+    for index, rule in ipairs(definition.requires or {}) do
+        if index > ACTION_LIMITS.requires then
+            return nil, ('too many requirements in action %s'):format(key)
+        end
+        local observation = type(rule) == 'table' and observations[rule.observation] or nil
+        if not observation then
+            return nil, ('unknown observation in requirement %d of action %s'):format(index, key)
+        end
+        if rule.where ~= nil and type(rule.where) ~= 'table' then
+            return nil, ('invalid where in requirement %d of action %s'):format(index, key)
+        end
+        local where, whereCount = {}, 0
+        for field, value in pairs(rule.where or {}) do
+            whereCount = whereCount + 1
+            if whereCount > ACTION_LIMITS.where then
+                return nil, ('too many fields in where of requirement %d of action %s'):format(
+                    index, key)
+            end
+            local fieldType = observation.fields[field]
+            if not fieldType then
+                return nil, ('unknown field %s in requirement %d of action %s'):format(
+                    tostring(field), index, key)
+            end
+            local numeric = fieldType == 'integer' or fieldType == 'number'
+            if type(value) == 'table' then
+                -- { gte = n }, { lte = n } or { sum_gte = n }.
+                local valid = numeric and next(value) ~= nil
+                for bound, limit in pairs(value) do
+                    if (bound ~= 'gte' and bound ~= 'lte' and bound ~= 'sum_gte')
+                        or not bounded(limit)
+                        or (fieldType == 'integer' and limit % 1 ~= 0) then valid = false end
+                end
+                if valid and value.sum_gte and (value.gte or value.lte or value.sum_gte <= 0) then
+                    valid = false
+                end
+                if valid and value.gte and value.lte and value.gte > value.lte then
+                    valid = false
+                end
+                if not valid then
+                    return nil, ('invalid bound on %s in requirement %d of action %s'):format(
+                        field, index, key)
+                end
+                local whole = fieldType == 'integer' and math.tointeger or function(limit)
+                    return limit
+                end
+                where[field] = {
+                    gte = value.gte and whole(value.gte),
+                    lte = value.lte and whole(value.lte),
+                    sum_gte = value.sum_gte and whole(value.sum_gte),
+                }
+            else
+                local fits = (fieldType == 'string' and type(value) == 'string')
+                    or (fieldType == 'boolean' and type(value) == 'boolean')
+                    or (numeric and bounded(value) and value % 1 == 0)
+                if not fits then
+                    return nil, ('invalid value for %s in requirement %d of action %s'):format(
+                        field, index, key)
+                end
+                where[field] = numeric and math.tointeger(value) or value
+            end
+        end
+        local within = rule.within_s == nil and 600 or rule.within_s
+        if math.type(within) ~= 'integer' or within < ACTION_LIMITS.withinMin
+            or within > ACTION_LIMITS.withinMax then
+            return nil, ('invalid within_s in requirement %d of action %s'):format(index, key)
+        end
+        requires[index] = {
+            observation = rule.observation, where = where, within_s = within,
+            consume = rule.consume == true,
+        }
+    end
+    local limit
+    if definition.limit ~= nil then
+        local per, every = definition.limit.per_player, definition.limit.every_s
+        if math.type(per) ~= 'integer' or per < 1 or per > 1000
+            or math.type(every) ~= 'integer' or every < 1 or every > 604800 then
+            return nil, ('invalid limit in action %s'):format(key)
+        end
+        limit = { per_player = per, every_s = every }
+        if definition.limit.hint ~= nil then
+            if type(definition.limit.hint) ~= 'table' or next(definition.limit.hint) == nil then
+                return nil, ('invalid limit hint in action %s'):format(key)
+            end
+            limit.hint = {}
+            for language, text in pairs(definition.limit.hint) do
+                text = OBSERVATION_LANGUAGES[language] and HumaLike.CleanText(text, ACTION_LIMITS.hint)
+                if not text then return nil, ('invalid limit hint in action %s'):format(key) end
+                limit.hint[language] = text
+            end
+        end
+    end
+    local usesStock
+    if definition.uses_stock ~= nil then
+        local item, quantity = definition.uses_stock.item, definition.uses_stock.quantity
+        if quantity == nil then quantity = 1 end
+        if type(item) ~= 'string' or not item:match('^[a-z][a-z0-9_]*$') or #item > 48
+            or math.type(quantity) ~= 'integer' or quantity < 1 or quantity > 1000 then
+            return nil, ('invalid uses_stock in action %s'):format(key)
+        end
+        usesStock = { item = item, quantity = quantity }
+    end
+    if definition.auto ~= nil and type(definition.auto) ~= 'boolean' then
+        return nil, ('invalid auto in action %s'):format(key)
+    end
+    local spends = false
+    for _, rule in ipairs(requires) do if rule.consume then spends = true end end
+    if definition.auto == true and not spends then
+        return nil, ('auto action %s needs a requirement with consume = true'):format(key)
+    end
+    -- An auto deed is written as a bare tag, so the model never fills a param in.
+    for paramName, param in pairs(definition.auto == true and params or {}) do
+        if param.required then
+            return nil, ('auto action %s cannot require a model-written param %s'):format(
+                key, paramName)
+        end
+    end
+    -- { amount = 'item_given.quantity' }
+    local paramsFrom, paramsFromCount = {}, 0
+    for name, source in pairs(definition.params_from or {}) do
+        paramsFromCount = paramsFromCount + 1
+        if paramsFromCount > ACTION_LIMITS.paramsFrom then
+            return nil, ('too many params_from in action %s'):format(key)
+        end
+        local observationKey, fieldName
+        if type(source) == 'string' then
+            observationKey, fieldName = source:match('^([a-z][a-z0-9_]*)%.([a-z][a-z0-9_]*)$')
+        end
+        local observation = observationKey and observations[observationKey]
+        local required = false
+        for _, rule in ipairs(requires) do
+            if rule.observation == observationKey then required = true end
+        end
+        if type(name) ~= 'string' or not name:match('^[a-z][a-z0-9_]*$') or #name > 32
+            or name == 'player_id' or params[name] or fixed[name]
+            or not observation or not required or not observation.fields[fieldName] then
+            return nil, ('invalid params_from %s in action %s'):format(tostring(name), key)
+        end
+        paramsFrom[name] = { observation = observationKey, field = fieldName }
+    end
+    local hint
+    if definition.locked_hint ~= nil then
+        if type(definition.locked_hint) ~= 'table' or next(definition.locked_hint) == nil then
+            return nil, ('invalid locked_hint in action %s'):format(key)
+        end
+        hint = {}
+        for language, text in pairs(definition.locked_hint) do
+            text = OBSERVATION_LANGUAGES[language] and HumaLike.CleanText(text, ACTION_LIMITS.hint)
+            if not text then return nil, ('invalid locked_hint in action %s'):format(key) end
+            hint[language] = text
+        end
+    end
+    return {
+        name = name, description = description, params = params, fixed = fixed,
+        requires = requires, locked_hint = hint, limit = limit, uses_stock = usesStock,
+        auto = definition.auto == true, params_from = paramsFrom,
+    }
+end
+
+-- The counter actions count against ACTION_LIMITS.actions.
+local function normalizedActions(descriptor, observations, catalog)
+    local reserved = 0
+    if catalog then for _ in pairs(COUNTER_ACTIONS) do reserved = reserved + 1 end end
+    local actions, count = {}, 0
+    for key, definition in pairs(descriptor.Actions or {}) do
+        local action, err = normalizedAction(key, definition, observations)
+        if not action then return nil, err end
+        actions[key] = action
+        count = count + 1
+        if count + reserved > ACTION_LIMITS.actions then
+            if reserved > 0 then
+                return nil, ('too many actions: at most %d with the Catalog\'s %d'):format(
+                    ACTION_LIMITS.actions - reserved, reserved)
+            end
+            return nil, ('too many actions: at most %d'):format(ACTION_LIMITS.actions)
+        end
+    end
+    return actions
+end
+
+local function normalizedObservations(descriptor)
+    local observations, count = {}, 0
+    for key, definition in pairs(descriptor.Observations or {}) do
+        local observation, err = normalizedObservation(key, definition)
+        if not observation then return nil, err end
+        observations[key] = observation
+        count = count + 1
+        if count > OBSERVATION_LIMITS.observations then return nil, 'too many observations' end
+    end
+    return observations
+end
+
+local function normalizedSupportedActions(descriptor)
     local actions, seen = {}, {}
     for _, action in ipairs(descriptor.SupportedActions) do
         if type(action) ~= 'string' or not action:match('^[a-z][a-z0-9_]*$')
@@ -224,8 +658,38 @@ local function register(domain, descriptor, owner)
     local provider = {}
     for key, value in pairs(descriptor) do provider[key] = value end
     if domain == 'actions' then
-        provider.SupportedActions, err = normalizedActions(descriptor)
+        provider.SupportedActions, err = normalizedSupportedActions(descriptor)
         if not provider.SupportedActions then return false, err end
+        provider.Observations, err = normalizedObservations(descriptor)
+        if not provider.Observations then return false, err end
+        provider.Catalog, err = normalizedCatalog(descriptor, provider.Observations)
+        if err then return false, err end
+        provider.Actions, err = normalizedActions(descriptor, provider.Observations,
+            provider.Catalog)
+        if not provider.Actions then return false, err end
+        for key in pairs(provider.Observations) do
+            if COUNTER_ROLES[key] or COUNTER_ACTIONS[key] then
+                return false, ('%s is reserved for the shop counter'):format(key)
+            end
+        end
+        for key in pairs(provider.Actions) do
+            if COUNTER_ROLES[key] then
+                return false, ('%s is reserved for the shop counter'):format(key)
+            end
+        end
+        if provider.Catalog then
+            for key, action in pairs(COUNTER_ACTIONS) do
+                if provider.Actions[key] then
+                    return false, ('action %s is reserved for the Catalog'):format(key)
+                end
+                provider.Actions[key] = action
+            end
+        end
+        for key in pairs(provider.Actions) do
+            if provider.Observations[key] then
+                return false, ('a key cannot be both an action and an observation: %s'):format(key)
+            end
+        end
     end
     provider.ownerResource = owner
     provider.priority = descriptor.priority
@@ -272,7 +736,13 @@ exports('RegisterProvider', function(domain, descriptor)
     if not owner or owner == GetCurrentResourceName() then
         return false, 'external provider resource required'
     end
-    return register(domain, descriptor, owner)
+    local ok, err = register(domain, descriptor, owner)
+    -- Exports carry one return value across resources, so print the reason.
+    if not ok then
+        print(('[humalike] %s provider from %s rejected: %s'):format(
+            tostring(domain), owner, tostring(err)))
+    end
+    return ok, err
 end)
 
 exports('UnregisterProvider', function(domain, name)

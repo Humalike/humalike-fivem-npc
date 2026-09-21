@@ -14,8 +14,10 @@ local CLEARS = {
     release_movement = true,
     punch = true,
     enter_vehicle = true,
+    enter_own_vehicle = true,
     exit_vehicle = true,
     walk_away = true,
+    run_away = true,
 }
 local REPLAY_INTERVAL_MS = 1500
 local REPLAY_MAX_ATTEMPTS = 10

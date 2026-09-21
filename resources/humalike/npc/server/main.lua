@@ -1,16 +1,47 @@
 
-local function reportCapabilities()
-    HumalikeHttp.PostAction('report_capabilities', { supported_actions = GetSupportedActions() },
-        function(ok, status)
-            if not ok then
-                print(('[humalike-npc] report_capabilities failed (HTTP %s)'):format(tostring(status)))
-            end
-        end)
+function HumalikeNpcReportCapabilities()
+    local population = HumalikeNpcPopulation
+    local features = population and population.Features() or nil
+    if population then population.CapabilitiesPosted() end
+    local actions, observations = HumalikeActions.Declarations()
+    HumalikeHttp.PostAction('report_capabilities', {
+        supported_actions = GetSupportedActions(),
+        features = features,
+        actions = actions,
+        observations = observations,
+        catalog = HumalikeActions.Catalog(),
+    }, function(ok, status, body)
+        if population then population.CapabilitiesReported(features, ok) end
+        if ok then return end
+        print(('[humalike-npc] report_capabilities failed (%s)'):format(
+            HumalikeHttp.DescribeFailure(status, body)))
+    end)
+end
+local reportCapabilities = HumalikeNpcReportCapabilities
+
+local pendingReadyGeneration
+
+local function rosterSynced(ok)
+    if not ok or not pendingReadyGeneration then return end
+    local generation = pendingReadyGeneration
+    pendingReadyGeneration = nil
+    TriggerEvent('humalike:npc:ready', { apiVersion = 1, generation = generation })
 end
 
-AddEventHandler('humalike:core:ready', function()
+AddEventHandler('humalike:core:ready', function(runtime)
+    pendingReadyGeneration = runtime and runtime.generation or 0
+    SyncNpcRoster(rosterSynced, true)
+    reportCapabilities()
+end)
+
+local function replayEdgeState()
     SyncNpcRoster(nil, true)
     reportCapabilities()
+end
+
+AddEventHandler('humalike:runtime:edgeChanged', replayEdgeState)
+AddEventHandler('humalike:runtime:refreshed', function(runtime)
+    if not runtime or runtime.edgeChanged ~= true then replayEdgeState() end
 end)
 
 AddEventHandler('humalike:providers:changed', function(domain)
@@ -23,7 +54,7 @@ AddEventHandler('onResourceStart', function(resourceName)
     CreateThread(function()
         while true do
             Wait(Config.RosterSyncIntervalMs)
-            SyncNpcRoster()
+            SyncNpcRoster(rosterSynced)
         end
     end)
 end)
@@ -32,10 +63,23 @@ AddEventHandler('humalike:npc:requestRoster', function()
     local source = source
     local snapshot = {}
     for _, entry in pairs(NpcRegistry) do
-        snapshot[#snapshot + 1] = entry
+        if entry.entity_id and DoesEntityExist(entry.entity_id) then
+            snapshot[#snapshot + 1] = entry
+        end
     end
     TriggerClientEvent('humalike:npc:rosterSnapshot', source, snapshot)
 end)
+
+local function populationSummary()
+    local rows = HumalikeNpcPopulation and HumalikeNpcPopulation.Bodies() or {}
+    if #rows == 0 then return 'none' end
+    local parts = {}
+    for _, row in ipairs(rows) do
+        parts[#parts + 1] = ('%s:%s%s'):format(row.body_id, row.status,
+            row.kept and ('(' .. row.kept .. ')') or '')
+    end
+    return ('%d [%s]'):format(#rows, table.concat(parts, ' '))
+end
 
 RegisterCommand('humalikenpc:status', function(source)
     local count = 0
@@ -43,6 +87,9 @@ RegisterCommand('humalikenpc:status', function(source)
     local lines = {
         ('player provider: %s'):format(HumalikePlayer.Name() or 'none'),
         ('npcs in roster: %d'):format(count),
+        ('population: enabled=%s bodies=%s'):format(
+            tostring(HumalikeNpcPopulation and HumalikeNpcPopulation.Enabled() or false),
+            populationSummary()),
         ('last roster sync: %s (%s)'):format(
             HumalikeStatus.lastRosterSyncAt and os.date('%Y-%m-%d %H:%M:%S', HumalikeStatus.lastRosterSyncAt) or 'never',
             HumalikeStatus.lastRosterSyncOk and 'ok' or ('failed: ' .. tostring(HumalikeStatus.lastRosterError))

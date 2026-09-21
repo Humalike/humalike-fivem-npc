@@ -1,4 +1,8 @@
-Config = { PushSecretConvar = 'push_secret' }
+Config = {
+    PushSecretConvar = 'push_secret', Integrations = {},
+    SupportedActions = { 'wave', 'hand_over_money', 'hold_position', 'release_movement' },
+    ServerActions = { MaxDistance = 5.0 },
+}
 NpcRegistry = { ['static-1'] = { npc_id = 'static-1', entity_id = 201, x = 1, y = 2, z = 3 } }
 
 local handlers = {}
@@ -20,10 +24,40 @@ HumaLike = {
     RegisterCallback = function(path, callback) handlers[path] = callback end,
 }
 function HumalikeDebug() end
-function IsSupportedAction(action)
-    return action == 'wave' or action == 'give_item' or action == 'hand_over_money'
-        or action == 'hold_position' or action == 'release_movement'
-end
+local printed, consolePrint = {}, print
+function print(line) printed[#printed + 1] = line end
+function GetCurrentResourceName() return 'humalike' end
+function AddEventHandler() end
+function exports() end
+HumalikeInventory = { Available = function() return true end }
+local characterLoaded = true
+HumalikePlayer = { IsCharacterLoaded = function(playerId) return characterLoaded end }
+local clock, osTime = 1000000, os.time
+os.time = function(...) if ... then return osTime(...) end return clock end
+dofile('../server/core/text.lua')
+dofile('../integration/server/registry.lua')
+dofile('../integration/server/actions.lua')
+local runCalls, runResult = {}, true
+local provider = {
+    name = 'srp_actions', apiVersion = 1, priority = 10, SupportedActions = {}, Namespace = 'srp',
+    Observations = { item_given = { fields = { item = 'string', quantity = 'integer' },
+                                    template = { en = '{quantity} x {item}' } } },
+    Actions = { give_map = {
+        name = 'Give the map', description = 'Hand over the map.',
+        params = { copies = { type = 'integer', enum = { 1, 2 } },
+                   note = { type = 'string', required = true } },
+        fixed = { item = 'treasure_map' },
+        requires = { { observation = 'item_given', consume = true } },
+        params_from = { paid = 'item_given.quantity' },
+    } },
+    Catalog = { currency = 'cash', payment = 'item_given',
+                items = { water = { price = 5 }, bread = { price = 3 } } },
+    RunAction = function(action, source, coords, params)
+        runCalls[#runCalls + 1] = { action = action, source = source, coords = coords, params = params }
+        if type(runResult) == 'function' then return runResult() end
+        return runResult
+    end,
+}
 function TriggerClientEvent(name, playerId, npcId, action, params)
     clientEvents[#clientEvents + 1] = {
         name = name,
@@ -36,6 +70,7 @@ end
 local handOverCalls = 0
 local handOverResult = true
 function TriggerEvent(name, _, params, respond)
+    if name == 'humalike:providers:changed' then return end
     if name == 'humalike:npc:runHandOverMoneyAction' then
         handOverCalls = handOverCalls + 1
         respond(handOverResult)
@@ -49,11 +84,17 @@ function ValidateAmbientActionTarget(target)
     if target.lease_token ~= 'lease-token' then return nil, nil, 'ambient_lease_expired' end
     return target, 101
 end
-function GetEntityCoords() return { x = 4, y = 5, z = 6 } end
+local playerDistance = 0
+function GetEntityCoords(entity)
+    if entity == 700 then return { x = 4 + playerDistance, y = 5, z = 6 } end
+    return { x = 4, y = 5, z = 6 }
+end
+function GetPlayerPed(playerId) return playerId == 7 and 700 or 0 end
 function GetPlayerName(playerId) return playerId == 7 and 'Tester' or nil end
 function GetPlayerRoutingBucket() return playerBucket end
-function DoesEntityExist(entity) return entity == 201 and staticEntityExists end
-function GetEntityType() return 1 end
+function DoesEntityExist(entity) return entity == 700 or (entity == 201 and staticEntityExists) end
+staticEntityIsPed = true
+function GetEntityType() return staticEntityIsPed and 1 or 2 end
 function IsPedAPlayer() return false end
 function GetEntityHealth() return 100 end
 function GetEntityRoutingBucket() return 2 end
@@ -87,11 +128,34 @@ HumalikeNpcRuntimeControl = {
     end,
 }
 
+local planRevision = 0
+local populationCleared = 0
+HumalikeNpcPopulation = {
+    ApplyPlan = function(body)
+        if type(body.revision) ~= 'number' then return false, 'invalid' end
+        if body.revision <= planRevision then return false, 'stale' end
+        planRevision = body.revision
+        return true
+    end,
+    Clear = function() populationCleared = populationCleared + 1 end,
+}
+function HumalikeClearAmbientLeases() end
+function RemovePersistentNpc() end
+
+assert(HumalikeRegisterInternalProvider('actions', provider))
 dofile('server/inbound.lua')
 
 local function request(body, auth, path)
     return handlers[path or '/action'](body)
 end
+
+local planStatus, planResponse = request({ revision = 5, enabled = true }, nil, '/population/plan')
+assert(planStatus == 200 and planResponse.ok == true)
+planStatus, planResponse = request({ revision = 5, enabled = true }, nil, '/population/plan')
+assert(planStatus == 409 and planResponse.ok == false and planResponse.reason == 'stale',
+    'a stale plan revision is a conflict, not a delivery failure')
+planStatus, planResponse = request({ enabled = true }, nil, '/population/plan')
+assert(planStatus == 400 and planResponse.reason == 'invalid')
 
 local muteStatus, muteResponse = request({ revision = 1, npcs = {} }, nil, '/voice-mutes')
 assert(muteStatus == 200 and muteResponse.ok == true)
@@ -198,12 +262,7 @@ assert(giveItemCalls == 1)
 playerBucket = 2
 assert(request(giveItem) == 200)
 assert(request(giveItem) == 200)
-assert(giveItemCalls == 2)
-
-giveItem.params.quantity = 2
-local _, conflict = request(giveItem)
-assert(conflict.ok == false and conflict.reason == 'invocation_conflict')
-assert(giveItemCalls == 2)
+assert(giveItemCalls == 2, 'the same invocation id is delivered once')
 local posesBefore = #recordedPoses
 local ceBefore = #clientEvents
 local robbery = {
@@ -212,7 +271,9 @@ local robbery = {
     action = 'hand_over_money',
     params = { player_id = 7, robber_description = 'czarna kominiarka' },
 }
-assert(request(robbery) == 200)
+local robberyStatus, robberyBody = request(robbery)
+assert(robberyStatus == 200 and robberyBody.ok == true)
+assert(robberyBody.reason == nil, 'a delivered payout carries no reason: ' .. tostring(robberyBody.reason))
 assert(handOverCalls == 1, 'payout dispatched once')
 assert(#clientEvents == ceBefore + 1)
 assert(clientEvents[#clientEvents].name == 'humalike:npc:playAction')
@@ -233,6 +294,13 @@ local _, rejected = request({
 assert(rejected.ok == false and rejected.reason == 'action_rejected')
 assert(#clientEvents == ceReject, 'no gesture on a rejected payout')
 handOverResult = true
+assert(select(2, request({
+    invocation_id = 'robbery-2',
+    target = { kind = 'static', npc_id = 'static-1' },
+    action = 'hand_over_money',
+    params = { player_id = 7 },
+})).ok == true, 'a refusal is not remembered: the same id is tried again')
+assert(handOverCalls == 3)
 local ceAmbient = #clientEvents
 assert(request({
     invocation_id = 'robbery-ambient-1',
@@ -246,8 +314,113 @@ assert(request({
     action = 'hand_over_money',
     params = { player_id = 7, robber_description = 'x' },
 }) == 200)
-assert(handOverCalls == 3)
+assert(handOverCalls == 4)
 assert(#clientEvents == ceAmbient + 1)
 assert(clientEvents[#clientEvents].name == 'humalike:npc:playAmbientAction')
 
-print('server_inbound: ok')
+local ceCustom = #clientEvents
+local function give(invocationId, params, target)
+    return request({
+        invocation_id = invocationId,
+        target = target or { kind = 'static', npc_id = 'static-1' },
+        action = 'srp:give_map',
+        params = params,
+    })
+end
+assert(select(2, give('map-0', { player_id = 7, copies = 2, note = 'here' })).reason == 'missing_param:paid')
+local status, body = give('map-1', { player_id = 7, copies = 2, note = 'here', paid = 50 })
+assert(status == 200 and body.ok == true, tostring(body.reason))
+assert(body.reason == nil, 'a delivered deed carries no reason: ' .. tostring(body.reason))
+assert(runCalls[1].params.paid == 50)
+assert(#runCalls == 1 and runCalls[1].action == 'give_map' and runCalls[1].source == 7)
+assert(runCalls[1].coords.x == 4)
+assert(runCalls[1].params.player_id == 7 and runCalls[1].params.copies == 2)
+assert(runCalls[1].params.note == 'here' and runCalls[1].params.item == 'treasure_map')
+assert(#clientEvents == ceCustom, 'no client animation for a server-defined action')
+assert(select(2, give('map-1', { player_id = 7, copies = 2, note = 'here', paid = 50 })).ok == true)
+assert(#runCalls == 1)
+assert(select(2, give('map-2', { player_id = 7, copies = 3, note = 'x', paid = 50 })).reason == 'invalid_param:copies')
+assert(select(2, give('map-3', { player_id = 7, copies = '2', note = 'x', paid = 50 })).reason == 'invalid_param:copies')
+assert(select(2, give('map-4', { player_id = 7, paid = 50 })).reason == 'missing_param:note')
+local _, extra = give('map-5', { player_id = 7, note = 'x', item = 'gold', hacked = true, paid = 50 })
+assert(extra.ok == true and runCalls[#runCalls].params.hacked == nil)
+assert(runCalls[#runCalls].params.item == 'treasure_map', 'fixed values always win')
+assert(select(2, give('map-6', { player_id = 99, note = 'x', paid = 50 })).reason == 'invalid_action_player')
+characterLoaded = false
+local runsLoaded = #runCalls
+assert(select(2, give('map-unloaded', { player_id = 7, note = 'x', paid = 50 })).reason == 'character_not_loaded')
+assert(#runCalls == runsLoaded, 'no RunAction for a player without a character')
+characterLoaded = true
+staticEntityIsPed = false
+assert(select(2, give('map-vehicle', { player_id = 7, note = 'x', paid = 50 })).reason == 'static_entity_unavailable')
+staticEntityIsPed = true
+playerDistance = 5.5
+assert(select(2, give('map-far', { player_id = 7, note = 'x', paid = 50 })).reason == 'action_player_out_of_reach')
+playerDistance = 0
+-- Only exactly true accepts; a refusal is retried under the same id.
+local map7 = { player_id = 7, note = 'x', paid = 50 }
+runResult = false
+assert(select(2, give('map-7', map7)).reason == 'action_rejected')
+local runsBefore = #runCalls
+assert(select(2, give('map-7', map7)).reason == 'action_rejected')
+assert(#runCalls == runsBefore + 1, 'a refused deed runs again on the retry')
+runResult = function() error('inventory offline') end
+assert(select(2, give('map-7', map7)).reason == 'action_rejected')
+assert(printed[#printed]:find('RunAction failed: .*inventory offline'), printed[#printed])
+runResult = 1
+assert(select(2, give('map-7', map7)).reason == 'action_rejected')
+assert(printed[#printed]:find('RunAction%(give_map%) returned number'), printed[#printed])
+runResult = 'ok'
+local warnings = #printed
+assert(select(2, give('map-7', map7)).reason == 'action_rejected')
+assert(#printed == warnings, 'the return-type warning is said once')
+runResult = nil
+assert(select(2, give('map-7', map7)).reason == 'action_rejected')
+runResult = true
+assert(select(2, give('map-7', map7)).ok == true)
+assert(select(2, give('map-7', map7)).ok == true and #runCalls == runsBefore + 6,
+    'once done, the id is remembered')
+-- Re-pushed long after: still answered from the cache.
+clock = clock + 3601
+assert(select(2, give('map-7', map7)).ok == true and #runCalls == runsBefore + 6,
+    'a done id is remembered past the longest backend window')
+clock = clock + 6 * 3600
+local retired = give('map-7', map7)
+assert(retired == 200 and #runCalls == runsBefore + 7, 'past the TTL the id is forgotten')
+assert(select(2, give('map-8', { player_id = 7, note = 'x', paid = 50 }, {
+    kind = 'ambient', npc_id = 'ambient-1', entity_id = 101, routing_bucket = 2,
+    lease_token = 'stale',
+})).reason == 'ambient_lease_expired')
+assert(select(2, give('map-9', { player_id = 7, note = 'x', paid = 50 }, {
+    kind = 'ambient', npc_id = 'ambient-1', entity_id = 101, routing_bucket = 2,
+    lease_token = 'lease-token',
+})).ok == true)
+
+-- Undeclared params are dropped.
+local _, basket = request({
+    invocation_id = 'order-1', target = { kind = 'static', npc_id = 'static-1' },
+    action = 'srp:deliver',
+    params = { player_id = 7, items = { water = 2, bread = 1 }, total = 13, paid = 15, change = 2,
+               currency = 'cash', hacked = true },
+})
+assert(basket.ok == true, tostring(basket.reason))
+local delivered = runCalls[#runCalls]
+assert(delivered.action == 'deliver' and delivered.params.items.water == 2)
+assert(delivered.params.change == 2 and delivered.params.currency == 'cash')
+assert(delivered.params.hacked == nil)
+local _, again = request({
+    invocation_id = 'order-1', target = { kind = 'static', npc_id = 'static-1' },
+    action = 'srp:deliver',
+    params = { player_id = 7, items = { water = 2, bread = 1 }, total = 13, paid = 15, change = 2,
+               currency = 'cash' },
+})
+assert(again.ok == true and runCalls[#runCalls] == delivered)
+assert(HumalikeProviders.registered.actions.srp_actions)
+HumalikeProviders.registered.actions.srp_actions = nil
+HumalikeProviders.selected.actions = nil
+assert(select(2, give('map-none', map7)).reason == 'unsupported_action')
+
+assert(request({}, nil, '/clear-roster') == 202)
+assert(populationCleared == 1, 'clearing the roster clears the population too')
+
+consolePrint('server_inbound: ok')
