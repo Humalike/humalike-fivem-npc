@@ -14,7 +14,3 @@ end
 function HumalikeVoicePtt.Allowed(controlPressed, busy)
     return controlPressed == true and busy ~= true
 end
-
-function HumalikeVoicePtt.CallActive(callChannel, pmaStarted)
-    return pmaStarted == true and (tonumber(callChannel) or 0) ~= 0
-end

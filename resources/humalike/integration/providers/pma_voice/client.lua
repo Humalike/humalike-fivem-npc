@@ -4,7 +4,7 @@ local started = GetResourceState(RESOURCE) == 'started'
 -- Change handlers run before the bag is written, so the new channel is the
 -- argument, never LocalPlayer.state.
 local function setCall(callChannel)
-    HumalikeVoiceBusy.Set('pma-voice:call', HumalikeVoicePtt.CallActive(callChannel, started))
+    HumalikeVoiceBusy.Set('pma-voice:call', started and (tonumber(callChannel) or 0) ~= 0)
 end
 
 AddEventHandler('pma-voice:radioActive', function(active)
@@ -23,12 +23,10 @@ end)
 AddEventHandler('onClientResourceStart', function(resourceName)
     if resourceName ~= RESOURCE then return end
     started = true
-    HumalikeVoiceBusy.ClearPrefix('pma-voice:')
     setCall(LocalPlayer.state.callChannel)
 end)
 
+-- busy.lua drops every 'pma-voice:' reason when the resource stops.
 AddEventHandler('onClientResourceStop', function(resourceName)
-    if resourceName ~= RESOURCE then return end
-    started = false
-    HumalikeVoiceBusy.ClearPrefix('pma-voice:')
+    if resourceName == RESOURCE then started = false end
 end)

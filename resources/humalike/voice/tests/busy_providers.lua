@@ -63,19 +63,32 @@ fire('SaltyChat_RadioTrafficStateChanged', false, true, false, false)
 fire('onClientResourceStop', 'saltychat')
 assert(not HumalikeVoiceBusy.Active())
 
--- yaca
+-- yaca: busy while any radio channel transmits, polled calls, gated on the resource
 fire('yaca:external:isRadioTalking', true, 1)
-assert(HumalikeVoiceBusy.Has('yaca:radio'))
+assert(HumalikeVoiceBusy.Has('yaca-voice:radio'))
+fire('yaca:external:isRadioTalking', true, 2)
 fire('yaca:external:isRadioTalking', false, 1)
+assert(HumalikeVoiceBusy.Has('yaca-voice:radio'), 'the other channel still transmits')
+fire('yaca:external:isRadioTalking', false, 2)
 assert(not HumalikeVoiceBusy.Active())
 inCall = true
 local ok = pcall(threads[#threads])
 assert(not ok, 'the poll thread waits after one pass')
-assert(HumalikeVoiceBusy.Has('yaca:call'))
+assert(HumalikeVoiceBusy.Has('yaca-voice:call'))
 inCall = false
 pcall(threads[#threads])
 assert(not HumalikeVoiceBusy.Active())
-started['yaca-voice'] = nil
+fire('yaca:external:isRadioTalking', true, 1)
+fire('onClientResourceStop', 'yaca-voice')
+assert(not HumalikeVoiceBusy.Active(), 'a stopped yaca clears its reasons')
 fire('yaca:external:isRadioTalking', true, 1)
 assert(not HumalikeVoiceBusy.Active(), 'events from a stopped yaca are ignored')
+local pollThreads = #threads
+inCall = true
+pcall(threads[#threads])
+assert(not HumalikeVoiceBusy.Active(), 'the old poll thread ends with the resource')
+fire('onClientResourceStart', 'yaca-voice')
+assert(#threads == pollThreads + 1, 'a restart polls again')
+pcall(threads[#threads])
+assert(HumalikeVoiceBusy.Has('yaca-voice:call'))
 print('busy_providers: ok')
