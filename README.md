@@ -82,8 +82,9 @@ minimal separate-resource template is available in
 
 Run `humalike_status` in the server console to inspect runtime health and every
 server provider domain. Run the same command in the FiveM client console to
-inspect the selected interaction provider and whether the client runs on the
-server's settings (`server`) or still on its local defaults (`local`).
+inspect the selected interaction provider and where its setting comes from:
+`server` (set in server.cfg and received), `default` (the server's settings
+arrived and leave it at `auto`) or `local` (not received yet).
 
 Every `humalike_*` setting is a server convar written with `set`. HumaLike sends
 the values players need to their game on join, so `setr` is never required.

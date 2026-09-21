@@ -8,6 +8,10 @@ local function actionText(text)
     return text ~= '' and text or nil
 end
 
+-- Client-reported on purpose: qb-core has no server-side hook for /me short of
+-- wrapping its command. Any player may type /me with any text, so a forged
+-- report gains nothing; the server still checks the sender, its loaded
+-- character, the provider, the text and the rate.
 RegisterNetEvent('humalike:integration:qbcore:rpAction', function(text)
     if HumalikePlayer.Name() ~= 'qbcore' or GetResourceState(RESOURCE) ~= 'started' then return end
     local playerId = source

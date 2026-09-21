@@ -67,4 +67,11 @@ assert(ready[1] == 'humalike:integration:ready')
 assert(ready[2].apiVersion == 1)
 assert(ready[2].runtimeEpoch == exported.GetInteractionProviderStatus().runtimeEpoch)
 
+assert(exported.GetInteractionProviderStatus().settingsSource == 'local')
+HumalikeSettings = { applied = true }
+HumalikeConvars = { overrides = {} }
+assert(exported.GetInteractionProviderStatus().settingsSource == 'default')
+HumalikeConvars.overrides.humalike_interaction = 'builtin'
+assert(exported.GetInteractionProviderStatus().settingsSource == 'server')
+
 print('interaction_providers: ok')

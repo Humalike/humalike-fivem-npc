@@ -147,6 +147,14 @@ exports('UnregisterInteractionProvider', function(name)
     return true
 end)
 
+-- Where the interaction setting comes from: set in server.cfg and received
+-- (`server`), received but left at auto (`default`), or not received yet (`local`).
+local function settingsSource()
+    if not (HumalikeSettings and HumalikeSettings.applied) then return 'local' end
+    local overrides = HumalikeConvars and HumalikeConvars.overrides or {}
+    return overrides.humalike_interaction ~= nil and 'server' or 'default'
+end
+
 local function interactionProviderStatus()
     resolve(false)
     local selected = selectedName and AmbientInteractionAdapters[selectedName] or nil
@@ -154,7 +162,7 @@ local function interactionProviderStatus()
         apiVersion = API_VERSION,
         runtimeEpoch = runtimeEpoch,
         setting = setting(),
-        settingsSource = HumalikeSettings and HumalikeSettings.applied and 'server' or 'local',
+        settingsSource = settingsSource(),
         state = resolution.state,
         reason = resolution.reason,
         selected = selected and {
