@@ -98,7 +98,7 @@ default.
 Verbose runtime logging is disabled by default and can be enabled temporarily:
 
 ```cfg
-setr humalike_debug 1
+set humalike_debug 1
 ```
 
 While HumaLike owns the street population, GTA's random police stay off unless

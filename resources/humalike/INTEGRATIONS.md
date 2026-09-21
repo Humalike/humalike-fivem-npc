@@ -146,10 +146,10 @@ dependency re-evaluates `Available`, while restarting HumaLike produces a new
 epoch and lets integrations rebuild their registrations. Interaction callbacks
 are removed before HumaLike stops and whenever the selected provider changes.
 
-The standalone player provider has no framework to ask about jobs, so it reads
-FiveM's own ACE permissions: a player holds job `ambulance` when
-`humalike.job.ambulance` is allowed for them. Empty job requirements pass. ACE
-has no duty state, so a granted job counts as on duty:
+Only the standalone player provider reads FiveM's own ACE permissions for
+jobs: a player holds job `ambulance` when `humalike.job.ambulance` is allowed
+for them. Empty job requirements pass. ACE has no duty state, so a granted job
+counts as on duty:
 
 ```cfg
 add_ace group.ems humalike.job.ambulance allow
