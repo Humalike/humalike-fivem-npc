@@ -94,6 +94,7 @@ AmbientInteractionAdapters.custom = {
     end,
     Remove = function() currentOptions = nil end,
 }
+dofile('../integration/client/provider_registry.lua')
 dofile('../integration/client/interactions.lua')
 dofile('client/reactions.lua')
 dofile('client/ambient_control.lua')

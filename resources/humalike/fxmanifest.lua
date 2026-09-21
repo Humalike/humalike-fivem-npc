@@ -79,6 +79,7 @@ server_scripts {
 }
 
 client_scripts {
+    'integration/client/provider_registry.lua',
     'integration/client/interactions.lua',
     'integration/providers/esx/world_events_client.lua',
     'integration/providers/builtin/client.lua',

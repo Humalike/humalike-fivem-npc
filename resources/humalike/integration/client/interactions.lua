@@ -1,7 +1,5 @@
 AmbientInteractionAdapters = AmbientInteractionAdapters or {}
 
-local selectedName = nil
-local resolution = { state = 'unresolved' }
 local API_VERSION = 1
 
 local function randomHex(length)
@@ -12,100 +10,22 @@ end
 
 local runtimeEpoch = randomHex(8) .. '-' .. randomHex(8)
 
-local function setting()
-    return tostring((Config.Integrations or {}).interaction or 'auto'):lower()
-end
-
-local function available(adapter)
-    if adapter.Available == nil then return true end
-    local ok, result = pcall(adapter.Available)
-    return ok and result == true
-end
-
-local function callable(value)
-    return type(value) == 'function' or type(value) == 'table'
-end
-
-local function validName(value)
-    return type(value) == 'string' and value:match('^[%w_.-]+$') ~= nil
-        and value == value:lower() and value ~= 'none' and #value <= 64
-end
-
-local function reportFailure(adapter, method, message)
-    local now = GetGameTimer()
-    local failure = adapter.failure or { count = 0, suppressed = 0 }
-    failure.count = failure.count + 1
-    failure.method = method
-    failure.message = tostring(message)
-    failure.at = now
-    if not failure.reportedAt or now - failure.reportedAt >= 10000 then
-        local suffix = failure.suppressed > 0
-            and (' (%d suppressed)'):format(failure.suppressed) or ''
-        print(('[humalike] interaction provider %s.%s failed: %s%s'):format(
-            adapter.name, method, failure.message, suffix))
-        failure.reportedAt = now
-        failure.suppressed = 0
-    else
-        failure.suppressed = failure.suppressed + 1
-    end
-    adapter.failure = failure
-    if selectedName == adapter.name then
-        resolution.state = 'degraded'
-        resolution.reason = ('%s callback failed'):format(method)
-    end
-end
-
-local function call(adapter, method, ...)
-    if not adapter or not callable(adapter[method]) then return false, nil end
-    local result = table.pack(pcall(adapter[method], ...))
-    if not result[1] then
-        reportFailure(adapter, method, result[2])
-        return false, nil
-    end
-    adapter.failure = nil
-    if selectedName == adapter.name then
-        resolution.state = 'selected'
-        resolution.reason = nil
-    end
-    return true, table.unpack(result, 2, result.n)
-end
+local registry = HumalikeProviderRegistry.new({
+    domain = 'interaction', label = 'interaction provider', noun = 'provider',
+    adapters = AmbientInteractionAdapters,
+})
+local callable = HumalikeProviderRegistry.callable
+local validName = HumalikeProviderRegistry.validName
+local call = registry.call
 
 local function resolve(notify, previousOverride)
-    local forced = setting()
-    local previous = selectedName
+    local previous = registry.selectedName
     local previousAdapter = previousOverride
         or previous and AmbientInteractionAdapters[previous] or nil
-    local eligible, highestPriority = {}, nil
-    for name, adapter in pairs(AmbientInteractionAdapters) do
-        adapter.name = name
-        local priority = tonumber(adapter.priority) or 0
-        if (forced == 'auto' or forced == name) and available(adapter) then
-            if forced ~= 'auto' then
-                eligible = { adapter }
-                break
-            elseif highestPriority == nil or priority > highestPriority then
-                highestPriority = priority
-                eligible = { adapter }
-            elseif priority == highestPriority then
-                eligible[#eligible + 1] = adapter
-            end
-        end
-    end
-    local selected
-    if #eligible == 1 then
-        selected = eligible[1]
-        resolution = { state = selected.failure and 'degraded' or 'selected' }
-    elseif #eligible > 1 then
-        resolution = { state = 'ambiguous', reason = 'multiple providers share the highest priority' }
-    elseif forced == 'none' then
-        resolution = { state = 'disabled' }
-    else
-        resolution = { state = 'unavailable', reason = 'no available provider' }
-    end
-    selectedName = selected and selected.name or nil
-    if notify and previous ~= selectedName then
+    local selected = registry.resolve()
+    if notify and previous ~= registry.selectedName then
         TriggerEvent('humalike:interaction:providerChanged',
-            selectedName, previous, previousAdapter)
+            registry.selectedName, previous, previousAdapter)
     end
     return selected
 end
@@ -114,13 +34,7 @@ exports('RegisterInteractionProvider', function(descriptor)
     local owner = GetInvokingResource()
     if not owner or type(descriptor) ~= 'table'
         or descriptor.apiVersion ~= API_VERSION
-        or not validName(descriptor.name)
-        or type(descriptor.priority) ~= 'number'
-        or descriptor.priority ~= descriptor.priority
-        or math.abs(descriptor.priority) > 100000
-        or not callable(descriptor.Add) or not callable(descriptor.Remove)
-        or descriptor.Available ~= nil and not callable(descriptor.Available)
-        or descriptor.Progress ~= nil and not callable(descriptor.Progress) then
+        or not registry.validDescriptor(descriptor, { 'Add', 'Remove' }, { 'Progress' }) then
         return false, 'invalid interaction provider'
     end
     local existing = AmbientInteractionAdapters[descriptor.name]
@@ -148,20 +62,10 @@ exports('UnregisterInteractionProvider', function(name)
 end)
 
 local function interactionProviderStatus()
-    resolve(false)
-    local selected = selectedName and AmbientInteractionAdapters[selectedName] or nil
-    return {
-        apiVersion = API_VERSION,
-        runtimeEpoch = runtimeEpoch,
-        setting = setting(),
-        state = resolution.state,
-        reason = resolution.reason,
-        selected = selected and {
-            name = selected.name,
-            ownerResource = selected.ownerResource,
-            priority = selected.priority,
-        } or false,
-    }
+    local status = registry.status()
+    status.apiVersion = API_VERSION
+    status.runtimeEpoch = runtimeEpoch
+    return status
 end
 
 exports('GetInteractionProviderStatus', interactionProviderStatus)
@@ -172,19 +76,6 @@ end
 
 function HumalikeInteractionAdapterByName(name)
     return name and AmbientInteractionAdapters[name] or nil
-end
-
-if type(RegisterCommand) == 'function' then
-    RegisterCommand('humalike_status', function()
-        local status = interactionProviderStatus()
-        local selected = status.selected and status.selected.name or 'none'
-        print(('[humalike] interaction setting=%s state=%s selected=%s%s'):format(
-            status.setting,
-            status.state,
-            selected,
-            status.reason and (' reason=%s'):format(status.reason) or ''
-        ))
-    end, false)
 end
 
 function HumalikeIsInteractionResource(resourceName)
@@ -226,7 +117,7 @@ AddEventHandler('onClientResourceStop', function(resourceName)
     local removedSelected
     for name, adapter in pairs(AmbientInteractionAdapters) do
         if adapter.ownerResource == resourceName then
-            if name == selectedName then removedSelected = adapter end
+            if name == registry.selectedName then removedSelected = adapter end
             AmbientInteractionAdapters[name] = nil
             changed = true
         end
