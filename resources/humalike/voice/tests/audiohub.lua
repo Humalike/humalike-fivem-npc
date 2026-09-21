@@ -16,6 +16,11 @@ function GetCurrentResourceName() return 'humalike' end
 function GetInvokingResource() return invoking end
 function GetGameTimer() return 1000 end
 exports = function(name, callback) exported[name] = callback end
+-- The poll thread parks at every Wait; poll() runs it to the next one.
+local pollThread
+function CreateThread(fn) pollThread = coroutine.create(fn); assert(coroutine.resume(pollThread)) end
+function Wait() coroutine.yield() end
+local function poll() assert(coroutine.resume(pollThread)) end
 local rawPrint = print
 function print(line) printed[#printed + 1] = line end
 
@@ -96,7 +101,7 @@ assert(exported.GetAudioHubStatus().state == 'unavailable')
 hubUp = true
 
 local availableBefore = select(2, lastMessage('audiohub:available'))
-HumalikeVoiceAudioHub.Poll()
+poll()
 local _, availableAfter = lastMessage('audiohub:available')
 assert(availableAfter > availableBefore, 'hub coming back did not notify the page')
 
@@ -203,14 +208,14 @@ assert(exported.GetAudioHubStatus().state == 'selected')
 response = attach('mic-4')
 assert(response.status == 'attached')
 hubUp = false
-HumalikeVoiceAudioHub.Poll()
+poll()
 local state = lastMessage('audiohub:state')
 assert(state.id == 'mic-4' and state.state.capturing == false
     and state.state.error == 'hub-unavailable')
 assert(last()[1] == 'detach' and last()[2] == 'mic-4')
 assert(exported.GetAudioHubStatus().sessions == 0)
 hubUp = true
-HumalikeVoiceAudioHub.Poll()
+poll()
 
 -- A dying adapter resource fails its sessions towards the page without
 -- calling into the stopping resource.

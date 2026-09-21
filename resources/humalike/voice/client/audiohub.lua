@@ -69,10 +69,6 @@ function HumalikeVoiceAudioHub.Reset()
     for id in pairs(sessions) do drop(id, true, nil) end
 end
 
-function HumalikeVoiceAudioHub.Poll()
-    resolve()
-end
-
 -- NUI page -> adapter
 
 RegisterNUICallback('audiohubAttach', function(data, callback)
@@ -227,11 +223,9 @@ AddEventHandler('onClientResourceStop', function(resourceName)
     resolve()
 end)
 
-if type(CreateThread) == 'function' then
-    CreateThread(function()
-        while true do
-            Wait(POLL_MS)
-            resolve()
-        end
-    end)
-end
+CreateThread(function()
+    while true do
+        Wait(POLL_MS)
+        resolve()
+    end
+end)
