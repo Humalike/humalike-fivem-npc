@@ -85,6 +85,7 @@ client_scripts {
     'npc/client/settings.lua',
     'integration/client/interactions.lua',
     'integration/providers/esx/world_events_client.lua',
+    'integration/providers/qbcore/world_events_client.lua',
     'integration/providers/builtin/client.lua',
     'integration/providers/ox_target/client.lua',
     'integration/providers/qb_target/client.lua',
