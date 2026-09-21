@@ -57,6 +57,7 @@ AddEventHandler('onClientResourceStop', function(resource)
 end)
 
 CreateThread(function()
+    HumalikeSettings.Wait(5000)
     HumalikeWorldCollector.Start()
     HumalikeWorldNpcEdge.Start()
     Wait(0)

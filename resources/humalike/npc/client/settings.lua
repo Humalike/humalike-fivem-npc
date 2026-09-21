@@ -1,5 +1,13 @@
 HumalikeSettings = { applied = false }
 
+-- Threads that read a setting once at start wait for the server's answer, for
+-- at most maxMs; an old server that never answers only delays them.
+function HumalikeSettings.Wait(maxMs)
+    local deadline = GetGameTimer() + maxMs
+    while not HumalikeSettings.applied and GetGameTimer() < deadline do Wait(100) end
+    return HumalikeSettings.applied
+end
+
 RegisterNetEvent('humalike:settings')
 AddEventHandler('humalike:settings', function(snapshot)
     if not HumalikeApplyConvarSnapshot(snapshot) then return end

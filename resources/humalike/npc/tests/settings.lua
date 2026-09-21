@@ -4,7 +4,6 @@ local convars = {
     humalike_npc_labels_default_language = 'de',
     humalike_world_npc_report_radius = '80',
     humalike_npc_wounded_enabled = 'false',
-    humalike_fake_token = 'never-sent',
 }
 function GetConvar(name, default)
     local value = convars[name]
@@ -26,16 +25,14 @@ dofile('config/convars.lua')
 dofile('config/shared.lua')
 dofile('../world/config.lua')
 dofile('config/wounds.lua')
-HumalikeConvar('humalike_fake_token', '')
 
--- Server side: the snapshot carries every set convar the config reads, no secrets.
+-- Server side: the snapshot carries every set convar the config reads.
 local snapshot = HumalikeConvarSnapshot()
 assert(snapshot.humalike_interaction == 'ox_target')
 assert(snapshot.humalike_npc_labels_default_language == 'de')
 assert(snapshot.humalike_world_npc_report_radius == '80')
 assert(snapshot.humalike_npc_wounded_enabled == 'false')
 assert(snapshot.humalike_player == nil, 'an unset convar is not sent; the client keeps its default')
-assert(snapshot.humalike_fake_token == nil, 'a credential-like name never leaves the server')
 
 -- Client side: nothing was replicated, so local reads only see defaults.
 convars = {}
@@ -56,11 +53,12 @@ assert(Config.UiLanguage == 'en')
 assert(HumalikeApplyConvarSnapshot({ humalike_interaction = { nested = true } }) == false)
 assert(Config.Integrations.interaction == 'ox_target', 'a rejected snapshot changes nothing')
 assert(HumalikeApplyConvarSnapshot({ humalike_interaction = 'a\nb' }) == false)
-assert(HumalikeApplyConvarSnapshot({ not_registered = 'x', humalike_fake_token = 'x' }))
+assert(HumalikeApplyConvarSnapshot({ not_registered = 'x' }))
 assert(HumalikeConvars.overrides.not_registered == nil, 'unknown names are ignored')
-assert(HumalikeConvars.overrides.humalike_fake_token == nil, 'credential-like names are ignored')
 assert(Config.Integrations.interaction == 'auto', 'an empty snapshot restores local defaults')
 assert(HumalikeApplyConvarSnapshot({ humalike_world_npc_report_radius = 42 }))
 assert(WorldConfig.npcEdge.reportRadius == 42.0, 'numbers are accepted for integer settings')
+assert(HumalikeApplyConvarSnapshot({ humalike_world_npc_report_radius = '80.5' }))
+assert(WorldConfig.npcEdge.reportRadius == 80.0, 'a decimal floors like GetConvarInt')
 assert(HumalikeApplyConvarSnapshot('nope') == false)
 print('settings: ok')

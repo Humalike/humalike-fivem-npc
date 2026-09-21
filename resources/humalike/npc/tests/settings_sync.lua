@@ -50,4 +50,12 @@ TriggerServerEvent = function(name)
 end
 thread()
 assert(requests == 3, 'the client keeps asking until the server answers')
+
+HumalikeSettings.applied = false
+now = 0
+assert(HumalikeSettings.Wait(1000) == false and now >= 1000, 'a silent server only delays the caller')
+now = 0
+local waited = 0
+Wait = function(ms) now = now + ms; waited = waited + 1; HumalikeSettings.applied = true end
+assert(HumalikeSettings.Wait(5000) == true and waited == 1, 'the wait ends when the snapshot lands')
 print('settings_sync: ok')
