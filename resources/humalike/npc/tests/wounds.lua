@@ -26,6 +26,7 @@ local exported = {}
 function exports(name, fn) exported[name] = fn end
 
 Config = {}
+dofile('config/convars.lua')
 dofile('config/wounds.lua')
 Config.Wounds.Enabled = true
 Config.Wounds.MaxWounds = 3

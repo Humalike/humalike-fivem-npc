@@ -31,6 +31,7 @@ exports = setmetatable({
 }, { __call = function() end })
 
 HumalikeVoicePtt = {}
+HumalikeUiLanguage = function() return 'en' end
 local directTargetsAvailable
 HumalikeNpcDirectTargets = {
     Subscribe = function(callback) callback({ 'npc-1' }) end,
@@ -39,6 +40,7 @@ HumalikeNpcDirectTargets = {
     Unlock = function() end,
 }
 
+dofile('client/busy.lua')
 assert(loadfile('client/main.lua'))()
 assert(type(nuiCallbacks.ready) == 'function')
 assert(type(handlers['humalike:world:registrationRequested']) == 'function')

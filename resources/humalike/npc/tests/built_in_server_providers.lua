@@ -88,6 +88,8 @@ function GetInvokingResource() return nil end
 function GetResourceState(resource) return started[resource] and 'started' or 'stopped' end
 function GetPlayerIdentifiers() return { 'license:standalone' } end
 function GetPlayerName(source) return source == 7 and 'Standalone Player' or nil end
+local aces = {}
+function IsPlayerAceAllowed(source, object) return source == 7 and aces[object] == true end
 function TriggerClientEvent() end
 function AddEventHandler(name, callback) handlers[name] = callback end
 function TriggerEvent(name, ...)
@@ -113,6 +115,14 @@ dofile('../integration/providers/qb_inventory/server.lua')
 
 assert(HumalikePlayer.Name() == 'standalone')
 assert(not HumalikeInventory.Available())
+assert(HumalikePlayer.GetCharacterId(7) == 'license:standalone')
+assert(HumalikePlayer.HasJob(7, {}, true), 'an empty requirement passes')
+assert(not HumalikePlayer.HasJob(7, { 'ambulance', 'ems' }, true))
+aces['humalike.job.ems'] = true
+assert(HumalikePlayer.HasJob(7, { 'ambulance', 'ems' }, true), 'an ACE grant is the job')
+assert(HumalikePlayer.HasJob(7, { 'ems' }, false))
+assert(not HumalikePlayer.HasJob(8, { 'ems' }, false), 'grants are per player')
+assert(not HumalikePlayer.HasJob(7, { 'police' }, true))
 
 started.es_extended = true
 handlers.onResourceStart('es_extended')

@@ -88,7 +88,7 @@ local function addInteraction(npcId)
     local options = {}
     if (Config.Wounded or {}).Enabled == false then
         options[#options + 1] = {
-            text = 'Pomóż wstać',
+            text = HumalikeText('help_up'),
             icon = 'kit-medical',
             canInteract = function(entity)
                 return not reviveInProgress

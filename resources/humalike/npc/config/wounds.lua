@@ -1,13 +1,15 @@
 
-Config.Wounds = {
-    Enabled = GetConvar('humalike_npc_wounds_enabled', 'true') == 'true',
-    Display = GetConvar('humalike_npc_wound_display', 'true') == 'true',
-    DisplayDistance = tonumber(GetConvar('humalike_npc_wound_display_distance', '3.0')) or 3.0,
-    DisplayHeight = tonumber(GetConvar('humalike_npc_wound_display_height', '0.0')) or 0.0,
-    DisplayScreenOffset = tonumber(GetConvar('humalike_npc_wound_screen_offset', '0.075')) or 0.075,
-    MaxWounds = tonumber(GetConvar('humalike_npc_max_wounds', '6')) or 6,
-    MinDamage = tonumber(GetConvar('humalike_npc_wound_min_damage', '5')) or 5,
-}
+HumalikeDefineConfig(function()
+    Config.Wounds = {
+        Enabled = HumalikeConvar('humalike_npc_wounds_enabled', 'true') == 'true',
+        Display = HumalikeConvar('humalike_npc_wound_display', 'true') == 'true',
+        DisplayDistance = tonumber(HumalikeConvar('humalike_npc_wound_display_distance', '3.0')) or 3.0,
+        DisplayHeight = tonumber(HumalikeConvar('humalike_npc_wound_display_height', '0.0')) or 0.0,
+        DisplayScreenOffset = tonumber(HumalikeConvar('humalike_npc_wound_screen_offset', '0.075')) or 0.075,
+        MaxWounds = tonumber(HumalikeConvar('humalike_npc_max_wounds', '6')) or 6,
+        MinDamage = tonumber(HumalikeConvar('humalike_npc_wound_min_damage', '5')) or 5,
+    }
+end)
 Config.WoundRegionByBone = {
     [31086] = 'head',       -- SKEL_Head
     [39317] = 'head',       -- SKEL_Neck_1
@@ -69,33 +71,35 @@ Config.WoundSeverityByRegion = {
 }
 Config.WoundSofteningKinds = { blunt = true, fall = true, vehicle = true }
 Config.WoundSofterSeverity = { critical = 'serious', serious = 'minor', minor = 'minor' }
-Config.WoundLabels = {
-    Title = GetConvar('humalike_npc_wound_title', 'Injuries'),
-    Deceased = GetConvar('humalike_npc_wound_deceased', 'Deceased'),
-    None = GetConvar('humalike_npc_wound_none', 'No visible injuries'),
-    Region = {
-        head = GetConvar('humalike_npc_wound_region_head', 'Head'),
-        torso = GetConvar('humalike_npc_wound_region_torso', 'Torso'),
-        left_arm = GetConvar('humalike_npc_wound_region_left_arm', 'Left arm'),
-        right_arm = GetConvar('humalike_npc_wound_region_right_arm', 'Right arm'),
-        left_leg = GetConvar('humalike_npc_wound_region_left_leg', 'Left leg'),
-        right_leg = GetConvar('humalike_npc_wound_region_right_leg', 'Right leg'),
-    },
-    Kind = {
-        gunshot = GetConvar('humalike_npc_wound_kind_gunshot', 'Gunshot wound'),
-        stab = GetConvar('humalike_npc_wound_kind_stab', 'Stab wound'),
-        blunt = GetConvar('humalike_npc_wound_kind_blunt', 'Blunt trauma'),
-        burn = GetConvar('humalike_npc_wound_kind_burn', 'Burn'),
-        explosion = GetConvar('humalike_npc_wound_kind_explosion', 'Blast injury'),
-        fall = GetConvar('humalike_npc_wound_kind_fall', 'Fall injury'),
-        vehicle = GetConvar('humalike_npc_wound_kind_vehicle', 'Vehicle impact'),
-    },
-    Severity = {
-        minor = GetConvar('humalike_npc_wound_severity_minor', 'minor'),
-        serious = GetConvar('humalike_npc_wound_severity_serious', 'serious'),
-        critical = GetConvar('humalike_npc_wound_severity_critical', 'critical'),
-    },
-}
+HumalikeDefineConfig(function()
+    Config.WoundLabels = {
+        Title = HumalikeConvar('humalike_npc_wound_title', 'Injuries'),
+        Deceased = HumalikeConvar('humalike_npc_wound_deceased', 'Deceased'),
+        None = HumalikeConvar('humalike_npc_wound_none', 'No visible injuries'),
+        Region = {
+            head = HumalikeConvar('humalike_npc_wound_region_head', 'Head'),
+            torso = HumalikeConvar('humalike_npc_wound_region_torso', 'Torso'),
+            left_arm = HumalikeConvar('humalike_npc_wound_region_left_arm', 'Left arm'),
+            right_arm = HumalikeConvar('humalike_npc_wound_region_right_arm', 'Right arm'),
+            left_leg = HumalikeConvar('humalike_npc_wound_region_left_leg', 'Left leg'),
+            right_leg = HumalikeConvar('humalike_npc_wound_region_right_leg', 'Right leg'),
+        },
+        Kind = {
+            gunshot = HumalikeConvar('humalike_npc_wound_kind_gunshot', 'Gunshot wound'),
+            stab = HumalikeConvar('humalike_npc_wound_kind_stab', 'Stab wound'),
+            blunt = HumalikeConvar('humalike_npc_wound_kind_blunt', 'Blunt trauma'),
+            burn = HumalikeConvar('humalike_npc_wound_kind_burn', 'Burn'),
+            explosion = HumalikeConvar('humalike_npc_wound_kind_explosion', 'Blast injury'),
+            fall = HumalikeConvar('humalike_npc_wound_kind_fall', 'Fall injury'),
+            vehicle = HumalikeConvar('humalike_npc_wound_kind_vehicle', 'Vehicle impact'),
+        },
+        Severity = {
+            minor = HumalikeConvar('humalike_npc_wound_severity_minor', 'minor'),
+            serious = HumalikeConvar('humalike_npc_wound_severity_serious', 'serious'),
+            critical = HumalikeConvar('humalike_npc_wound_severity_critical', 'critical'),
+        },
+    }
+end)
 function HumalikeClassifyWound(boneId, weaponHash, damage)
     local region = Config.WoundRegionByBone[tonumber(boneId) or -1] or 'torso'
     local kind = Config.WoundKindByWeapon[(tonumber(weaponHash) or 0) % 4294967296]

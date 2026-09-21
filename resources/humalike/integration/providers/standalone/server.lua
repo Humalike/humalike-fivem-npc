@@ -22,7 +22,12 @@ HumalikeRegisterInternalProvider('player', {
         return GetPlayerName(source) ~= nil
     end,
 
-    HasJob = function(_source, _names)
+    -- No framework, so a job is an ACE grant: `add_ace group.ems humalike.job.ambulance allow`.
+    -- ACE has no duty state; a granted job counts as on duty.
+    HasJob = function(source, names)
+        for _, name in ipairs(names) do
+            if IsPlayerAceAllowed(source, 'humalike.job.' .. name) then return true end
+        end
         return false
     end,
 

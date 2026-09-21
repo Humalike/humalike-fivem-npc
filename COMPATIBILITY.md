@@ -7,7 +7,7 @@ and can start or stop independently from the `humalike` resource.
 
 | Domain | Provider | Resource | Priority | Notes |
 | --- | --- | --- | ---: | --- |
-| player | `standalone` | None | -1000 | Denies configured job checks; empty job requirements pass. |
+| player | `standalone` | None | -1000 | Jobs are ACE grants (`humalike.job.<name>`); empty job requirements pass. |
 | player | `esx` | `es_extended` | 100 | Supports ESX Legacy player identity and jobs. |
 | player | `qbcore` | `qb-core` | 100 | Supports QBCore identity, jobs and duty state. |
 | player | `qbox` | `qbx_core` | 100 | Supports Qbox identity, jobs and duty state. |
@@ -26,6 +26,24 @@ resource when the host server needs them.
 | `ox_target` | `ox_target` | 10 |
 | `qb_target` | `qb-target` | 10 |
 
+## Voice resources
+
+HumaLike carries NPC audio itself and never configures the server's voice
+resource. It only observes these, when running, to keep its push to talk off
+while the player is on a radio or in a call:
+
+| Resource | Observed | Verified in-game |
+| --- | --- | --- |
+| `pma-voice` | Radio (`pma-voice:radioActive`) and phone calls (`callChannel` state) | Yes |
+| `saltychat` | Radio transmit (`SaltyChat_RadioTrafficStateChanged`) | Not yet |
+| `yaca-voice` | Radio talk (`yaca:external:isRadioTalking`, any channel) and calls (`isInCall` export) | Not yet |
+
+The SaltyChat and yaca adapters follow those resources' published event and
+export names and have not been run against them yet; report what you see.
+
+Any other voice or phone resource reports its state through the client
+export `SetVoiceBusy` described in `resources/humalike/INTEGRATIONS.md`.
+
 ## Selection
 
 The domains are configured independently:
@@ -37,6 +55,13 @@ set humalike_dispatch auto
 set humalike_actions auto
 set humalike_interaction auto
 ```
+
+Every `humalike_*` setting is a server convar. HumaLike sends the values the
+shared config reads to each player when they join, so settings the client
+uses (such as `humalike_interaction`, the label settings and the wounded
+labels) work with `set`; `setr` also works. The client `humalike_status`
+command reports where its interaction setting comes from: `server`,
+`default` (received, left at `auto`) or `local` (not received yet).
 
 Use `auto`, a provider name, or `none`. If multiple available providers share
 the highest priority, `auto` remains unselected until the conflict is resolved.

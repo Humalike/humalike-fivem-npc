@@ -37,3 +37,17 @@ function HumalikeProviderUtils.NotificationKind(kind)
     if kind == 'success' or kind == 'error' or kind == 'warning' then return kind end
     return 'inform'
 end
+
+-- One accepted report per player per interval; the caller records the ones
+-- that went through. A dropped player forgets its slot.
+function HumalikeProviderUtils.PlayerRateLimit(intervalMs)
+    local lastAt = {}
+    AddEventHandler('playerDropped', function() lastAt[source] = nil end)
+    return {
+        Allows = function(playerId)
+            local previous = lastAt[playerId]
+            return not previous or GetGameTimer() - previous >= intervalMs
+        end,
+        Record = function(playerId) lastAt[playerId] = GetGameTimer() end,
+    }
+end

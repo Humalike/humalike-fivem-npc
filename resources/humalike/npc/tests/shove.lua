@@ -1,4 +1,5 @@
 function GetConvar(_name, default) return default end
+dofile('config/convars.lua')
 dofile('config/shared.lua')
 AmbientNpcEntries = { ['ambient-1'] = { entity_id = 55 } }
 AmbientPeds = {}

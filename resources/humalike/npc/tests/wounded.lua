@@ -240,6 +240,7 @@ assert(HumalikeWoundedStateOf('npc-13') == nil, 'the medic collected the body')
 assert(#dispatched == reportsBefore + 1 and dispatched[#dispatched].kind == 'collected',
     'a medic collection is reported the same way')
 function GetConvar(_name, default) return default end
+dofile('config/convars.lua')
 dofile('config/shared.lua')
 assert(table.concat(Config.Wounded.MedicJobs, ',') == 'ambulance,ems')
 assert(table.concat(Config.Wounded.PoliceJobs, ',') == 'police')

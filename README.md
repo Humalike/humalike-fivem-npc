@@ -67,6 +67,11 @@ instead of guessing when equally ranked providers conflict.
 | QBCore | Built in | qb-inventory or ox_inventory | Prompt, qb-target or ox_target |
 | Qbox | Built in | ox_inventory | Prompt or ox_target |
 
+NPC voice is carried by the resource itself. pma-voice (verified), SaltyChat
+and yaca (adapters not yet run in-game) are observed, when present, so
+HumaLike's push to talk stays off during radio and phone use; other voice
+resources report that through a client export.
+
 See [COMPATIBILITY.md](COMPATIBILITY.md) for provider names, selection behavior
 and optional dependencies. Custom integrations should use the public API
 described in
@@ -78,12 +83,23 @@ minimal separate-resource template is available in
 
 Run `humalike_status` in the server console to inspect runtime health and every
 server provider domain. Run the same command in the FiveM client console to
-inspect the selected interaction provider.
+inspect the selected interaction provider and where its setting comes from.
+
+Every `humalike_*` setting is a server convar written with `set`; `setr` is
+never required. [COMPATIBILITY.md](COMPATIBILITY.md) explains how the values
+reach the player's game.
+
+The texts HumaLike shows players itself (the `/voice` panel, its own prompts)
+are English by default; `set humalike_ui_language pl` switches them to Polish.
+Revive, mortuary and wound labels stay overridable one by one through their
+own convars. NPC labels show a flag next to NPCs whose language differs from
+the server's main one, `set humalike_npc_labels_default_language en` by
+default.
 
 Verbose runtime logging is disabled by default and can be enabled temporarily:
 
 ```cfg
-setr humalike_debug 1
+set humalike_debug 1
 ```
 
 While HumaLike owns the street population, GTA's random police stay off unless

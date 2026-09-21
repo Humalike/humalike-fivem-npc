@@ -6,6 +6,7 @@ import { CAPABILITY_AUTHORITATIVE_VEHICLE_CABINS, CAPABILITY_DIRECT_NPC_TARGETS,
 import { effectivePtt, negotiatedTransmitMask } from "./transmit-mask.mjs";
 import { readyServerId } from "./publication-source.mjs";
 import { installNpcEdgeTransport } from "./npc-edge";
+import { language, setLanguage, t } from "./locale.mjs";
 
 declare const GetParentResourceName: undefined | (() => string);
 
@@ -43,39 +44,40 @@ installNpcEdgeTransport();
 
 const app = document.querySelector<HTMLElement>("#app");
 if (!app) throw new Error("app root missing");
+const panel: HTMLElement = app;
 app.innerHTML = `
-  <main class="panel" role="dialog" aria-modal="true" aria-label="Ustawienia głosu">
-    <header><div><span class="eyebrow">HUMALIKE</span><h1>Ustawienia głosu</h1></div><button id="close" class="icon" aria-label="Zamknij">×</button></header>
-    <section class="status"><span id="control-status">CONTROL IDLE</span><span id="media-status">MEDIA IDLE</span><span id="ptt-status">MIKROFON WYCISZONY</span></section>
+  <main class="panel" role="dialog" aria-modal="true" data-i18n-aria="title">
+    <header><div><span class="eyebrow">HUMALIKE</span><h1 data-i18n="title"></h1></div><button id="close" class="icon" data-i18n-aria="close">×</button></header>
+    <section class="status"><span id="control-status">CONTROL IDLE</span><span id="media-status">MEDIA IDLE</span><span id="ptt-status"></span></section>
     <section class="grid">
       <article>
-        <h2>Urządzenia</h2>
-        <label>Mikrofon<select id="input"><option value="">Domyślne urządzenie</option></select></label>
-        <label>Słuchawki<select id="output"><option value="">Domyślne urządzenie</option></select></label>
-        <div class="actions"><button id="refresh">Odśwież urządzenia</button><button id="reconnect">Połącz ponownie</button></div>
-        <div class="actions"><button id="test-output">Test słuchawek</button><button id="test-input">Test mikrofonu (2,5 s)</button></div>
+        <h2 data-i18n="devices"></h2>
+        <label><span data-i18n="microphone"></span><select id="input"><option value="" data-i18n="defaultDevice"></option></select></label>
+        <label><span data-i18n="headphones"></span><select id="output"><option value="" data-i18n="defaultDevice"></option></select></label>
+        <div class="actions"><button id="refresh" data-i18n="refreshDevices"></button><button id="reconnect" data-i18n="reconnect"></button></div>
+        <div class="actions"><button id="test-output" data-i18n="testOutput"></button><button id="test-input" data-i18n="testInput"></button></div>
         <p id="output-hint" class="hint"></p>
       </article>
       <article>
-        <h2>Głośność</h2>
-        <label class="range">Głośność mówienia <output id="mic-gain-value"></output><input id="mic-gain" type="range" min="0" max="2" step="0.05"></label>
-        <label class="range">Głośność NPC <output id="npc-volume-value"></output><input id="npc-volume" type="range" min="0" max="2" step="0.05"></label>
-        <label class="range unavailable">Głośność całego voice <output>Wkrótce</output><input type="range" value="1" disabled></label>
-        <label class="range unavailable">Głośność radia <output>Wkrótce</output><input type="range" value="1" disabled></label>
-        <label class="range unavailable">Głośność rozmów telefonicznych <output>Wkrótce</output><input type="range" value="1" disabled></label>
+        <h2 data-i18n="volume"></h2>
+        <label class="range"><span data-i18n="volume.mic"></span> <output id="mic-gain-value"></output><input id="mic-gain" type="range" min="0" max="2" step="0.05"></label>
+        <label class="range"><span data-i18n="volume.npc"></span> <output id="npc-volume-value"></output><input id="npc-volume" type="range" min="0" max="2" step="0.05"></label>
+        <label class="range unavailable"><span data-i18n="volume.master"></span> <output data-i18n="soon"></output><input type="range" value="1" disabled></label>
+        <label class="range unavailable"><span data-i18n="volume.radio"></span> <output data-i18n="soon"></output><input type="range" value="1" disabled></label>
+        <label class="range unavailable"><span data-i18n="volume.calls"></span> <output data-i18n="soon"></output><input type="range" value="1" disabled></label>
       </article>
       <article class="ptt-card">
-        <h2>Przycisk mówienia</h2>
-        <div class="binding"><kbd id="ptt-binding">—</kbd><div><strong>Natywny Push to Talk</strong><span>Ten sam przycisk co wbudowany voice FiveM</span></div></div>
-        <button id="test-ptt" class="primary">Przytrzymaj, aby przetestować</button>
-        <p>Voice jest fail-muted: poza przytrzymaniem PTT track pozostaje wyciszony.</p>
+        <h2 data-i18n="ptt.title"></h2>
+        <div class="binding"><kbd id="ptt-binding">—</kbd><div><strong data-i18n="ptt.native"></strong><span data-i18n="ptt.nativeHint"></span></div></div>
+        <button id="test-ptt" class="primary" data-i18n="ptt.test"></button>
+        <p data-i18n="ptt.failMuted"></p>
       </article>
       <article>
-        <h2>Diagnostyka</h2>
-        <dl><dt>Control plane</dt><dd id="diag-control">—</dd><dt>Media</dt><dd id="diag-media">—</dd><dt>Routing</dt><dd id="diag-routes">0 źródeł</dd><dt>AudioContext</dt><dd id="diag-audio">—</dd></dl>
+        <h2 data-i18n="diagnostics"></h2>
+        <dl><dt data-i18n="diag.control"></dt><dd id="diag-control">—</dd><dt data-i18n="diag.media"></dt><dd id="diag-media">—</dd><dt data-i18n="diag.routing"></dt><dd id="diag-routes"></dd><dt data-i18n="diag.audio"></dt><dd id="diag-audio">—</dd></dl>
       </article>
     </section>
-    <footer><span>Komenda <code>/voice</code></span><span id="error" class="error"></span></footer>
+    <footer><span><span data-i18n="command"></span> <code>/voice</code></span><span id="error" class="error"></span></footer>
   </main>`;
 if (typeof GetParentResourceName === "function") app.classList.add("hidden");
 
@@ -84,7 +86,8 @@ const output = byId<HTMLSelectElement>("output");
 const micGain = byId<HTMLInputElement>("mic-gain");
 const npcVolume = byId<HTMLInputElement>("npc-volume");
 micGain.value = String(settings.microphoneGain); npcVolume.value = String(settings.npcVolume);
-renderSettings(); renderStatus();
+let hintKey: string | null = null;
+applyLocale(); renderSettings(); renderStatus();
 
 byId("close").addEventListener("click", () => nuiBestEffort("close"));
 window.addEventListener("keydown", (event) => {
@@ -110,11 +113,12 @@ window.addEventListener("message", (event: MessageEvent<unknown>) => {
   }
   else if (message.type === "voice:keybind") { proximityBinding = normalizeBinding(String(message.binding ?? "")); renderStatus(); }
   else if (message.type === "voice:bootstrap") signalReady();
+  else if (message.type === "voice:locale") applyLanguage(message.language);
   else if (message.type === "voice:reconnect") requestSession();
   else if (message.type === "voice:session") {
     if (isSession(message.session)) void startSession(message.session);
-    else { fail("Nieprawidłowa sesja voice"); scheduleReconnect(); }
-  } else if (message.type === "voice:sessionFailed") fail(`Nie udało się utworzyć sesji (HTTP ${String(message.status)})`);
+    else { fail(t("error.invalidSession")); scheduleReconnect(); }
+  } else if (message.type === "voice:sessionFailed") fail(t("error.sessionFailed", { status: String(message.status) }));
   else if (message.type === "voice:ptt") setNativePTT(message.active === true);
   else if (message.type === "voice:targets") {
     const next = normalizeTargetNpcIds(message.targetNpcIds);
@@ -171,7 +175,7 @@ function handleControlMessage(message: ServerMessage): void {
   setDirectTargetCapability(message.capabilities?.includes(
     CAPABILITY_DIRECT_NPC_TARGETS) === true);
   if (!message.livekitToken) {
-    retrySession("Router nie wydał tokenu LiveKit");
+    retrySession(t("error.noToken"));
     return;
   }
   const expectedServerId = readyServerId(message.serverId, message.room);
@@ -199,11 +203,11 @@ async function connectMedia(url: string, token: string, expectedServerId: string
     await client.connect(url, token);
     if (media !== client) { client.disconnect(); return; }
     client.setRoutes([...routes.values()]);
-    byId("output-hint").textContent = "Odbiór WebRTC jest aktywny. Jeśli FiveM prosi o mikrofon, otwórz F8 i wybierz Allow.";
+    setHint("hint.receiving");
     void connectMicrophone(client, audio);
   } catch (error) {
     if (client && media === client) {
-      retrySession(error instanceof Error ? error.message : "Nie udało się połączyć z WebRTC");
+      retrySession(error instanceof Error ? error.message : t("error.webrtcConnect"));
     } else {
       client?.disconnect();
     }
@@ -220,7 +224,7 @@ async function connectMicrophone(client: MediaClient, engine: AudioEngine): Prom
     await syncMediaTransmitting(txActive);
     await refreshDevices();
     clearError();
-    byId("output-hint").textContent = "Mikrofon WebRTC jest aktywny.";
+    setHint("hint.micActive");
   } catch (error) {
     pipeline?.close();
     if (media !== client) return;
@@ -334,13 +338,13 @@ function shutdown(): void { shuttingDown = true; window.clearTimeout(reconnectTi
 async function refreshDevices(): Promise<void> {
   if (!navigator.mediaDevices?.enumerateDevices) return;
   const devices = await navigator.mediaDevices.enumerateDevices();
-  fillDevices(input, devices.filter((item) => item.kind === "audioinput"), settings.inputDevice, "Domyślny mikrofon");
-  fillDevices(output, devices.filter((item) => item.kind === "audiooutput"), settings.outputDevice, "Domyślne słuchawki");
+  fillDevices(input, devices.filter((item) => item.kind === "audioinput"), settings.inputDevice, t("defaultMicrophone"));
+  fillDevices(output, devices.filter((item) => item.kind === "audiooutput"), settings.outputDevice, t("defaultHeadphones"));
 }
 async function applyOutput(): Promise<void> {
   if (!audio) return;
   const supported = await audio.setOutputDevice(settings.outputDevice).catch(() => false);
-  byId("output-hint").textContent = supported ? "Wybrane urządzenie jest aktywne." : "Ta wersja CEF używa domyślnego wyjścia ustawionego w systemie/FiveM.";
+  setHint(supported ? "hint.outputApplied" : "hint.outputDefault");
 }
 
 function renderSettings(): void {
@@ -351,13 +355,13 @@ function renderStatus(): void {
   byId("control-status").textContent = `CONTROL ${controlStatus.toUpperCase()}`;
   byId("media-status").textContent = `MEDIA ${mediaStatus.toUpperCase()}`;
   byId("ptt-status").textContent = txActive
-    ? cabinAuthorized && cabinCapability ? "NADAJESZ PROXIMITY + KABINA" : "NADAJESZ PROXIMITY"
-    : "MIKROFON WYCISZONY";
+    ? cabinAuthorized && cabinCapability ? t("status.transmittingCabin") : t("status.transmitting")
+    : t("status.muted");
   byId("ptt-status").classList.toggle("live", txActive);
   byId("diag-control").textContent = controlStatus;
   byId("diag-media").textContent = mediaStatus;
-  byId("diag-routes").textContent = `${routes.size} źródeł`;
-  byId("diag-audio").textContent = audio?.context.state ?? "nieuruchomiony";
+  byId("diag-routes").textContent = t("diag.sources", { count: routes.size });
+  byId("diag-audio").textContent = audio?.context.state ?? t("diag.audioIdle");
   byId("ptt-binding").textContent = proximityBinding;
 }
 
@@ -368,17 +372,17 @@ async function testOutput(): Promise<void> {
     audio ??= new AudioEngine(reportNPCSpeech);
     audio.setNPCVolume(settings.npcVolume); audio.setMasterVolume(1);
     await applyOutput(); await audio.playHeadphoneTest("audio/voice-test.wav");
-  } catch (error) { fail(error instanceof Error ? error.message : "Test słuchawek nie powiódł się"); }
+  } catch (error) { fail(error instanceof Error ? error.message : t("error.testOutput")); }
   finally { deviceTestRunning = false; setDeviceTestButtons(false); }
 }
 async function testInput(): Promise<void> {
-  if (deviceTestRunning || !microphone || !audio) { if (!microphone) fail("Najpierw połącz mikrofon z voice."); return; }
+  if (deviceTestRunning || !microphone || !audio) { if (!microphone) fail(t("error.connectFirst")); return; }
   deviceTestRunning = true; setDeviceTestButtons(true); clearError();
-  byId("output-hint").textContent = "Mów teraz — nagrywam próbkę przez 2,5 sekundy…";
+  setHint("hint.recording");
   try {
     await audio.recordAndPlayMicrophone(microphone.stream, settings.microphoneGain);
-    byId("output-hint").textContent = "Odtworzono próbkę mikrofonu na wybranych słuchawkach.";
-  } catch (error) { fail(error instanceof Error ? error.message : "Test mikrofonu nie powiódł się"); }
+    setHint("hint.played");
+  } catch (error) { fail(error instanceof Error ? error.message : t("error.testInput")); }
   finally { deviceTestRunning = false; setDeviceTestButtons(false); }
 }
 function setDeviceTestButtons(disabled: boolean): void {
@@ -431,9 +435,23 @@ function fail(message: string): void {
 function clearError(): void { byId("error").textContent = ""; }
 function microphoneError(error: unknown): string {
   if (error instanceof DOMException && (error.name === "NotAllowedError" || error.name === "PermissionDeniedError")) {
-    return "Brak zgody na mikrofon. Otwórz F8, zaakceptuj Capture your microphone, potem kliknij Połącz ponownie w /voice.";
+    return t("error.micPermission");
   }
-  return error instanceof Error ? `Mikrofon WebRTC: ${error.message}` : "Nie udało się uruchomić mikrofonu WebRTC";
+  return error instanceof Error ? t("error.micPrefix", { message: error.message }) : t("error.micStart");
+}
+function applyLanguage(code: unknown): void {
+  if (typeof code !== "string") return;
+  const previous = language();
+  if (setLanguage(code) === previous) return;
+  applyLocale(); renderStatus(); void refreshDevices();
+}
+function applyLocale(): void {
+  for (const node of panel.querySelectorAll<HTMLElement>("[data-i18n]")) node.textContent = t(node.dataset.i18n ?? "");
+  for (const node of panel.querySelectorAll<HTMLElement>("[data-i18n-aria]")) node.setAttribute("aria-label", t(node.dataset.i18nAria ?? ""));
+  if (hintKey) byId("output-hint").textContent = t(hintKey);
+}
+function setHint(key: string): void {
+  hintKey = key; byId("output-hint").textContent = t(key);
 }
 function signalReady(): void {
   if (readyRequest) return;

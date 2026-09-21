@@ -94,6 +94,7 @@ AmbientInteractionAdapters.custom = {
     end,
     Remove = function() currentOptions = nil end,
 }
+dofile('config/locale.lua')
 dofile('../integration/client/interactions.lua')
 dofile('client/reactions.lua')
 dofile('client/ambient_control.lua')
@@ -109,7 +110,7 @@ AmbientNpcEntries.npc = entry
 Config.Wounded = { Enabled = false }
 handlers['humalike:npc:ambientPedAssigned']('npc', 42)
 
-assert(#currentOptions == 1 and currentOptions[1].text == 'Pomóż wstać')
+assert(#currentOptions == 1 and currentOptions[1].text == 'Help up')
 assert(currentOptions[1].canInteract(42), 'available on a server without the lifecycle')
 currentOptions[1].onSelect()
 assert(triggered[1] == 'humalike:npc:beginAmbientRevive')
@@ -133,8 +134,10 @@ assert(currentOptions == nil, 'a bystander gets no wheel on a body at all')
 HumalikeDownedState = function() return nil end
 HumalikeTreatmentOptions = nil
 Config.Wounded = { Enabled = false }
+Config.UiLanguage = 'pl'
 handlers['humalike:npc:npcDownedChanged']('npc')
-assert(#currentOptions == 1 and currentOptions[1].text == 'Pomóż wstać')
+assert(#currentOptions == 1 and currentOptions[1].text == 'Pomóż wstać',
+    'humalike_ui_language picks the label language')
 
 handlers['humalike:npc:ambientPedRemoved']('npc', 42, entry)
 dead = false

@@ -44,6 +44,10 @@ assert(HumaLikeNpcLabels.NormalizeLanguage('pl') == false)
 assert(HumaLikeNpcLabels.NormalizeLanguage('pl-PL') == false)
 assert(HumaLikeNpcLabels.NormalizeLanguage('en-GB') == 'en')
 assert(HumaLikeNpcLabels.NormalizeLanguage('it-IT') == 'it')
+Config.NpcLabels.DefaultLanguage = nil
+assert(HumaLikeNpcLabels.NormalizeLanguage('en') == false, 'English is the default main language')
+assert(HumaLikeNpcLabels.NormalizeLanguage('pl') == 'pl')
+Config.NpcLabels.DefaultLanguage = 'pl'
 
 local frame, nearby = HumaLikeNpcLabels.BuildFrame()
 assert(nearby == true)

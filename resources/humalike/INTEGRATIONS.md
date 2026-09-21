@@ -15,6 +15,10 @@ set humalike_actions auto
 set humalike_interaction auto
 ```
 
+Every `humalike_*` setting is a server convar written with `set`; how it
+reaches the player's game and what the client `humalike_status` reports is
+described in `COMPATIBILITY.md` (Selection).
+
 Use a provider name to force one domain, or `none` to disable it. If multiple
 available providers share the highest priority in `auto`, the domain remains
 unselected until the conflict is resolved. This avoids silently choosing the
@@ -139,9 +143,18 @@ dependency re-evaluates `Available`, while restarting HumaLike produces a new
 epoch and lets integrations rebuild their registrations. Interaction callbacks
 are removed before HumaLike stops and whenever the selected provider changes.
 
-The standalone player provider has no job system. Empty job requirements pass;
-any configured job requirement is denied until a player provider implements
-`HasJob`.
+Only the standalone player provider reads FiveM's own ACE permissions for
+jobs: a player holds job `ambulance` when `humalike.job.ambulance` is allowed
+for them. Empty job requirements pass. ACE has no duty state, so a granted job
+counts as on duty:
+
+```cfg
+add_ace group.ems humalike.job.ambulance allow
+add_principal identifier.license:0123456789abcdef group.ems
+```
+
+A player provider registered by an integration replaces this with the
+framework's real job and duty state.
 
 ## NPC runtime control
 
@@ -243,6 +256,25 @@ payload and loaded character before forwarding it.
 
 Client integrations can subscribe to
 `humalike:voice:transmittingChanged(active)` to update a custom HUD.
+
+## Voice busy state
+
+HumaLike keeps its push to talk off while the player's voice is busy
+elsewhere. Built-in adapters watch `pma-voice`, `saltychat` and `yaca-voice`
+whenever they run (`COMPATIBILITY.md` lists what each observes and which are
+verified); nothing is configured. Any other voice or phone resource reports
+its own state from the client:
+
+```lua
+exports.humalike:SetVoiceBusy('phone_call', true)  -- while the call lasts
+exports.humalike:SetVoiceBusy('phone_call', false)
+```
+
+A reason is a short name (`[A-Za-z0-9_.:-]`, at most 64 characters). Reasons
+are namespaced by the calling resource and dropped when it stops.
+`exports.humalike:GetStatus().busy` lists the active reasons; a reason ending
+in `:radio` or `:call` (such as `myphone:call`) also shows as `radioActive`
+or `callActive` there.
 
 ## Server observations
 

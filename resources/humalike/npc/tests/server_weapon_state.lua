@@ -10,6 +10,7 @@ local retryDelays = {}
 local hashes = { WEAPON_UNARMED = 0, WEAPON_PISTOL = 10, WEAPON_CARBINERIFLE = 20 }
 
 function GetConvar(_name, default) return default end
+dofile('config/convars.lua')
 dofile('config/shared.lua')
 NpcRegistry = { ['npc-1'] = { x = 10, y = 0, z = 0, voice_distance = 12 } }
 AmbientNpcLeases = {
