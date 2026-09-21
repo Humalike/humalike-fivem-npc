@@ -53,7 +53,9 @@ assert(requests == 3, 'the client keeps asking until the server answers')
 
 HumalikeSettings.applied = false
 now = 0
-assert(HumalikeSettings.Wait(1000) == false and now >= 1000, 'a silent server only delays the caller')
+assert(HumalikeSettings.Wait(1000) == false and now == 1000, 'a silent server delays the caller by maxMs, no more')
+now = 0
+assert(HumalikeSettings.Wait(30) == false and now == 30, 'a short bound is honoured')
 now = 0
 local waited = 0
 Wait = function(ms) now = now + ms; waited = waited + 1; HumalikeSettings.applied = true end

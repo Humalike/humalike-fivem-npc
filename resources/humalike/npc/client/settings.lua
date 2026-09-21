@@ -4,7 +4,11 @@ HumalikeSettings = { applied = false }
 -- at most maxMs; an old server that never answers only delays them.
 function HumalikeSettings.Wait(maxMs)
     local deadline = GetGameTimer() + maxMs
-    while not HumalikeSettings.applied and GetGameTimer() < deadline do Wait(100) end
+    while not HumalikeSettings.applied do
+        local remaining = deadline - GetGameTimer()
+        if remaining <= 0 then break end
+        Wait(math.min(100, remaining))
+    end
     return HumalikeSettings.applied
 end
 
