@@ -29,6 +29,7 @@ function HumalikeReportPlayerEvent(playerId, event)
     return true
 end
 
+dofile('../integration/providers/common/server.lua')
 dofile('../integration/providers/esx/world_events.lua')
 
 local handler = handlers['humalike:integration:esx:rpAction']

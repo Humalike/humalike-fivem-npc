@@ -1,6 +1,5 @@
 local RESOURCE = 'qb-core'
-local REPORT_INTERVAL_MS = 500
-local lastReportAt = {}
+local reports = HumalikeProviderUtils.PlayerRateLimit(500)
 
 local function actionText(text)
     if type(text) ~= 'string' then return nil end
@@ -16,15 +15,8 @@ RegisterNetEvent('humalike:integration:qbcore:rpAction', function(text)
     if HumalikePlayer.Name() ~= 'qbcore' or GetResourceState(RESOURCE) ~= 'started' then return end
     local playerId = source
     text = actionText(text)
-    if not text then return end
-    local now = GetGameTimer()
-    local previous = lastReportAt[playerId]
-    if previous and now - previous < REPORT_INTERVAL_MS then return end
+    if not text or not reports.Allows(playerId) then return end
     if HumalikeReportPlayerEvent(playerId, { type = 'rp_action', kind = 'me', text = text }) then
-        lastReportAt[playerId] = now
+        reports.Record(playerId)
     end
-end)
-
-AddEventHandler('playerDropped', function()
-    lastReportAt[source] = nil
 end)
