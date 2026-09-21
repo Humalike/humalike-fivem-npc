@@ -31,6 +31,8 @@ exports = setmetatable({
 }, { __call = function() end })
 
 HumalikeVoicePtt = {}
+local audioHubResets = 0
+HumalikeVoiceAudioHub = { Reset = function() audioHubResets = audioHubResets + 1 end }
 local directTargetsAvailable
 HumalikeNpcDirectTargets = {
     Subscribe = function(callback) callback({ 'npc-1' }) end,
@@ -61,8 +63,11 @@ assert(serverEvents[1].name == 'humalike:world:requestVoiceSession')
 nuiCallbacks.ready({ bootId = 'boot-a' }, function(response) assert(response.ok) end)
 assert(#serverEvents == 1, 'duplicate ready for the same NUI boot requested another session')
 
+assert(audioHubResets == 1, 'new NUI boot did not reset audio hub sessions')
+
 nuiCallbacks.ready({ bootId = 'boot-b' }, function(response) assert(response.ok) end)
 assert(#serverEvents == 2, 'a new NUI document did not request a fresh session')
+assert(audioHubResets == 2, 'replaced NUI document did not reset audio hub sessions')
 assert(serverEvents[2].name == 'humalike:world:requestVoiceSession')
 local replayed = {}
 for _, message in ipairs(nuiMessages) do replayed[message.type] = true end

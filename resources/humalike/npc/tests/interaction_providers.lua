@@ -23,6 +23,7 @@ function TriggerEvent(name, ...)
 end
 exports = function(name, callback) exported[name] = callback end
 
+dofile('../integration/client/provider_registry.lua')
 dofile('../integration/client/interactions.lua')
 
 local progress = setmetatable({}, { __call = function() return true end })

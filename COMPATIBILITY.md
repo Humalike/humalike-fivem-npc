@@ -26,6 +26,13 @@ resource when the host server needs them.
 | `ox_target` | `ox_target` | 10 |
 | `qb_target` | `qb-target` | 10 |
 
+## Client audio hub adapters
+
+There is no built-in audio hub adapter. A server that runs a shared-microphone
+resource registers one through `exports.humalike:RegisterAudioHub` (see
+`resources/humalike/INTEGRATIONS.md`). With an adapter registered the voice NUI
+never opens the microphone itself; without one it does.
+
 ## Selection
 
 The domains are configured independently:
@@ -35,10 +42,12 @@ set humalike_player auto
 set humalike_inventory auto
 set humalike_dispatch auto
 set humalike_actions auto
-set humalike_interaction auto
+setr humalike_interaction auto
+setr humalike_audiohub auto
 ```
 
-Use `auto`, a provider name, or `none`. If multiple available providers share
+`interaction` and `audiohub` are client domains and need `setr`. Use `auto`,
+a provider name, or `none`. If multiple available providers share
 the highest priority, `auto` remains unselected until the conflict is resolved.
 For example, a server intentionally running both `ox_target` and `qb-target`
 must select one explicitly.

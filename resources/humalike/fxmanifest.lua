@@ -5,7 +5,7 @@ lua54 'yes'
 name 'humalike'
 author 'HumaLike'
 description 'Unified HumaLike NPC, world-state and voice runtime'
-version '0.4.0'
+version '0.5.0'
 
 ui_page 'nui/host/dist/index.html'
 
@@ -79,6 +79,7 @@ server_scripts {
 }
 
 client_scripts {
+    'integration/client/provider_registry.lua',
     'integration/client/interactions.lua',
     'integration/providers/esx/world_events_client.lua',
     'integration/providers/builtin/client.lua',
@@ -132,5 +133,6 @@ client_scripts {
     'npc/client/direct_targets.lua',
     'npc/client/labels.lua',
     'voice/client/ptt.lua',
+    'voice/client/audiohub.lua',
     'voice/client/main.lua'
 }

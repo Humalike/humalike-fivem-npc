@@ -42,6 +42,7 @@ exports = setmetatable(resourceExports, {
     __call = function(_, name, callback) exported[name] = callback end,
 })
 
+dofile('../integration/client/provider_registry.lua')
 dofile('../integration/client/interactions.lua')
 dofile('../integration/providers/builtin/client.lua')
 dofile('../integration/providers/ox_target/client.lua')

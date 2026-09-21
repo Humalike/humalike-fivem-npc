@@ -12,10 +12,12 @@ set humalike_player auto
 set humalike_inventory auto
 set humalike_dispatch auto
 set humalike_actions auto
-set humalike_interaction auto
+setr humalike_interaction auto
+setr humalike_audiohub auto
 ```
 
-Use a provider name to force one domain, or `none` to disable it. If multiple
+`interaction` and `audiohub` are read on the client and need `setr`. Use a
+provider name to force one domain, or `none` to disable it. If multiple
 available providers share the highest priority in `auto`, the domain remains
 unselected until the conflict is resolved. This avoids silently choosing the
 wrong host integration.
@@ -125,6 +127,113 @@ Each option contains `text`, optional `icon`, `canInteract(entity)` and
 Client providers can call `UnregisterInteractionProvider(name)` explicitly.
 `GetInteractionProviderStatus()` reports the client runtime epoch and current
 selection.
+
+## Client audio hub (shared microphone)
+
+Each NUI resource is its own CEF frame, so every resource that wants
+microphone audio opens its own `getUserMedia` capture. A server that runs a
+shared-microphone resource (one capture, relayed to consumer frames over a
+loopback `RTCPeerConnection`) can register an audio hub adapter; the voice NUI
+then attaches to that capture instead of opening a second one. With a hub
+registered HumaLike never opens the device itself. Without one (the default)
+voice opens the device exactly as before. Only WebRTC signalling crosses the
+adapter; audio never does.
+
+Register from the integration resource's client script
+(`examples/humalike-adapter/client_audiohub.lua` is a complete adapter):
+
+```lua
+exports.humalike:RegisterAudioHub({
+    name = 'my_audiohub', apiVersion = 1, priority = 100,
+    Available = function() return GetResourceState('my-audiohub') == 'started' end,
+    Attach = function(id) return true end,   -- true = accepted; anything else or an error = refused
+    Detach = function(id) end,               -- the session is over; free it at the hub
+    Signal = function(id, payload) end,      -- forward the blob to the hub
+})
+```
+
+The adapter pushes hub responses back with
+`exports.humalike:AudioHubDeliver(id, action, data)`. It returns `true`, or
+`false` and one of `invalid_session`, `unknown_session` (the id is not open or
+belongs to another resource), `invalid_action`, `invalid_payload`,
+`invalid_state`.
+
+`UnregisterAudioHub(name)` removes an adapter and fails its open sessions.
+`GetAudioHubStatus()` reports the setting, resolution state, selected adapter
+and open session count; the client `humalike_status` command prints the same.
+
+### Session protocol
+
+1. Voice picks a fresh id and calls `Attach(id)`. A refused or failing
+   `Attach` is a session error, not a local fallback. An id that is still
+   open cannot be attached again (`already_attached`); every retry uses a new
+   id after the previous one was detached (`bye` then `Detach`).
+2. The hub sends the offer. The NUI is the answerer only; it never offers.
+3. The NUI answers and trickles its candidates. It buffers hub candidates that
+   arrive before the offer, and sends no candidate of its own until the
+   adapter's `Signal` has returned for the answer, so the hub never sees a
+   candidate before the answer.
+4. The session is live once the relayed audio track arrives. Either side ends
+   it with `bye`; voice also calls `Detach(id)` for every id it attached,
+   whether the session was live or not.
+
+Signal payloads, both directions:
+
+| Payload | Meaning |
+| --- | --- |
+| `{ type = 'offer', sdp = '...' }` | Hub to NUI, once per session |
+| `{ type = 'answer', sdp = '...' }` | NUI to hub |
+| `{ type = 'candidate', candidate = {...} \| nil }` | ICE candidate; `nil` marks end of candidates |
+| `{ type = 'bye', reason = '...'? }` | The sender is done with the session |
+
+`action = 'state'` carries `{ pending = boolean?, capturing = boolean?,
+error = string? }`:
+
+- `pending = true`: the hub is still working on its capture (for example a
+  permission prompt). Each report resets the negotiation timeout, up to the
+  budget.
+- `capturing = true`: informational.
+- `error` set while `capturing` is not `true`: terminal; voice drops the
+  session and retries with a fresh id.
+
+Voice fails a live session on a `bye`, a terminal `state`, a peer connection
+that reaches `failed` or `closed`, one that stays `disconnected` past the
+grace period, or a track that ends. It then reconnects and attaches again.
+
+Timeouts (`voice/web/src/audiohub-session.mjs`):
+
+| Constant | Value | Meaning |
+| --- | --- | --- |
+| `NEGOTIATION_TIMEOUT_MS` | 5 s | Silence after `Attach` before an attempt fails; reset by `pending` |
+| `NEGOTIATION_BUDGET_MS` | 30 s | Hard cap for one attempt |
+| `RELAY_RETRIES` | 2 | Further attempts after a failed negotiation |
+| `HUB_WAIT_MS` | 30 s | Wait for an unavailable hub, 0.5 to 4 s between attaches |
+| `DISCONNECT_GRACE_MS` | 3 s | `disconnected` this long counts as lost |
+
+### Availability
+
+The bridge answers every attach with one of three statuses:
+
+- `none`: no adapter is registered (or `humalike_audiohub none`). Voice opens
+  its own capture.
+- `unavailable`: an adapter is registered but cannot serve now (`Available()`
+  is false, the selection is ambiguous, `Attach` refused or failed, or a forced
+  name is not registered). Voice waits, retrying attach with backoff for
+  `HUB_WAIT_MS`, then shows an error and keeps retrying the microphone. It
+  never opens the device.
+- `attached`: the hub accepted the id.
+
+When the selected adapter becomes available again (its resource starts, it
+registers, or `Available()` flips back) HumaLike tells the NUI, which ends
+its wait at once or, if it started on a local capture because no adapter was
+registered, reconnects through the hub (a local capture still opening is
+released and replaced before it is used). When `Available()` flips false, the
+adapter's resource stops or it unregisters, open sessions are detached at the
+adapter (not for a stopping resource) and reported to the NUI as
+`capturing = false, error = 'hub-unavailable' | 'hub-stopped'`.
+
+The hub owns the capture device and constraints; the voice input-device
+selection applies only to a local capture.
 
 ## Resource lifecycle
 

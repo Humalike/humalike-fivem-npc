@@ -6,3 +6,6 @@ callbacks with translations for your server. Keep the adapter separate from the
 
 The server and client register again after every
 `humalike:integration:ready` event, so either resource can restart first.
+
+`client_audiohub.lua` is an optional adapter for servers that run a
+shared-microphone (audio hub) resource; delete it if yours does not.

@@ -1,5 +1,6 @@
 import "./style.css";
 import { AudioEngine, type MicrophonePipeline } from "./audio";
+import { createAudioHub, HubUnavailableError, type MicrophoneSourceHandle, type MicrophoneSourceKind } from "./audiohub";
 import { ControlClient, type ControlStatus } from "./control";
 import { MediaClient, type MediaStatus } from "./media";
 import { CAPABILITY_AUTHORITATIVE_VEHICLE_CABINS, CAPABILITY_DIRECT_NPC_TARGETS, PROTOCOL_VERSION, type GameRealtimeState, type Route, type ServerMessage, type Vec3 } from "./protocol";
@@ -18,6 +19,21 @@ let control: ControlClient | null = null;
 let media: MediaClient | null = null;
 let audio: AudioEngine | null = null;
 let microphone: MicrophonePipeline | null = null;
+let microphoneKind: MicrophoneSourceKind | null = null;
+let microphoneTask: Promise<void> | null = null;
+let microphoneRetryTimer = 0;
+const MICROPHONE_RETRY_MS = 5000;
+let hubAppeared = false;
+// A hub coming (back) up: a local capture is swapped through a fresh session,
+// a microphone-less session retries the microphone now, an acquire in flight
+// is re-checked once it settles.
+const audioHub = createAudioHub(nui, () => { hubAppeared = true; reconcileHub(); });
+function reconcileHub(): void {
+  if (!hubAppeared || !media || !audio || microphoneTask) return;
+  hubAppeared = false;
+  if (microphoneKind === "local") requestSession();
+  else if (!microphone) void connectMicrophone(media, audio);
+}
 let realtime: GameRealtimeState | null = null;
 let sequence = 0;
 let txGeneration = 0;
@@ -34,7 +50,7 @@ let routes = new Map<string, Route>();
 let controlStatus: ControlStatus = "idle";
 let mediaStatus: MediaStatus = "idle";
 let reconnectTimer = 0;
-let readyRequest: Promise<void> | null = null;
+let readyRequest: Promise<unknown> | null = null;
 let shuttingDown = false;
 let proximityBinding = "—";
 let deviceTestRunning = false;
@@ -210,21 +226,40 @@ async function connectMedia(url: string, token: string, expectedServerId: string
   }
 }
 
-async function connectMicrophone(client: MediaClient, engine: AudioEngine): Promise<void> {
+function connectMicrophone(client: MediaClient, engine: AudioEngine): Promise<void> {
+  window.clearTimeout(microphoneRetryTimer);
+  microphoneTask = acquireMicrophone(client, engine).finally(() => { microphoneTask = null; reconcileHub(); });
+  return microphoneTask;
+}
+async function acquireMicrophone(client: MediaClient, engine: AudioEngine): Promise<void> {
+  let source: MicrophoneSourceHandle | null = null;
   let pipeline: MicrophonePipeline | null = null;
   try {
-    pipeline = await engine.microphone(settings.inputDevice, settings.microphoneGain);
+    source = await audioHub.acquire({
+      deviceId: settings.inputDevice,
+      onLost: () => { if (media === client) retrySession("Utracono współdzielony mikrofon (audio hub)"); },
+    });
+    if (media !== client) { source.release(); return; }
+    const kind = source.kind;
+    pipeline = engine.microphone(source, settings.microphoneGain);
+    source = null;
     if (media !== client) { pipeline.close(); return; }
-    microphone?.close(); microphone = pipeline;
+    microphone?.close(); microphone = pipeline; microphoneKind = kind;
     await client.publish(pipeline.track);
     await syncMediaTransmitting(txActive);
     await refreshDevices();
     clearError();
-    byId("output-hint").textContent = "Mikrofon WebRTC jest aktywny.";
+    byId("output-hint").textContent = kind === "hub"
+      ? "Mikrofon WebRTC jest aktywny (współdzielone przechwytywanie audio hub)."
+      : "Mikrofon WebRTC jest aktywny.";
   } catch (error) {
+    source?.release();
     pipeline?.close();
     if (media !== client) return;
     fail(microphoneError(error));
+    if (error instanceof HubUnavailableError) {
+      microphoneRetryTimer = window.setTimeout(() => { if (media === client) void connectMicrophone(client, engine); }, MICROPHONE_RETRY_MS);
+    }
   }
 }
 
@@ -327,7 +362,8 @@ function disconnectMedia(): void {
   mediaTransmitOperation++;
   setActualTransmitting(false);
   const previous = media; media = null; previous?.disconnect();
-  mediaStatus = "idle"; microphone?.close(); microphone = null;
+  mediaStatus = "idle"; microphone?.close(); microphone = null; microphoneKind = null;
+  window.clearTimeout(microphoneRetryTimer);
 }
 function shutdown(): void { shuttingDown = true; window.clearTimeout(reconnectTimer); setNativePTT(false); disconnect(); }
 
@@ -433,6 +469,9 @@ function microphoneError(error: unknown): string {
   if (error instanceof DOMException && (error.name === "NotAllowedError" || error.name === "PermissionDeniedError")) {
     return "Brak zgody na mikrofon. Otwórz F8, zaakceptuj Capture your microphone, potem kliknij Połącz ponownie w /voice.";
   }
+  if (error instanceof HubUnavailableError) {
+    return `Współdzielony mikrofon (audio hub) nie dostarczył dźwięku: ${error.message}. Ponowna próba za chwilę; sprawdź zasób audio hub.`;
+  }
   return error instanceof Error ? `Mikrofon WebRTC: ${error.message}` : "Nie udało się uruchomić mikrofonu WebRTC";
 }
 function signalReady(): void {
@@ -460,8 +499,8 @@ function nuiBestEffort(name: string, body: unknown = {}): void {
     }
   });
 }
-async function nui(name: string, body: unknown = {}): Promise<void> {
-  if (typeof GetParentResourceName !== "function") return;
+async function nui<T = unknown>(name: string, body: unknown = {}): Promise<T> {
+  if (typeof GetParentResourceName !== "function") return undefined as T;
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), 2000);
   try {
@@ -472,6 +511,8 @@ async function nui(name: string, body: unknown = {}): Promise<void> {
       signal: controller.signal,
     });
     if (!response.ok) throw new Error(`NUI callback ${name} failed with HTTP ${response.status}`);
+    const text = await response.text();
+    return (text ? JSON.parse(text) : undefined) as T;
   } finally {
     window.clearTimeout(timeout);
   }

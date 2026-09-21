@@ -9,4 +9,8 @@ version '0.1.0'
 dependency 'humalike'
 
 server_script 'server.lua'
-client_script 'client.lua'
+
+client_scripts {
+    'client.lua',
+    'client_audiohub.lua',
+}

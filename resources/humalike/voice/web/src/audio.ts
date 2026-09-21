@@ -16,6 +16,12 @@ interface RemoteSource {
 
 const SPATIAL_UPDATE_MS = 33;
 
+export interface MicrophoneInput {
+  stream: MediaStream;
+  /** Stops the capture or detaches the shared-microphone session. */
+  release(): void;
+}
+
 export interface MicrophonePipeline {
   track: MediaStreamTrack;
   stream: MediaStream;
@@ -198,19 +204,14 @@ export class AudioEngine {
     this.#reconcileActive(identity, remote);
   }
 
-  async microphone(deviceId: string, gainValue: number): Promise<MicrophonePipeline> {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: {
-      deviceId: deviceId ? { exact: deviceId } : undefined,
-      echoCancellation: false, noiseSuppression: false, autoGainControl: false,
-      channelCount: 1,
-    }, video: false });
-    const source = new MediaStreamAudioSourceNode(this.context, { mediaStream: stream });
+  microphone(input: MicrophoneInput, gainValue: number): MicrophonePipeline {
+    const source = new MediaStreamAudioSourceNode(this.context, { mediaStream: input.stream });
     const gain = new GainNode(this.context, { gain: gainValue });
     const destination = new MediaStreamAudioDestinationNode(this.context);
     source.connect(gain).connect(destination);
     const track = destination.stream.getAudioTracks()[0];
-    if (!track) { stream.getTracks().forEach((item) => item.stop()); throw new Error("microphone pipeline did not produce an audio track"); }
-    return { track, stream, gain, close: () => { source.disconnect(); gain.disconnect(); destination.disconnect(); stream.getTracks().forEach((item) => item.stop()); track.stop(); } };
+    if (!track) throw new Error("microphone pipeline did not produce an audio track");
+    return { track, stream: input.stream, gain, close: () => { source.disconnect(); gain.disconnect(); destination.disconnect(); input.release(); track.stop(); } };
   }
 }
 
