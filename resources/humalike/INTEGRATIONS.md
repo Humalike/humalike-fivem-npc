@@ -12,11 +12,12 @@ set humalike_player auto
 set humalike_inventory auto
 set humalike_dispatch auto
 set humalike_actions auto
-set humalike_interaction auto
-set humalike_audiohub auto
+setr humalike_interaction auto
+setr humalike_audiohub auto
 ```
 
-Use a provider name to force one domain, or `none` to disable it. If multiple
+`interaction` and `audiohub` are read on the client and need `setr`. Use a
+provider name to force one domain, or `none` to disable it. If multiple
 available providers share the highest priority in `auto`, the domain remains
 unselected until the conflict is resolved. This avoids silently choosing the
 wrong host integration.

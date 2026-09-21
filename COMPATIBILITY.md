@@ -42,11 +42,12 @@ set humalike_player auto
 set humalike_inventory auto
 set humalike_dispatch auto
 set humalike_actions auto
-set humalike_interaction auto
-set humalike_audiohub auto
+setr humalike_interaction auto
+setr humalike_audiohub auto
 ```
 
-Use `auto`, a provider name, or `none`. If multiple available providers share
+`interaction` and `audiohub` are client domains and need `setr`. Use `auto`,
+a provider name, or `none`. If multiple available providers share
 the highest priority, `auto` remains unselected until the conflict is resolved.
 For example, a server intentionally running both `ox_target` and `qb-target`
 must select one explicitly.
