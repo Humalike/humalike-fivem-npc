@@ -87,7 +87,9 @@ the values players need to their game on join, so `setr` is never required.
 The texts HumaLike shows players itself (the `/voice` panel, its own prompts)
 are English by default; `set humalike_ui_language pl` switches them to Polish.
 Revive, mortuary and wound labels stay overridable one by one through their
-own convars.
+own convars. NPC labels show a flag next to NPCs whose language differs from
+the server's main one, `set humalike_npc_labels_default_language en` by
+default.
 
 Verbose runtime logging is disabled by default and can be enabled temporarily:
 

@@ -165,7 +165,7 @@ HumalikeDefineConfig(function()
         CandidateRefreshMs = 200,
         CandidateMargin = 3.0,
         RenderFps = 60,
-        DefaultLanguage = HumalikeConvar('humalike_npc_labels_default_language', 'pl'),
+        DefaultLanguage = HumalikeConvar('humalike_npc_labels_default_language', 'en'),
         ShowDefaultLanguage = HumalikeConvar('humalike_npc_labels_show_default_language', 'false') == 'true',
         LanguageLabels = { pl = 'pl', en = 'en', de = 'de', es = 'es', fr = 'fr' },
     }

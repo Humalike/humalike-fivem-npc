@@ -38,7 +38,7 @@ function HumaLikeNpcLabels.NormalizeLanguage(language)
     local labels = labelConfig()
     local key = string.lower(language)
     local baseKey = key:match('^([a-z0-9]+)') or key
-    local defaultKey = string.lower(labels.DefaultLanguage or 'pl')
+    local defaultKey = string.lower(labels.DefaultLanguage or 'en')
     local defaultBase = defaultKey:match('^([a-z0-9]+)') or defaultKey
     if not labels.ShowDefaultLanguage and (key == defaultKey or baseKey == defaultBase) then
         return false

@@ -41,7 +41,7 @@ assert(snapshot.humalike_fake_token == nil, 'a credential-like name never leaves
 convars = {}
 for _, build in ipairs(HumalikeConvars.builders) do build() end
 assert(Config.Integrations.interaction == 'auto')
-assert(Config.NpcLabels.DefaultLanguage == 'pl')
+assert(Config.NpcLabels.DefaultLanguage == 'en')
 assert(WorldConfig.npcEdge.reportRadius == 150.0)
 assert(Config.Wounded.Enabled == true)
 
