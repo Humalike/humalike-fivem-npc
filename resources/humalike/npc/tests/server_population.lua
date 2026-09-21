@@ -1,5 +1,6 @@
 local convars = {}
 function GetConvar(name, default) return convars[name] or default end
+dofile('config/convars.lua')
 dofile('config/shared.lua')
 
 local handlers = {}

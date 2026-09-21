@@ -1,5 +1,6 @@
 
 function GetConvar(_name, default) return default end
+dofile('config/convars.lua')
 dofile('config/shared.lua')
 
 local npcPed, partner = 1, 10

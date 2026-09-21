@@ -16,6 +16,7 @@ files {
 }
 
 shared_scripts {
+    'npc/config/convars.lua',
     'world/config.lua',
     'npc/config/shared.lua',
     'npc/config/wounds.lua'
@@ -48,6 +49,7 @@ server_scripts {
     'integration/providers/qbox/server.lua',
     'integration/providers/ox_inventory/server.lua',
     'integration/providers/qb_inventory/server.lua',
+    'npc/server/settings.lua',
     'npc/server/http.lua',
     'npc/server/runtime_state.lua',
     'npc/server/pose_ledger.lua',
@@ -79,6 +81,7 @@ server_scripts {
 }
 
 client_scripts {
+    'npc/client/settings.lua',
     'integration/client/interactions.lua',
     'integration/providers/esx/world_events_client.lua',
     'integration/providers/builtin/client.lua',

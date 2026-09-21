@@ -1,4 +1,5 @@
 function GetConvar(_name, default) return default end
+dofile('config/convars.lua')
 dofile('config/shared.lua')
 NpcActions, NpcActionSustain, ActionControlledPeds = {}, {}, {}
 

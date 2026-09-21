@@ -38,6 +38,13 @@ set humalike_actions auto
 set humalike_interaction auto
 ```
 
+Every `humalike_*` setting is a server convar. HumaLike sends the values the
+shared config reads to each player when they join, so settings the client
+uses (such as `humalike_interaction`, the label settings and the wounded
+labels) work with `set`; `setr` also works. The client `humalike_status`
+command reports whether it runs on the server's settings or its local
+defaults.
+
 Use `auto`, a provider name, or `none`. If multiple available providers share
 the highest priority, `auto` remains unselected until the conflict is resolved.
 For example, a server intentionally running both `ox_target` and `qb-target`

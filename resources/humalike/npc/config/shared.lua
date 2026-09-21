@@ -1,17 +1,19 @@
 Config = {}
-Config.Debug = GetConvar('humalike_debug', 'false') == 'true'
-    or GetConvar('humalike_debug', '0') == '1'
 function HumalikeDebug(fmt, ...)
     if not Config.Debug then return end
     print(('^3[humalike:npc:debug]^7 ' .. fmt):format(...))
 end
-Config.Integrations = {
-    player = GetConvar('humalike_player', 'auto'),
-    inventory = GetConvar('humalike_inventory', 'auto'),
-    dispatch = GetConvar('humalike_dispatch', 'auto'),
-    actions = GetConvar('humalike_actions', 'auto'),
-    interaction = GetConvar('humalike_interaction', 'auto'),
-}
+HumalikeDefineConfig(function()
+    Config.Debug = HumalikeConvar('humalike_debug', 'false') == 'true'
+        or HumalikeConvar('humalike_debug', '0') == '1'
+    Config.Integrations = {
+        player = HumalikeConvar('humalike_player', 'auto'),
+        inventory = HumalikeConvar('humalike_inventory', 'auto'),
+        dispatch = HumalikeConvar('humalike_dispatch', 'auto'),
+        actions = HumalikeConvar('humalike_actions', 'auto'),
+        interaction = HumalikeConvar('humalike_interaction', 'auto'),
+    }
+end)
 
 Config.PlayerSessionSyncIntervalMs = 15000
 Config.AppearancePollIntervalMs = 1000
@@ -118,32 +120,34 @@ function HumalikeJobList(value)
     end
     return names
 end
-Config.Wounded = {
-    Enabled = GetConvar('humalike_npc_wounded_enabled', 'true') == 'true',
-    DurationMs = tonumber(GetConvar('humalike_npc_wounded_duration', '300000')) or 300000,
-    DeathChancePercent = tonumber(GetConvar('humalike_npc_death_chance', '5')) or 5,
-    LingerAfterReviveMs = tonumber(GetConvar('humalike_npc_revive_linger', '30000')) or 30000,
-    LingerRadius = tonumber(GetConvar('humalike_npc_revive_linger_radius', '20')) or 20.0,
-    MedicJobs = HumalikeJobList(GetConvar('humalike_npc_medic_jobs', 'ambulance,ems')),
-    PoliceJobs = HumalikeJobList(GetConvar('humalike_npc_police_jobs', 'police')),
-    RequireDuty = GetConvar('humalike_npc_wounded_require_duty', 'true') == 'true',
-    ReviveLabel = GetConvar('humalike_npc_revive_label', 'Revive'),
-    ReviveProgressLabel = GetConvar('humalike_npc_revive_progress', 'Treating patient'),
-    MortuaryLabel = GetConvar('humalike_npc_mortuary_label', 'Send to mortuary'),
-    MortuaryProgressLabel = GetConvar('humalike_npc_mortuary_progress', 'Securing the body'),
-    ReviveDurationMs = tonumber(GetConvar('humalike_npc_revive_duration', '10000')) or 10000,
-    MortuaryDurationMs = tonumber(GetConvar('humalike_npc_mortuary_duration', '5000')) or 5000,
-    TreatmentDistance = tonumber(GetConvar('humalike_npc_treatment_distance', '6.0')) or 6.0,
-    RolesRefreshMs = 5000,
-    DeceasedRetentionMs = tonumber(GetConvar('humalike_npc_deceased_retention', '900000')) or 900000,
-    Dispatch = {
-        Enabled = GetConvar('humalike_npc_medical_dispatch', 'true') == 'true',
-        Chance = tonumber(GetConvar('humalike_npc_medical_dispatch_chance', '100')) or 100,
-        DelayMs = tonumber(GetConvar('humalike_npc_medical_dispatch_delay', '10000')) or 10000,
-        ThrottleSeconds = tonumber(GetConvar('humalike_npc_medical_dispatch_throttle', '30')) or 30,
-        NotifyMortuary = GetConvar('humalike_npc_mortuary_dispatch', 'true') == 'true',
-    },
-}
+HumalikeDefineConfig(function()
+    Config.Wounded = {
+        Enabled = HumalikeConvar('humalike_npc_wounded_enabled', 'true') == 'true',
+        DurationMs = tonumber(HumalikeConvar('humalike_npc_wounded_duration', '300000')) or 300000,
+        DeathChancePercent = tonumber(HumalikeConvar('humalike_npc_death_chance', '5')) or 5,
+        LingerAfterReviveMs = tonumber(HumalikeConvar('humalike_npc_revive_linger', '30000')) or 30000,
+        LingerRadius = tonumber(HumalikeConvar('humalike_npc_revive_linger_radius', '20')) or 20.0,
+        MedicJobs = HumalikeJobList(HumalikeConvar('humalike_npc_medic_jobs', 'ambulance,ems')),
+        PoliceJobs = HumalikeJobList(HumalikeConvar('humalike_npc_police_jobs', 'police')),
+        RequireDuty = HumalikeConvar('humalike_npc_wounded_require_duty', 'true') == 'true',
+        ReviveLabel = HumalikeConvar('humalike_npc_revive_label', 'Revive'),
+        ReviveProgressLabel = HumalikeConvar('humalike_npc_revive_progress', 'Treating patient'),
+        MortuaryLabel = HumalikeConvar('humalike_npc_mortuary_label', 'Send to mortuary'),
+        MortuaryProgressLabel = HumalikeConvar('humalike_npc_mortuary_progress', 'Securing the body'),
+        ReviveDurationMs = tonumber(HumalikeConvar('humalike_npc_revive_duration', '10000')) or 10000,
+        MortuaryDurationMs = tonumber(HumalikeConvar('humalike_npc_mortuary_duration', '5000')) or 5000,
+        TreatmentDistance = tonumber(HumalikeConvar('humalike_npc_treatment_distance', '6.0')) or 6.0,
+        RolesRefreshMs = 5000,
+        DeceasedRetentionMs = tonumber(HumalikeConvar('humalike_npc_deceased_retention', '900000')) or 900000,
+        Dispatch = {
+            Enabled = HumalikeConvar('humalike_npc_medical_dispatch', 'true') == 'true',
+            Chance = tonumber(HumalikeConvar('humalike_npc_medical_dispatch_chance', '100')) or 100,
+            DelayMs = tonumber(HumalikeConvar('humalike_npc_medical_dispatch_delay', '10000')) or 10000,
+            ThrottleSeconds = tonumber(HumalikeConvar('humalike_npc_medical_dispatch_throttle', '30')) or 30,
+            NotifyMortuary = HumalikeConvar('humalike_npc_mortuary_dispatch', 'true') == 'true',
+        },
+    }
+end)
 
 Config.AmbientRevive = {
     InteractionDistance = 3.0,
@@ -151,18 +155,20 @@ Config.AmbientRevive = {
     CompletionToleranceMs = 500,
     SessionTimeoutMs = 10000,
 }
-Config.NpcLabels = {
-    Enabled = GetConvar('humalike_npc_labels_enabled', 'true') == 'true',
-    MaxDistance = tonumber(GetConvar('humalike_npc_labels_distance', '14.0')) or 14.0,
-    Height = tonumber(GetConvar('humalike_npc_labels_height', '0.98')) or 0.98,
-    Scale = tonumber(GetConvar('humalike_npc_labels_scale', '1.0')) or 1.0,
-    CandidateRefreshMs = 200,
-    CandidateMargin = 3.0,
-    RenderFps = 60,
-    DefaultLanguage = GetConvar('humalike_npc_labels_default_language', 'pl'),
-    ShowDefaultLanguage = GetConvar('humalike_npc_labels_show_default_language', 'false') == 'true',
-    LanguageLabels = { pl = 'pl', en = 'en', de = 'de', es = 'es', fr = 'fr' },
-}
+HumalikeDefineConfig(function()
+    Config.NpcLabels = {
+        Enabled = HumalikeConvar('humalike_npc_labels_enabled', 'true') == 'true',
+        MaxDistance = tonumber(HumalikeConvar('humalike_npc_labels_distance', '14.0')) or 14.0,
+        Height = tonumber(HumalikeConvar('humalike_npc_labels_height', '0.98')) or 0.98,
+        Scale = tonumber(HumalikeConvar('humalike_npc_labels_scale', '1.0')) or 1.0,
+        CandidateRefreshMs = 200,
+        CandidateMargin = 3.0,
+        RenderFps = 60,
+        DefaultLanguage = HumalikeConvar('humalike_npc_labels_default_language', 'pl'),
+        ShowDefaultLanguage = HumalikeConvar('humalike_npc_labels_show_default_language', 'false') == 'true',
+        LanguageLabels = { pl = 'pl', en = 'en', de = 'de', es = 'es', fr = 'fr' },
+    }
+end)
 Config.RosterSyncIntervalMs = 30000
 Config.SupportedActions = {
     'wave',
@@ -183,14 +189,16 @@ Config.SupportedActions = {
     'run_away',
 }
 Config.ActionSustainTickMs = 250
-Config.PoseAbandonMs = tonumber(GetConvar('humalike_npc_pose_abandon_ms', '120000')) or 120000
-Config.PoseAbandonRadius = tonumber(GetConvar('humalike_npc_pose_abandon_radius', '60')) or 60.0
-Config.PoseAbandonTickMs = 5000
-Config.PoseThreat = {
-    Enabled = GetConvar('humalike_npc_pose_threat_watch', 'true') == 'true',
-    Radius = tonumber(GetConvar('humalike_npc_pose_threat_radius', '30')) or 30.0,
-    ClearMs = tonumber(GetConvar('humalike_npc_pose_threat_clear_ms', '10000')) or 10000,
-}
+HumalikeDefineConfig(function()
+    Config.PoseAbandonMs = tonumber(HumalikeConvar('humalike_npc_pose_abandon_ms', '120000')) or 120000
+    Config.PoseAbandonRadius = tonumber(HumalikeConvar('humalike_npc_pose_abandon_radius', '60')) or 60.0
+    Config.PoseAbandonTickMs = 5000
+    Config.PoseThreat = {
+        Enabled = HumalikeConvar('humalike_npc_pose_threat_watch', 'true') == 'true',
+        Radius = tonumber(HumalikeConvar('humalike_npc_pose_threat_radius', '30')) or 30.0,
+        ClearMs = tonumber(HumalikeConvar('humalike_npc_pose_threat_clear_ms', '10000')) or 10000,
+    }
+end)
 Config.PoseThreatTickMs = 2500
 Config.Follow = {
     MaxDistance = 6.0,

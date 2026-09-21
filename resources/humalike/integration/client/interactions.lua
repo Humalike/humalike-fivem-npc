@@ -154,6 +154,7 @@ local function interactionProviderStatus()
         apiVersion = API_VERSION,
         runtimeEpoch = runtimeEpoch,
         setting = setting(),
+        settingsSource = HumalikeSettings and HumalikeSettings.applied and 'server' or 'local',
         state = resolution.state,
         reason = resolution.reason,
         selected = selected and {
@@ -178,8 +179,9 @@ if type(RegisterCommand) == 'function' then
     RegisterCommand('humalike_status', function()
         local status = interactionProviderStatus()
         local selected = status.selected and status.selected.name or 'none'
-        print(('[humalike] interaction setting=%s state=%s selected=%s%s'):format(
+        print(('[humalike] interaction setting=%s (%s) state=%s selected=%s%s'):format(
             status.setting,
+            status.settingsSource,
             status.state,
             selected,
             status.reason and (' reason=%s'):format(status.reason) or ''
@@ -198,6 +200,10 @@ function HumalikeIsInteractionResource(resourceName)
     end
     return false
 end
+
+AddEventHandler('humalike:settings:applied', function()
+    resolve(true)
+end)
 
 AddEventHandler('onClientResourceStart', function(resourceName)
     resolve(true)
