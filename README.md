@@ -67,9 +67,10 @@ instead of guessing when equally ranked providers conflict.
 | QBCore | Built in | qb-inventory or ox_inventory | Prompt, qb-target or ox_target |
 | Qbox | Built in | ox_inventory | Prompt or ox_target |
 
-NPC voice is carried by the resource itself. pma-voice, SaltyChat and yaca are
-observed, when present, so HumaLike's push to talk stays off during radio and
-phone use; other voice resources report that through a client export.
+NPC voice is carried by the resource itself. pma-voice (verified), SaltyChat
+and yaca (adapters not yet run in-game) are observed, when present, so
+HumaLike's push to talk stays off during radio and phone use; other voice
+resources report that through a client export.
 
 See [COMPATIBILITY.md](COMPATIBILITY.md) for provider names, selection behavior
 and optional dependencies. Custom integrations should use the public API
@@ -82,12 +83,11 @@ minimal separate-resource template is available in
 
 Run `humalike_status` in the server console to inspect runtime health and every
 server provider domain. Run the same command in the FiveM client console to
-inspect the selected interaction provider and where its setting comes from:
-`server` (set in server.cfg and received), `default` (the server's settings
-arrived and leave it at `auto`) or `local` (not received yet).
+inspect the selected interaction provider and where its setting comes from.
 
-Every `humalike_*` setting is a server convar written with `set`. HumaLike sends
-the values players need to their game on join, so `setr` is never required.
+Every `humalike_*` setting is a server convar written with `set`; `setr` is
+never required. [COMPATIBILITY.md](COMPATIBILITY.md) explains how the values
+reach the player's game.
 
 The texts HumaLike shows players itself (the `/voice` panel, its own prompts)
 are English by default; `set humalike_ui_language pl` switches them to Polish.

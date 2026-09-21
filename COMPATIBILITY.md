@@ -32,11 +32,14 @@ HumaLike carries NPC audio itself and never configures the server's voice
 resource. It only observes these, when running, to keep its push to talk off
 while the player is on a radio or in a call:
 
-| Resource | Observed |
-| --- | --- |
-| `pma-voice` | Radio (`pma-voice:radioActive`) and phone calls (`callChannel` state) |
-| `saltychat` | Radio transmit (`SaltyChat_RadioTrafficStateChanged`) |
-| `yaca-voice` | Radio talk (`yaca:external:isRadioTalking`) and calls (`isInCall` export) |
+| Resource | Observed | Verified in-game |
+| --- | --- | --- |
+| `pma-voice` | Radio (`pma-voice:radioActive`) and phone calls (`callChannel` state) | Yes |
+| `saltychat` | Radio transmit (`SaltyChat_RadioTrafficStateChanged`) | Not yet |
+| `yaca-voice` | Radio talk (`yaca:external:isRadioTalking`, any channel) and calls (`isInCall` export) | Not yet |
+
+The SaltyChat and yaca adapters follow those resources' published event and
+export names and have not been run against them yet; report what you see.
 
 Any other voice or phone resource reports its state through the client
 export `SetVoiceBusy` described in `resources/humalike/INTEGRATIONS.md`.

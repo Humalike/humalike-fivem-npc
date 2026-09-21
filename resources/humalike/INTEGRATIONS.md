@@ -15,12 +15,9 @@ set humalike_actions auto
 set humalike_interaction auto
 ```
 
-Every `humalike_*` setting is a server convar. HumaLike sends the values the
-shared config reads to each player when they join, so settings the client
-uses (such as `humalike_interaction`, the label settings and the wounded
-labels) work with `set`; `setr` also works. The client `humalike_status`
-command reports where its interaction setting comes from: `server`,
-`default` (received, left at `auto`) or `local` (not received yet).
+Every `humalike_*` setting is a server convar written with `set`; how it
+reaches the player's game and what the client `humalike_status` reports is
+described in `COMPATIBILITY.md` (Selection).
 
 Use a provider name to force one domain, or `none` to disable it. If multiple
 available providers share the highest priority in `auto`, the domain remains
@@ -263,10 +260,10 @@ Client integrations can subscribe to
 ## Voice busy state
 
 HumaLike keeps its push to talk off while the player's voice is busy
-elsewhere. Built in, it watches `pma-voice` (radio and phone calls),
-`saltychat` (radio transmit) and `yaca-voice` (radio talk and calls) whenever
-they run; nothing is configured. Any other voice or phone resource reports its
-own state from the client:
+elsewhere. Built-in adapters watch `pma-voice`, `saltychat` and `yaca-voice`
+whenever they run (`COMPATIBILITY.md` lists what each observes and which are
+verified); nothing is configured. Any other voice or phone resource reports
+its own state from the client:
 
 ```lua
 exports.humalike:SetVoiceBusy('phone_call', true)  -- while the call lasts
@@ -275,7 +272,9 @@ exports.humalike:SetVoiceBusy('phone_call', false)
 
 A reason is a short name (`[A-Za-z0-9_.:-]`, at most 64 characters). Reasons
 are namespaced by the calling resource and dropped when it stops.
-`exports.humalike:GetStatus().busy` lists the active reasons.
+`exports.humalike:GetStatus().busy` lists the active reasons; a reason ending
+in `:radio` or `:call` (such as `myphone:call`) also shows as `radioActive`
+or `callActive` there.
 
 ## Server observations
 
