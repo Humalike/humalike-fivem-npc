@@ -75,8 +75,13 @@ local function diagnosticValue(value, maxLength)
     return value:sub(1, maxLength)
 end
 
+local function sendLocale()
+    SendNUIMessage({ type = 'voice:locale', language = HumalikeUiLanguage() })
+end
+
 local function syncNuiState()
     sendBinding()
+    sendLocale()
     SendNUIMessage({ type = 'ui:setOpen', open = panelOpen })
     SendNUIMessage({ type = 'voice:ptt', active = transmitting })
     SendNUIMessage({ type = 'voice:targets', targetNpcIds = directTargets })
@@ -216,6 +221,8 @@ AddEventHandler('humalike:world:listener', function(listener)
     })
 end)
 
+AddEventHandler('humalike:settings:applied', sendLocale)
+
 AddEventHandler('humalike:world:registrationRequested', function()
     requestSession()
 end)
@@ -304,7 +311,7 @@ end)
 
 CreateThread(function()
     while not stopping do
-        SendNUIMessage({ type = 'voice:bootstrap' })
+        SendNUIMessage({ type = 'voice:bootstrap', language = HumalikeUiLanguage() })
         Wait(nuiReady and 10000 or 500)
     end
 end)

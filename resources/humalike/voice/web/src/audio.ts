@@ -1,4 +1,5 @@
 import { TRANSMIT_SCRIPTED, type Route, type Vec3 } from "./protocol";
+import { t } from "./locale.mjs";
 
 interface RemoteSource {
   source: MediaStreamAudioSourceNode;
@@ -57,7 +58,7 @@ export class AudioEngine {
   async playHeadphoneTest(url: string): Promise<void> {
     await this.resume();
     const response = await fetch(url);
-    if (!response.ok) throw new Error("Nie udało się wczytać próbki testowej");
+    if (!response.ok) throw new Error(t("error.sampleLoad"));
     const buffer = await this.context.decodeAudioData(await response.arrayBuffer());
     const source = new AudioBufferSourceNode(this.context, { buffer });
     source.connect(this.npc); source.start();
@@ -65,13 +66,13 @@ export class AudioEngine {
   }
 
   async recordAndPlayMicrophone(stream: MediaStream, gainValue: number, durationMs = 2500): Promise<void> {
-    if (typeof MediaRecorder === "undefined") throw new Error("Ta wersja CEF nie obsługuje testu mikrofonu");
+    if (typeof MediaRecorder === "undefined") throw new Error(t("error.noRecorder"));
     const recorder = new MediaRecorder(stream);
     const chunks: BlobPart[] = [];
     recorder.addEventListener("dataavailable", (event) => { if (event.data.size) chunks.push(event.data); });
     const stopped = new Promise<void>((resolve, reject) => {
       recorder.addEventListener("stop", () => resolve(), { once: true });
-      recorder.addEventListener("error", () => reject(new Error("Nie udało się nagrać próbki mikrofonu")), { once: true });
+      recorder.addEventListener("error", () => reject(new Error(t("error.recordFailed"))), { once: true });
     });
     recorder.start();
     await new Promise((resolve) => window.setTimeout(resolve, durationMs));

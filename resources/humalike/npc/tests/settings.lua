@@ -51,6 +51,7 @@ assert(Config.NpcLabels.DefaultLanguage == 'de')
 assert(WorldConfig.npcEdge.reportRadius == 80.0)
 assert(Config.Wounded.Enabled == false)
 assert(Config.Integrations.player == 'auto', 'unsent values keep the client default')
+assert(Config.UiLanguage == 'en')
 
 assert(HumalikeApplyConvarSnapshot({ humalike_interaction = { nested = true } }) == false)
 assert(Config.Integrations.interaction == 'ox_target', 'a rejected snapshot changes nothing')

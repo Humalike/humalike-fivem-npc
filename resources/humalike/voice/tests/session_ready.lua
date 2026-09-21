@@ -31,6 +31,7 @@ exports = setmetatable({
 }, { __call = function() end })
 
 HumalikeVoicePtt = {}
+HumalikeUiLanguage = function() return 'en' end
 local directTargetsAvailable
 HumalikeNpcDirectTargets = {
     Subscribe = function(callback) callback({ 'npc-1' }) end,

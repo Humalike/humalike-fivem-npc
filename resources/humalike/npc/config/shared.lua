@@ -6,6 +6,7 @@ end
 HumalikeDefineConfig(function()
     Config.Debug = HumalikeConvar('humalike_debug', 'false') == 'true'
         or HumalikeConvar('humalike_debug', '0') == '1'
+    Config.UiLanguage = HumalikeConvar('humalike_ui_language', 'en')
     Config.Integrations = {
         player = HumalikeConvar('humalike_player', 'auto'),
         inventory = HumalikeConvar('humalike_inventory', 'auto'),

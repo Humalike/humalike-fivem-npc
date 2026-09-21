@@ -19,7 +19,8 @@ shared_scripts {
     'npc/config/convars.lua',
     'world/config.lua',
     'npc/config/shared.lua',
-    'npc/config/wounds.lua'
+    'npc/config/wounds.lua',
+    'npc/config/locale.lua'
 }
 
 server_scripts {
