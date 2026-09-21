@@ -67,6 +67,10 @@ instead of guessing when equally ranked providers conflict.
 | QBCore | Built in | qb-inventory or ox_inventory | Prompt, qb-target or ox_target |
 | Qbox | Built in | ox_inventory | Prompt or ox_target |
 
+NPC voice is carried by the resource itself. pma-voice, SaltyChat and yaca are
+observed, when present, so HumaLike's push to talk stays off during radio and
+phone use; other voice resources report that through a client export.
+
 See [COMPATIBILITY.md](COMPATIBILITY.md) for provider names, selection behavior
 and optional dependencies. Custom integrations should use the public API
 described in

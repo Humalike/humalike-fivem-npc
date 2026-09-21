@@ -11,8 +11,8 @@ function HumalikeVoicePtt.InputPressed(mappedPressed, sharesNativeBinding,
             or frontendDisabledPressed == true))
 end
 
-function HumalikeVoicePtt.Allowed(controlPressed, radioActive, callActive)
-    return controlPressed == true and radioActive ~= true and callActive ~= true
+function HumalikeVoicePtt.Allowed(controlPressed, busy)
+    return controlPressed == true and busy ~= true
 end
 
 function HumalikeVoicePtt.CallActive(callChannel, pmaStarted)

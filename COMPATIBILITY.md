@@ -26,6 +26,21 @@ resource when the host server needs them.
 | `ox_target` | `ox_target` | 10 |
 | `qb_target` | `qb-target` | 10 |
 
+## Voice resources
+
+HumaLike carries NPC audio itself and never configures the server's voice
+resource. It only observes these, when running, to keep its push to talk off
+while the player is on a radio or in a call:
+
+| Resource | Observed |
+| --- | --- |
+| `pma-voice` | Radio (`pma-voice:radioActive`) and phone calls (`callChannel` state) |
+| `saltychat` | Radio transmit (`SaltyChat_RadioTrafficStateChanged`) |
+| `yaca-voice` | Radio talk (`yaca:external:isRadioTalking`) and calls (`isInCall` export) |
+
+Any other voice or phone resource reports its state through the client
+export `SetVoiceBusy` described in `resources/humalike/INTEGRATIONS.md`.
+
 ## Selection
 
 The domains are configured independently:

@@ -260,6 +260,23 @@ payload and loaded character before forwarding it.
 Client integrations can subscribe to
 `humalike:voice:transmittingChanged(active)` to update a custom HUD.
 
+## Voice busy state
+
+HumaLike keeps its push to talk off while the player's voice is busy
+elsewhere. Built in, it watches `pma-voice` (radio and phone calls),
+`saltychat` (radio transmit) and `yaca-voice` (radio talk and calls) whenever
+they run; nothing is configured. Any other voice or phone resource reports its
+own state from the client:
+
+```lua
+exports.humalike:SetVoiceBusy('phone_call', true)  -- while the call lasts
+exports.humalike:SetVoiceBusy('phone_call', false)
+```
+
+A reason is a short name (`[A-Za-z0-9_.:-]`, at most 64 characters). Reasons
+are namespaced by the calling resource and dropped when it stops.
+`exports.humalike:GetStatus().busy` lists the active reasons.
+
 ## Server observations
 
 Facts only the server knows (an item handed to an NPC, a door unlocked) are

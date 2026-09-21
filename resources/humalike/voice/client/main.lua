@@ -2,8 +2,6 @@ local panelOpen = false
 local transmitting = false
 local mediaTransmitting = false
 local pttPressed = false
-local radioActive = false
-local callActive = false
 local cabinEpoch = nil
 local cabinRevision = -1
 local cabinMembership = nil
@@ -166,8 +164,9 @@ exports('GetStatus', function()
     return {
         transmitting = transmitting,
         mediaTransmitting = mediaTransmitting,
-        radioActive = radioActive,
-        callActive = callActive,
+        busy = HumalikeVoiceBusy.Reasons(),
+        radioActive = HumalikeVoiceBusy.Has(':radio'),
+        callActive = HumalikeVoiceBusy.Has(':call'),
         cabin = cabinMembership,
         cabinEpoch = cabinEpoch,
         cabinRevision = cabinRevision,
@@ -234,38 +233,17 @@ local function cancelPtt()
     HumalikeNpcDirectTargets.Unlock()
 end
 
-AddEventHandler('pma-voice:radioActive', function(active)
-    radioActive = active == true
-    if radioActive then cancelPtt() end
+HumalikeVoiceBusy.Subscribe(function(busy)
+    if busy then cancelPtt() end
 end)
 
 local keyPttActive = false
-local pmaStarted = type(GetResourceState) == 'function'
-    and GetResourceState('pma-voice') == 'started' or false
-
-local function refreshCallActive(callChannel)
-    if callChannel == nil then callChannel = LocalPlayer.state.callChannel end
-    local nextCallActive = HumalikeVoicePtt.CallActive(callChannel, pmaStarted)
-    if nextCallActive == callActive then return end
-    callActive = nextCallActive
-    if callActive then cancelPtt() end
-end
-
-if type(AddStateBagChangeHandler) == 'function' then
-    -- Change handlers run before the bag is written, so LocalPlayer.state
-    -- still holds the previous channel here; the new one is the argument.
-    AddStateBagChangeHandler('callChannel', nil, function(bagName, _, value)
-        if GetPlayerFromStateBagName(bagName) ~= PlayerId() then return end
-        refreshCallActive(tonumber(value) or 0)
-    end)
-end
 
 RegisterCommand(PTT_COMMAND, function() keyPttActive = true end, false)
 RegisterCommand(PTT_RELEASE_COMMAND, function() keyPttActive = false end, false)
 RegisterKeyMapping(PTT_COMMAND, 'Humalike AI voice PTT', 'keyboard', 'N')
 
 CreateThread(function()
-    refreshCallActive()
     while true do
         local controlPressed = HumalikeVoicePtt.InputPressed(
             keyPttActive,
@@ -274,8 +252,7 @@ CreateThread(function()
             IsDisabledControlPressed(0, 249),
             IsControlPressed(2, 249),
             IsDisabledControlPressed(2, 249))
-        local pressed = HumalikeVoicePtt.Allowed(
-            controlPressed, radioActive, callActive)
+        local pressed = HumalikeVoicePtt.Allowed(controlPressed, HumalikeVoiceBusy.Active())
         if pressed and not pttPressed then
             pttPressed = true
             pttReleaseGeneration = pttReleaseGeneration + 1
@@ -327,22 +304,7 @@ CreateThread(function()
     end
 end)
 
-AddEventHandler('onClientResourceStart', function(resource)
-    if resource ~= 'pma-voice' then return end
-    pmaStarted = true
-    radioActive = false
-    refreshCallActive()
-    cancelPtt()
-end)
-
 AddEventHandler('onClientResourceStop', function(resource)
-    if resource == 'pma-voice' then
-        pmaStarted = false
-        radioActive = false
-        refreshCallActive()
-        cancelPtt()
-        return
-    end
     if resource ~= GetCurrentResourceName() then return end
     stopping = true
     pttPressed = false

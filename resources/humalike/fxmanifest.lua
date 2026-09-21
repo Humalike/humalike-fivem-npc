@@ -136,5 +136,9 @@ client_scripts {
     'npc/client/direct_targets.lua',
     'npc/client/labels.lua',
     'voice/client/ptt.lua',
+    'voice/client/busy.lua',
+    'integration/providers/pma_voice/client.lua',
+    'integration/providers/saltychat/client.lua',
+    'integration/providers/yaca/client.lua',
     'voice/client/main.lua'
 }

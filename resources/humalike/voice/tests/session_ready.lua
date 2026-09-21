@@ -40,6 +40,7 @@ HumalikeNpcDirectTargets = {
     Unlock = function() end,
 }
 
+dofile('client/busy.lua')
 assert(loadfile('client/main.lua'))()
 assert(type(nuiCallbacks.ready) == 'function')
 assert(type(handlers['humalike:world:registrationRequested']) == 'function')
