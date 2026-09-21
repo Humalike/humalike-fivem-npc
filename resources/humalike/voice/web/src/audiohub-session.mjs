@@ -44,6 +44,8 @@ export function createAudioHubClient(deps) {
 
   const sessions = new Map();
   let wake = null;
+  // `available` landing while a local capture opens: swapped once it did.
+  let hubAppeared = false;
   let nextId = 0;
   const newId = () => `mic-${now().toString(36)}-${(nextId += 1)}`;
 
@@ -228,12 +230,16 @@ export function createAudioHubClient(deps) {
     });
   }
 
-  /** Resolves with a hub handle, or null when no hub is registered. */
+  /**
+   * Resolves with a hub handle; with no hub registered, with `openLocal()`'s
+   * handle, or null without one.
+   */
   async function acquire(options = {}) {
     const waitUntil = now() + HUB_WAIT_MS;
     let backoff = HUB_WAIT_MIN_MS;
     let relayFailures = 0;
     for (;;) {
+      hubAppeared = false;
       const id = newId();
       const session = createSession(id);
       let response;
@@ -250,7 +256,12 @@ export function createAudioHubClient(deps) {
       }
       if (attach.status === "none") {
         sessions.delete(id);
-        return null;
+        if (!options.openLocal) return null;
+        const local = await options.openLocal();
+        if (!hubAppeared) return local;
+        log("hub registered during the local capture, swapping");
+        local.release();
+        continue;
       }
       if (attach.status !== "attached") {
         sessions.delete(id);
@@ -279,6 +290,7 @@ export function createAudioHubClient(deps) {
     const message = parseAudioHubMessage(data);
     if (!message) return;
     if (message.kind === "available") {
+      hubAppeared = true;
       wake?.();
       onAvailable();
       return;

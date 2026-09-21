@@ -37,8 +37,15 @@ export interface AudioHubClientDeps {
 }
 
 export interface AudioHubClient {
-  /** Resolves with a hub handle, or null when no hub adapter is registered. */
-  acquire(options?: { onLost?: () => void }): Promise<HubSourceHandle | null>;
+  /**
+   * Resolves with a hub handle; with no hub adapter registered, with
+   * `openLocal()`'s handle (null without one). A hub registering while the
+   * local capture opens is swapped in before resolving.
+   */
+  acquire<L extends { release: () => void } = never>(options?: {
+    onLost?: () => void;
+    openLocal?: () => Promise<L>;
+  }): Promise<HubSourceHandle | L | null>;
   handleMessage(data: unknown): void;
 }
 

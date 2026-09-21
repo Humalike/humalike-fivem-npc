@@ -226,7 +226,8 @@ The bridge answers every attach with one of three statuses:
 When the selected adapter becomes available again (its resource starts, it
 registers, or `Available()` flips back) HumaLike tells the NUI, which ends
 its wait at once or, if it started on a local capture because no adapter was
-registered, reconnects through the hub. When `Available()` flips false, the
+registered, reconnects through the hub (a local capture still opening is
+released and replaced before it is used). When `Available()` flips false, the
 adapter's resource stops or it unregisters, open sessions are detached at the
 adapter (not for a stopping resource) and reported to the NUI as
 `capturing = false, error = 'hub-unavailable' | 'hub-stopped'`.

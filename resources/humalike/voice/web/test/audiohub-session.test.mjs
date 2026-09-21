@@ -245,22 +245,27 @@ async function delivered(h, onLost) {
   return { handle: await promise, pc, track, id };
 }
 
-test("after delivery failed, disconnected and ended report the loss exactly once", async () => {
+test("after delivery failed, disconnected, ended, bye and a state error report the loss exactly once", async () => {
   for (const kill of [
     (pc) => pc.setState("failed"),
     (pc, track) => track.end(),
     async (pc, track, h) => { pc.setState("disconnected"); await h.clock.advance(DISCONNECT_GRACE_MS); },
+    (pc, track, h, id) => h.deliver(id, { type: "bye", reason: "hub restarting" }),
+    (pc, track, h, id) => h.state(id, { capturing: false, error: "device-busy" }),
   ]) {
     const h = harness(attached);
     let lost = 0;
-    const { pc, track } = await delivered(h, () => { lost += 1; });
-    await kill(pc, track, h);
+    const { pc, track, id } = await delivered(h, () => { lost += 1; });
+    await kill(pc, track, h, id);
     await flush();
     assert.equal(lost, 1);
     pc.setState("failed");
     track.end();
+    h.deliver(id, { type: "bye" });
+    h.state(id, { capturing: false, error: "device-busy" });
     await h.clock.advance(DISCONNECT_GRACE_MS);
     assert.equal(lost, 1);
+    assert.equal(h.ids().length, 1, "a lost delivered session was renegotiated");
   }
 });
 
@@ -350,6 +355,48 @@ test("no hub registered resolves null so the caller opens the device", async () 
   assert.equal(await h.client.acquire(), null);
   assert.equal(h.pcs.length, 0);
   assert.equal(h.detaches().length, 0);
+});
+
+test("no hub registered opens the local capture through openLocal", async () => {
+  const h = harness({ audiohubAttach: { ok: true, status: "none" } });
+  const local = { kind: "local", release: () => undefined };
+  assert.equal(await h.client.acquire({ openLocal: async () => local }), local);
+  assert.equal(h.ids().length, 1);
+});
+
+test("a hub registering while the local capture opens is swapped in once, the local capture released", async () => {
+  let answers = 0;
+  const h = harness({ audiohubAttach: () => (answers += 1) === 1
+    ? { ok: true, status: "none" }
+    : { ok: true, status: "attached" } });
+  let resolveLocal;
+  let released = 0;
+  const local = { kind: "local", release: () => { released += 1; } };
+  const promise = h.client.acquire({ openLocal: () => new Promise((resolve) => { resolveLocal = resolve; }) });
+  await flush();
+  assert.equal(h.ids().length, 1);
+  h.client.handleMessage({ type: "audiohub:available" });
+  await flush();
+  assert.equal(h.ids().length, 1, "re-attached before the local capture settled");
+  assert.equal(h.available(), 1);
+  resolveLocal(local);
+  await flush();
+  assert.equal(released, 1);
+  assert.equal(h.ids().length, 2);
+  assert.equal(h.pcs.length, 1);
+  h.deliver(h.ids()[1], { type: "offer", sdp: "v=0" });
+  await flush();
+  h.pcs[0].emitTrack();
+  assert.equal((await promise).kind, "hub");
+  assert.equal(h.detaches().length, 0);
+});
+
+test("an available before the attempt started does not swap out the local capture", async () => {
+  const h = harness({ audiohubAttach: { ok: true, status: "none" } });
+  h.client.handleMessage({ type: "audiohub:available" });
+  const local = { kind: "local", release: () => assert.fail("released") };
+  assert.equal(await h.client.acquire({ openLocal: async () => local }), local);
+  assert.equal(h.ids().length, 1);
 });
 
 test("a bridge that never answers is an error, not a local capture", async () => {

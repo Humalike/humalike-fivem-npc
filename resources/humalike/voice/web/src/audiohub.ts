@@ -83,7 +83,9 @@ export function createAudioHub(
   return {
     async acquire({ deviceId, onLost }) {
       if (typeof GetParentResourceName !== "function") return openLocal(deviceId);
-      return (await client.acquire({ onLost })) ?? openLocal(deviceId);
+      const source = await client.acquire({ onLost, openLocal: () => openLocal(deviceId) });
+      if (!source) throw new Error("audio hub answered none without a local capture");
+      return source;
     },
   };
 }

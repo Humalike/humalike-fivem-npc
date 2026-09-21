@@ -23,13 +23,17 @@ let microphoneKind: MicrophoneSourceKind | null = null;
 let microphoneTask: Promise<void> | null = null;
 let microphoneRetryTimer = 0;
 const MICROPHONE_RETRY_MS = 5000;
+let hubAppeared = false;
 // A hub coming (back) up: a local capture is swapped through a fresh session,
-// a microphone-less session retries the microphone now.
-const audioHub = createAudioHub(nui, () => {
-  if (!media || !audio || microphoneTask) return;
+// a microphone-less session retries the microphone now, an acquire in flight
+// is re-checked once it settles.
+const audioHub = createAudioHub(nui, () => { hubAppeared = true; reconcileHub(); });
+function reconcileHub(): void {
+  if (!hubAppeared || !media || !audio || microphoneTask) return;
+  hubAppeared = false;
   if (microphoneKind === "local") requestSession();
   else if (!microphone) void connectMicrophone(media, audio);
-});
+}
 let realtime: GameRealtimeState | null = null;
 let sequence = 0;
 let txGeneration = 0;
@@ -224,7 +228,7 @@ async function connectMedia(url: string, token: string, expectedServerId: string
 
 function connectMicrophone(client: MediaClient, engine: AudioEngine): Promise<void> {
   window.clearTimeout(microphoneRetryTimer);
-  microphoneTask = acquireMicrophone(client, engine).finally(() => { microphoneTask = null; });
+  microphoneTask = acquireMicrophone(client, engine).finally(() => { microphoneTask = null; reconcileHub(); });
   return microphoneTask;
 }
 async function acquireMicrophone(client: MediaClient, engine: AudioEngine): Promise<void> {
