@@ -1,5 +1,5 @@
-// Message parsing and state decisions for the shared-microphone (audio hub)
-// client. Pure so they can be unit tested without a DOM or peer connection.
+// Message parsing for the shared-microphone (audio hub) client. Pure so it
+// runs under node:test.
 
 export function parseSignalPayload(payload) {
   if (!payload || typeof payload !== "object") return null;
@@ -25,6 +25,7 @@ export function parseSignalPayload(payload) {
 
 export function parseAudioHubMessage(data) {
   if (!data || typeof data !== "object") return null;
+  if (data.type === "audiohub:available") return { kind: "available" };
   if (typeof data.id !== "string" || data.id === "") return null;
   if (data.type === "audiohub:signal") {
     const payload = parseSignalPayload(data.payload);
@@ -37,14 +38,22 @@ export function parseAudioHubMessage(data) {
   return null;
 }
 
-export function attachAvailable(response) {
-  return !!response && typeof response === "object"
-    && response.available === true;
+const ATTACH_STATUSES = new Set(["none", "unavailable", "attached"]);
+
+export function attachStatus(response) {
+  if (!response || typeof response !== "object") {
+    return { ok: false, status: "unavailable", reason: "no answer" };
+  }
+  const reason = typeof response.reason === "string" ? response.reason : undefined;
+  if (response.ok !== true) return { ok: false, status: "unavailable", reason: reason ?? "refused" };
+  if (!ATTACH_STATUSES.has(response.status)) {
+    return { ok: false, status: "unavailable", reason: "malformed status" };
+  }
+  return { ok: true, status: response.status, reason };
 }
 
-// A pending capture (most likely an unanswered permission prompt) is not a
-// failure: giving up mid-prompt would open a duplicate device request. Only a
-// hub that reports it cannot capture at all means no offer is coming.
+// `pending` is not a failure: the hub is still working on its capture (most
+// likely a permission prompt). Only an error without capture ends the session.
 export function stateFailure(state) {
   if (!state || typeof state !== "object") return null;
   if (state.pending === true) return null;

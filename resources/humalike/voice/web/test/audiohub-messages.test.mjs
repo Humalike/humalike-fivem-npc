@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  attachAvailable,
+  attachStatus,
   parseAudioHubMessage,
   parseSignalPayload,
   stateFailure,
@@ -35,6 +35,10 @@ test("state messages require an id and a state object", () => {
     parseAudioHubMessage({ type: "audiohub:state", id: "mic-1" }),
     null,
   );
+});
+
+test("hub-available carries no id", () => {
+  assert.deepEqual(parseAudioHubMessage({ type: "audiohub:available" }), { kind: "available" });
 });
 
 test("unrelated NUI messages are ignored", () => {
@@ -73,12 +77,19 @@ test("bye keeps an optional reason", () => {
   });
 });
 
-test("attach is only available on an explicit true", () => {
-  assert.equal(attachAvailable({ ok: true, available: true }), true);
-  assert.equal(attachAvailable({ ok: true, available: false }), false);
-  assert.equal(attachAvailable({ ok: true }), false);
-  assert.equal(attachAvailable("ok"), false);
-  assert.equal(attachAvailable(undefined), false);
+test("attach answers are normalised to a three-way status", () => {
+  assert.deepEqual(attachStatus({ ok: true, status: "attached" }),
+    { ok: true, status: "attached", reason: undefined });
+  assert.deepEqual(attachStatus({ ok: true, status: "unavailable", reason: "ambiguous" }),
+    { ok: true, status: "unavailable", reason: "ambiguous" });
+  assert.deepEqual(attachStatus({ ok: true, status: "none" }),
+    { ok: true, status: "none", reason: undefined });
+  assert.deepEqual(attachStatus({ ok: false, reason: "already_attached" }),
+    { ok: false, status: "unavailable", reason: "already_attached" });
+  assert.equal(attachStatus({ ok: true, status: "available" }).ok, false);
+  assert.equal(attachStatus({ ok: true }).ok, false);
+  assert.equal(attachStatus("ok").ok, false);
+  assert.equal(attachStatus(undefined).ok, false);
 });
 
 test("a pending capture keeps the negotiation waiting", () => {

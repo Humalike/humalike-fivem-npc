@@ -5,19 +5,27 @@ export type AudioHubSignalPayload =
   | { type: "bye"; reason?: string };
 
 export interface AudioHubState {
+  pending?: boolean;
   capturing?: boolean;
   error?: string | null;
-  consumers?: number;
-  pending?: boolean;
 }
 
 export type AudioHubMessage =
   | { kind: "signal"; id: string; payload: AudioHubSignalPayload }
-  | { kind: "state"; id: string; state: AudioHubState };
+  | { kind: "state"; id: string; state: AudioHubState }
+  | { kind: "available" };
+
+export type AttachStatus = "none" | "unavailable" | "attached";
+
+export interface AttachResult {
+  ok: boolean;
+  status: AttachStatus;
+  reason?: string;
+}
 
 export function parseSignalPayload(
   payload: unknown,
 ): AudioHubSignalPayload | null;
 export function parseAudioHubMessage(data: unknown): AudioHubMessage | null;
-export function attachAvailable(response: unknown): boolean;
+export function attachStatus(response: unknown): AttachResult;
 export function stateFailure(state: unknown): string | null;
