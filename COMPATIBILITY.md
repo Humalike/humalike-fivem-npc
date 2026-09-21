@@ -28,10 +28,10 @@ resource when the host server needs them.
 
 ## Client audio hub adapters
 
-There is no built-in audio hub provider. A server that runs a
-shared-microphone resource registers an adapter through
-`exports.humalike:RegisterAudioHub` (see `resources/humalike/INTEGRATIONS.md`).
-Without one, the voice NUI opens its own microphone capture.
+There is no built-in audio hub adapter. A server that runs a shared-microphone
+resource registers one through `exports.humalike:RegisterAudioHub` (see
+`resources/humalike/INTEGRATIONS.md`). With an adapter registered the voice NUI
+never opens the microphone itself; without one it does.
 
 ## Selection
 
