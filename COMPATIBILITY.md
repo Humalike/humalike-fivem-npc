@@ -7,7 +7,7 @@ and can start or stop independently from the `humalike` resource.
 
 | Domain | Provider | Resource | Priority | Notes |
 | --- | --- | --- | ---: | --- |
-| player | `standalone` | None | -1000 | Denies configured job checks; empty job requirements pass. |
+| player | `standalone` | None | -1000 | Jobs are ACE grants (`humalike.job.<name>`); empty job requirements pass. |
 | player | `esx` | `es_extended` | 100 | Supports ESX Legacy player identity and jobs. |
 | player | `qbcore` | `qb-core` | 100 | Supports QBCore identity, jobs and duty state. |
 | player | `qbox` | `qbx_core` | 100 | Supports Qbox identity, jobs and duty state. |

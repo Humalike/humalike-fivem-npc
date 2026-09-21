@@ -146,9 +146,18 @@ dependency re-evaluates `Available`, while restarting HumaLike produces a new
 epoch and lets integrations rebuild their registrations. Interaction callbacks
 are removed before HumaLike stops and whenever the selected provider changes.
 
-The standalone player provider has no job system. Empty job requirements pass;
-any configured job requirement is denied until a player provider implements
-`HasJob`.
+The standalone player provider has no framework to ask about jobs, so it reads
+FiveM's own ACE permissions: a player holds job `ambulance` when
+`humalike.job.ambulance` is allowed for them. Empty job requirements pass. ACE
+has no duty state, so a granted job counts as on duty:
+
+```cfg
+add_ace group.ems humalike.job.ambulance allow
+add_principal identifier.license:0123456789abcdef group.ems
+```
+
+A player provider registered by an integration replaces this with the
+framework's real job and duty state.
 
 ## NPC runtime control
 

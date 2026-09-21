@@ -16,6 +16,7 @@ function GetCurrentResourceName() return 'humalike' end
 function GetInvokingResource() return owner end
 function GetResourceState(resource) return started[resource] and 'started' or 'stopped' end
 function GetPlayerIdentifiers() return { 'discord:1', 'license:abc' } end
+function IsPlayerAceAllowed() return false end
 function GetPlayerName(source) return source == 7 and 'Standalone Player' or nil end
 function TriggerClientEvent() end
 function HumalikeDebug() end
