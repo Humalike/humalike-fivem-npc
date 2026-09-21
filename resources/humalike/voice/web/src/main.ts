@@ -6,7 +6,7 @@ import { CAPABILITY_AUTHORITATIVE_VEHICLE_CABINS, CAPABILITY_DIRECT_NPC_TARGETS,
 import { effectivePtt, negotiatedTransmitMask } from "./transmit-mask.mjs";
 import { readyServerId } from "./publication-source.mjs";
 import { installNpcEdgeTransport } from "./npc-edge";
-import { setLanguage, t } from "./locale.mjs";
+import { language, setLanguage, t } from "./locale.mjs";
 
 declare const GetParentResourceName: undefined | (() => string);
 
@@ -112,7 +112,7 @@ window.addEventListener("message", (event: MessageEvent<unknown>) => {
     app.classList.toggle("hidden", !open);
   }
   else if (message.type === "voice:keybind") { proximityBinding = normalizeBinding(String(message.binding ?? "")); renderStatus(); }
-  else if (message.type === "voice:bootstrap") { applyLanguage(message.language); signalReady(); }
+  else if (message.type === "voice:bootstrap") signalReady();
   else if (message.type === "voice:locale") applyLanguage(message.language);
   else if (message.type === "voice:reconnect") requestSession();
   else if (message.type === "voice:session") {
@@ -441,7 +441,9 @@ function microphoneError(error: unknown): string {
 }
 function applyLanguage(code: unknown): void {
   if (typeof code !== "string") return;
-  setLanguage(code); applyLocale(); renderStatus(); void refreshDevices();
+  const previous = language();
+  if (setLanguage(code) === previous) return;
+  applyLocale(); renderStatus(); void refreshDevices();
 }
 function applyLocale(): void {
   for (const node of panel.querySelectorAll<HTMLElement>("[data-i18n]")) node.textContent = t(node.dataset.i18n ?? "");

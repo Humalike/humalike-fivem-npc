@@ -288,7 +288,7 @@ end)
 
 CreateThread(function()
     while not stopping do
-        SendNUIMessage({ type = 'voice:bootstrap', language = HumalikeUiLanguage() })
+        SendNUIMessage({ type = 'voice:bootstrap' })
         Wait(nuiReady and 10000 or 500)
     end
 end)
