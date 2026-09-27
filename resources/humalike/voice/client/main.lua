@@ -11,6 +11,7 @@ local nuiReady = false
 local nuiBootId = nil
 local sessionRetryGeneration = 0
 local PTT_RELEASE_TAIL_MS = 200
+local PTT_POLL_MS = 100
 local PTT_COMMAND = '+humalike_voice_ptt'
 local PTT_RELEASE_COMMAND = '-' .. PTT_COMMAND:sub(2)
 local PTT_CONTROL = GetHashKey(PTT_COMMAND) | 0x80000000
@@ -239,37 +240,48 @@ end)
 
 local keyPttActive = false
 
-RegisterCommand(PTT_COMMAND, function() keyPttActive = true end, false)
-RegisterCommand(PTT_RELEASE_COMMAND, function() keyPttActive = false end, false)
+local function nativePttPressed()
+    if not pttSharesNativeBinding then return false, false, false, false end
+    return IsControlPressed(0, 249), IsDisabledControlPressed(0, 249),
+        IsControlPressed(2, 249), IsDisabledControlPressed(2, 249)
+end
+
+local function evaluatePtt()
+    local controlPressed = HumalikeVoicePtt.InputPressed(
+        keyPttActive, pttSharesNativeBinding, nativePttPressed())
+    local pressed = HumalikeVoicePtt.Allowed(controlPressed, HumalikeVoiceBusy.Active())
+    if pressed and not pttPressed then
+        pttPressed = true
+        pttReleaseGeneration = pttReleaseGeneration + 1
+        HumalikeNpcDirectTargets.Lock()
+        setTransmitting(true)
+    elseif not pressed and pttPressed then
+        pttPressed = false
+        pttReleaseGeneration = pttReleaseGeneration + 1
+        local generation = pttReleaseGeneration
+        SetTimeout(PTT_RELEASE_TAIL_MS, function()
+            if not pttPressed and generation == pttReleaseGeneration then
+                setTransmitting(false)
+                HumalikeNpcDirectTargets.Unlock()
+            end
+        end)
+    end
+end
+
+RegisterCommand(PTT_COMMAND, function()
+    keyPttActive = true
+    evaluatePtt()
+end, false)
+RegisterCommand(PTT_RELEASE_COMMAND, function()
+    keyPttActive = false
+    evaluatePtt()
+end, false)
 RegisterKeyMapping(PTT_COMMAND, 'Humalike AI voice PTT', 'keyboard', 'N')
 
 CreateThread(function()
     while true do
-        local controlPressed = HumalikeVoicePtt.InputPressed(
-            keyPttActive,
-            pttSharesNativeBinding,
-            IsControlPressed(0, 249),
-            IsDisabledControlPressed(0, 249),
-            IsControlPressed(2, 249),
-            IsDisabledControlPressed(2, 249))
-        local pressed = HumalikeVoicePtt.Allowed(controlPressed, HumalikeVoiceBusy.Active())
-        if pressed and not pttPressed then
-            pttPressed = true
-            pttReleaseGeneration = pttReleaseGeneration + 1
-            HumalikeNpcDirectTargets.Lock()
-            setTransmitting(true)
-        elseif not pressed and pttPressed then
-            pttPressed = false
-            pttReleaseGeneration = pttReleaseGeneration + 1
-            local generation = pttReleaseGeneration
-            SetTimeout(PTT_RELEASE_TAIL_MS, function()
-                if not pttPressed and generation == pttReleaseGeneration then
-                    setTransmitting(false)
-                    HumalikeNpcDirectTargets.Unlock()
-                end
-            end)
-        end
-        Wait(0)
+        evaluatePtt()
+        Wait(pttSharesNativeBinding and 0 or PTT_POLL_MS)
     end
 end)
 
