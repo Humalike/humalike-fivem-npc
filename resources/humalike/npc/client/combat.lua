@@ -54,16 +54,21 @@ CreateThread(function()
     local burstOpen = false
     local lastShotAt = -1000
     while true do
-        Wait(0)
-        local now = GetGameTimer()
-        if IsPedShooting(PlayerPedId()) then
-            lastShotAt = now
-            if not burstOpen then
-                burstOpen = true
-                TriggerServerEvent('humalike:npc:gunshotFired')
+        local ped = PlayerPedId()
+        if burstOpen or IsPedArmed(ped, 6) then
+            local now = GetGameTimer()
+            if IsPedShooting(ped) then
+                lastShotAt = now
+                if not burstOpen then
+                    burstOpen = true
+                    TriggerServerEvent('humalike:npc:gunshotFired')
+                end
+            elseif burstOpen and now - lastShotAt >= 500 then
+                burstOpen = false
             end
-        elseif burstOpen and now - lastShotAt >= 500 then
-            burstOpen = false
+            Wait(0)
+        else
+            Wait(250)
         end
     end
 end)

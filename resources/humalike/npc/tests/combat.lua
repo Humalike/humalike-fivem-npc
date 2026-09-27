@@ -24,6 +24,8 @@ function Wait()
 end
 function PlayerPedId() return 42 end
 function IsPedShooting() return ticks == 1 or ticks == 2 or ticks == 5 end
+local armed = true
+function IsPedArmed() return armed end
 function GetGameTimer() return ticks * 250 end
 function PlayerId() return 7 end
 function GetEntityPlayerIsFreeAimingAt() return false, 0 end
@@ -58,6 +60,16 @@ assert(#sent == 2 and sent[1][1] == 'humalike:npc:gunshotFired'
     and sent[2][1] == 'humalike:npc:gunshotFired',
     'automatic fire reports once per burst and rearms after 500 ms silence')
 table.remove(sent, 2) -- preserve the existing event index assertions below
+armed = false
+local waits, shootingChecks = {}, 0
+function IsPedShooting() shootingChecks = shootingChecks + 1 return false end
+function Wait(ms)
+    waits[#waits + 1] = ms
+    if #waits > 2 then error('done') end
+end
+pcall(threads[2])
+assert(waits[1] == 250 and waits[2] == 250 and shootingChecks == 0,
+    'holstered, the gun poll sleeps and never asks')
 
 local damageNotes = {}
 HumalikeNpcShove = { NoteDamage = function(ped, at) damageNotes[#damageNotes + 1] = { ped, at } end }
