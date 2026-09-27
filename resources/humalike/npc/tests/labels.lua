@@ -67,3 +67,28 @@ assert(frame[2][4] == 1, 'non-target NPCs are shown as muted during exclusive ro
 Config.NpcLabels.MaxDistance = 1.0
 frame, nearby = HumaLikeNpcLabels.BuildFrame()
 assert(#frame == 0 and nearby == false, 'squared-distance culling excludes distant peds')
+
+Config.NpcLabels.MaxDistance = 14
+local sent, now, ambientX = {}, 0, 1
+local coordsOf = GetEntityCoords
+function GetEntityCoords(ped)
+    if ped == 3 then return { x = ambientX, y = 0, z = 0 } end
+    return coordsOf(ped)
+end
+function GetGameTimer() return now end
+function Wait() coroutine.yield() end
+function SendNUIMessage(message) sent[#sent + 1] = message.type end
+local loop = coroutine.create(thread)
+local function tick(at)
+    now = at
+    assert(coroutine.resume(loop))
+end
+for frame = 1, 6 do tick(frame * 16) end
+assert(#sent == 1 and sent[1] == 'labels:frame', 'a still scene is sent to the NUI once')
+tick(96 + 150)
+assert(#sent == 2, 'and repeated on the heartbeat so the NUI keeps it')
+ambientX = 2
+tick(96 + 150 + 16)
+assert(#sent == 3, 'a label that moved is sent at once')
+tick(96 + 150 + 32)
+assert(#sent == 3, 'and not again while it stays put')

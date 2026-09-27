@@ -130,11 +130,27 @@ function HumaLikeNpcLabels.BuildFrame()
     return frame, hasNearbyNpc
 end
 
+-- The NUI drops its labels 250 ms after the last frame, so an unchanged
+-- frame is repeated at this interval instead of every render tick.
+local FRAME_HEARTBEAT_MS = 150
+local FRAME_EPSILON = 0.0005 -- normalised screen units, under a pixel
+
+local function sameFrame(frame, last)
+    if not last or #frame ~= #last then return false end
+    for index = 1, #frame do
+        local a, b = frame[index], last[index]
+        if a[3] ~= b[3] or a[4] ~= b[4] or math.abs(a[1] - b[1]) > FRAME_EPSILON
+            or math.abs(a[2] - b[2]) > FRAME_EPSILON then return false end
+    end
+    return true
+end
+
 CreateThread(function()
     local hadVisibleLabels = false
     local candidates = {}
     local candidatesAt = -1000000
     local nextFrameAt = 0
+    local lastFrame, lastSentAt = nil, 0
     while true do
         local labels = labelConfig()
         if labels.Enabled == false then
@@ -162,17 +178,21 @@ CreateThread(function()
                 local frame, hasNearbyNpc = buildCandidateFrame(candidates, maxDistance,
                     tonumber(labels.Height) or 0.98)
                 if #frame > 0 then
-                    SendNUIMessage({
-                        type = 'labels:frame',
-                        scale = tonumber(labels.Scale) or 1.0,
-                        labels = frame,
-                    })
+                    if now - lastSentAt >= FRAME_HEARTBEAT_MS or not sameFrame(frame, lastFrame) then
+                        SendNUIMessage({
+                            type = 'labels:frame',
+                            scale = tonumber(labels.Scale) or 1.0,
+                            labels = frame,
+                        })
+                        lastFrame, lastSentAt = frame, now
+                    end
                     hadVisibleLabels = true
                     Wait(0)
                 else
                     if hadVisibleLabels then
                         SendNUIMessage({ type = 'labels:clear' })
                         hadVisibleLabels = false
+                        lastFrame = nil
                     end
                     Wait(hasNearbyNpc and 50 or 250)
                 end
