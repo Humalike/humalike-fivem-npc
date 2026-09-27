@@ -7,6 +7,23 @@ HumalikeWorldCollector = {
     voiceMode = 2,
 }
 
+-- The listener is announced when the ear moved or turned, or every heartbeat.
+local LISTENER_MOVE_THRESHOLD = 0.05 -- metres
+local LISTENER_TURN_MIN_DOT = math.cos(math.rad(1.0))
+local LISTENER_HEARTBEAT_MS = 1000
+local lastAnnouncedListener = nil
+
+local function listenerChanged(listener)
+    local last = lastAnnouncedListener
+    if not last then return true end
+    if listener.clientTimeMs - last.clientTimeMs >= LISTENER_HEARTBEAT_MS then return true end
+    local p, q = listener.position, last.position
+    if math.abs(p.x - q.x) > LISTENER_MOVE_THRESHOLD or math.abs(p.y - q.y) > LISTENER_MOVE_THRESHOLD
+        or math.abs(p.z - q.z) > LISTENER_MOVE_THRESHOLD then return true end
+    local f, g = listener.forward, last.forward
+    return f.x * g.x + f.y * g.y + f.z * g.z < LISTENER_TURN_MIN_DOT
+end
+
 local function randomHex(length)
     local result = ''
     for _ = 1, length do result = result .. ('%x'):format(math.random(0, 15)) end
@@ -93,7 +110,10 @@ function HumalikeWorldCollector.SampleListener(now, ped, position)
         forward = cameraForward(),
     }
     HumalikeWorldCollector.listener = listener
-    TriggerEvent('humalike:world:listener', HumalikeWorldContracts.Copy(listener))
+    if listenerChanged(listener) then
+        lastAnnouncedListener = listener
+        TriggerEvent('humalike:world:listener', HumalikeWorldContracts.Copy(listener))
+    end
     return listener
 end
 

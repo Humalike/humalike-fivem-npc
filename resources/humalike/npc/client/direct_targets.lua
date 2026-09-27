@@ -11,7 +11,6 @@ local members = {}
 local subscribers = {}
 local locked = false
 local available = false
-local lastRefreshAt = -REFRESH_MS
 
 local function copy(values)
     local result = {}
@@ -138,10 +137,15 @@ function HumalikeNpcDirectTargets.IsExclusive()
     return available and #active > 0
 end
 
-AddEventHandler('humalike:world:listener', function(listener)
-    local now = GetGameTimer()
-    if now - lastRefreshAt < REFRESH_MS then return end
-    lastRefreshAt = now
+function HumalikeNpcDirectTargets.Refresh(listener)
     observed = calculate(listener)
     if not locked then publish(observed) end
+end
+
+CreateThread(function()
+    while true do
+        Wait(REFRESH_MS)
+        local listener = HumalikeWorldCollector and HumalikeWorldCollector.listener or nil
+        if listener then HumalikeNpcDirectTargets.Refresh(listener) end
+    end
 end)

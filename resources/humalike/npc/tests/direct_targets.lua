@@ -22,6 +22,7 @@ HumalikeWorldRegistry = { entries = {
 } }
 
 function AddEventHandler(name, callback) handlers[name] = callback end
+function CreateThread() end
 function GetGameTimer() return timer end
 function PlayerId() return 0 end
 function PlayerPedId() return 100 end
@@ -45,13 +46,13 @@ HumalikeNpcDirectTargets.Subscribe(function(values)
 end)
 assert(notifications == 1 and #latest == 0, 'subscriber receives the initial state')
 
-handlers['humalike:world:listener']({ forward = { x = 1, y = 0, z = 0 } })
+HumalikeNpcDirectTargets.Refresh({ forward = { x = 1, y = 0, z = 0 } })
 assert(#latest == 3, 'follower, vehicle peer and close gaze target are selected')
 assert(latest[1] == 'follower' and latest[2] == 'vehicle' and latest[3] == 'gaze')
 assert(notifications == 2)
 
 timer = timer + 100
-handlers['humalike:world:listener']({ forward = { x = 1, y = 0, z = 0 } })
+HumalikeNpcDirectTargets.Refresh({ forward = { x = 1, y = 0, z = 0 } })
 assert(notifications == 2, 'unchanged targets are not republished')
 
 HumalikeNpcDirectTargets.SetAvailable(true)
@@ -61,7 +62,7 @@ HumalikeNpcDirectTargets.Lock()
 playerVehicle = 0
 positions[3] = { x = 0, y = 3, z = 0 }
 timer = timer + 100
-handlers['humalike:world:listener']({ forward = { x = 1, y = 0, z = 0 } })
+HumalikeNpcDirectTargets.Refresh({ forward = { x = 1, y = 0, z = 0 } })
 assert(#HumalikeNpcDirectTargets.Get() == 3, 'targets stay frozen during PTT')
 HumalikeNpcDirectTargets.Unlock()
 latest = HumalikeNpcDirectTargets.Get()
