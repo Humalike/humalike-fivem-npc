@@ -137,7 +137,7 @@ HumalikeNpcRuntimeControl = {
 
 dofile('client/reactions.lua')
 dofile('client/population.lua')
-assert(#threads == 3, 'density, per-frame pace and one pool walk')
+assert(#threads == 2, 'one per-frame thread (density + pace) and one pool walk')
 
 local candidates = {
     { x = 100, y = 0, z = 10, heading = 90 },
@@ -244,18 +244,27 @@ end
 paceCalls = {}
 heldPeds[20] = true
 HumalikeNpcPopulationClient.PaceTick()
+assert(#paceCalls == 2, 'the per-frame loop does no lookups of its own; a hold is announced')
+paceCalls = {}
+HumalikeNpcPopulationClient.RefreshPace(20)
+HumalikeNpcPopulationClient.PaceTick()
 assert(#paceCalls == 1 and paceCalls[1][1] == 26, 'a hold that began after the last tick stops the override')
 heldPeds[20] = nil
 npcIds[26] = 'npc-26'
 controlled['npc-26'] = { movement = true }
+paceCalls = {}
+HumalikeNpcPopulationClient.RebuildPace()
 HumalikeNpcPopulationClient.PaceTick()
-assert(#paceCalls == 2 and paceCalls[2][1] == 20, 'so does a runtime-control movement lease')
+assert(#paceCalls == 1 and paceCalls[1][1] == 20, 'so does a runtime-control movement lease')
 controlled['npc-26'] = nil
 npcIds[26] = nil
 owned[26] = false
+paceCalls = {}
+HumalikeNpcPopulationClient.RefreshPace(26)
 HumalikeNpcPopulationClient.PaceTick()
-assert(#paceCalls == 3 and paceCalls[3][1] == 20, 'and a body no longer under this client\'s control')
+assert(#paceCalls == 1 and paceCalls[1][1] == 20, 'and a body no longer under this client\'s control')
 owned[26] = true
+HumalikeNpcPopulationClient.RebuildPace()
 paceCalls = {}
 assert(#wanderCalls == 2 and wanderCalls[1] == 20 and wanderCalls[2] == 26,
     'first ownership sends unmanaged wander bodies wandering at once')
@@ -659,5 +668,31 @@ assert(#blendCalls == 2 and #applied == 1, 'a known handle is configured and dre
 bodyIdOf[80] = 'body-b'
 HumalikeNpcPopulationClient.Tick(302000, false)
 assert(#blendCalls == 4 and #applied == 2, 'a new body behind the same handle is configured again')
+
+pool = { [90] = true, [91] = true, [92] = true, [93] = true, [94] = true }
+kinds = { [90] = 'population', [91] = 'population' }
+bodyKinds = { [90] = 'persona', [91] = 'extra' }
+owned = { [90] = true, [91] = true, [92] = true, [93] = true, [94] = true }
+populationTypes = { [92] = 4, [93] = 5, [94] = 7 }
+bodyIdOf, stopped, seeds = {}, {}, {}
+local entityReads = 0
+local countedEntity = Entity
+function Entity(ped)
+    entityReads = entityReads + 1
+    return countedEntity(ped)
+end
+HumalikeNpcPopulationClient.Tick(400000, false)
+assert(entityReads == 3, 'one bag read per script ped; GTA pedestrians are never read')
+entityReads = 0
+HumalikeNpcPopulationClient.SetState(true, false)
+HumalikeNpcPopulationClient.Tick(401000, true)
+assert(entityReads == 5, 'a sweep reads every pedestrian once, to be sure it is not ours')
+HumalikeNpcPopulationClient.SetState(false, false)
+paceCalls = {}
+HumalikeNpcPopulationClient.PaceTick()
+assert(#paceCalls == 2, 'both walkers amble')
+entityReads = 0
+for _ = 1, 60 do HumalikeNpcPopulationClient.PaceTick() end
+assert(entityReads == 0, 'the per-frame loop never touches a bag')
 
 print('client_population: ok')

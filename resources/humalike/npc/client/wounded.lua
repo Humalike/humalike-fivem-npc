@@ -95,6 +95,9 @@ local function applyDowned(ped)
     SetEntityHealth(ped, GetEntityMaxHealth(ped))
     holdDownedFlags(ped)
     playDownedPose(ped)
+    if HumalikeNpcPopulationClient and HumalikeNpcPopulationClient.RefreshPace then
+        HumalikeNpcPopulationClient.RefreshPace(ped)
+    end
 end
 local function releaseBody(ped)
     if not DoesEntityExist(ped) or not NetworkHasControlOfEntity(ped) then return end
@@ -113,6 +116,9 @@ local function clearDowned(ped)
     SetPedCanRagdoll(ped, true)
     ClearPedTasksImmediately(ped)
     SetEntityHealth(ped, GetEntityMaxHealth(ped))
+    if HumalikeNpcPopulationClient and HumalikeNpcPopulationClient.RefreshPace then
+        HumalikeNpcPopulationClient.RefreshPace(ped)
+    end
 end
 local function holdStanding(npcId, ped)
     if downed[npcId] then return end

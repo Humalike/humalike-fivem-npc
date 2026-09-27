@@ -5,15 +5,30 @@ local configured = {}
 local dressed = {}
 local paced = {}
 local ownedBodies = {}
+local paceSet = {} -- walkers this client drives right now; the per-frame loop touches only these
 local enabled = false
 local copsAllowed = false
 local copsDisabled = false
 local lastSweepAt = 0
 local DEFAULT_STAND_SCENARIO = 'WORLD_HUMAN_STAND_IMPATIENT'
 local FREE_PACE = 3.0 -- max move blend ratio, sprint
+local SCRIPT_POPULATION_TYPE = 7 -- POPTYPE_MISSION: every ped a script created, ours included
+local BODY_KEYS = {
+    'humalike_npc_kind', 'humalike_npc_id', 'humalike_body_kind', 'humalike_body_id',
+    'humalike_body_behaviour', 'humalike_body_scenario', 'humalike_walk_rate',
+    'humalike_style_seed', 'humalike_vehicle_net',
+}
 
 local function config()
     return Config.Population
+end
+
+-- One read per key per tick. Keys outside the list, and `:set`, reach the live bag.
+local function snapshot(ped)
+    local live = Entity(ped).state
+    local state = {}
+    for _, key in ipairs(BODY_KEYS) do state[key] = live[key] end
+    return setmetatable(state, { __index = live })
 end
 
 -- GetSafeCoordForPed: 2 not isolated, 4 not interior, 8 not water.
@@ -116,17 +131,12 @@ AddEventHandler('humalike:npc:populationState', function(payload)
     HumalikeNpcPopulationClient.SetState(payload.enabled, payload.cops_allowed)
 end)
 
-CreateThread(function()
-    while true do
-        Wait(HumalikeNpcPopulationClient.DensityTick() and 0 or 500)
-    end
-end)
-
-local function managed(ped)
+-- `state` is a snapshot; its npc id is passed on so nobody re-reads the bag.
+local function managed(ped, state)
     if IsActionControlled and IsActionControlled(ped) then return true end
-    if HumalikeAmbientControlHeldPed and HumalikeAmbientControlHeldPed(ped) then return true end
-    if DownedNpcOf and DownedNpcOf(ped) then return true end
-    local npcId = Entity(ped).state.humalike_npc_id
+    local npcId = state and state.humalike_npc_id or false
+    if HumalikeAmbientControlHeldPed and HumalikeAmbientControlHeldPed(ped, npcId) then return true end
+    if DownedNpcOf and DownedNpcOf(ped, npcId) then return true end
     if npcId and HumalikeNpcRuntimeControl
         and HumalikeNpcRuntimeControl.IsControlled(npcId, 'movement') then return true end
     return false
@@ -188,6 +198,7 @@ local function capPace(ped, state)
 end
 
 function HumalikeNpcPopulationClient.OwnPace(ped)
+    paceSet[ped] = nil
     if not DoesEntityExist(ped) then return end
     paced[ped] = nil
     SetPedMaxMoveBlendRatio(ped, FREE_PACE)
@@ -202,9 +213,26 @@ local function pace(ped, state)
     end
 end
 
+-- Whether the per-frame move-rate override applies to this body right now.
+-- Called when a hold, wound, action or lease starts or ends; the tick redoes it every second.
+function HumalikeNpcPopulationClient.RefreshPace(ped)
+    if not ownedBodies[ped] or not DoesEntityExist(ped) or not NetworkHasControlOfEntity(ped) then
+        paceSet[ped] = nil
+        return false
+    end
+    local applies = not managed(ped, snapshot(ped))
+    paceSet[ped] = applies or nil
+    return applies
+end
+
+function HumalikeNpcPopulationClient.RebuildPace()
+    paceSet = {}
+    for ped in pairs(ownedBodies) do HumalikeNpcPopulationClient.RefreshPace(ped) end
+end
+
 function HumalikeNpcPopulationClient.RestorePace(ped)
     if not DoesEntityExist(ped) then return end
-    local state = Entity(ped).state
+    local state = snapshot(ped)
     local rate = state.humalike_npc_kind == 'population' and not drives(state)
         and walkRate(state) or nil
     if rate then
@@ -214,6 +242,7 @@ function HumalikeNpcPopulationClient.RestorePace(ped)
         paced[ped] = nil
         SetPedMaxMoveBlendRatio(ped, FREE_PACE)
     end
+    HumalikeNpcPopulationClient.RefreshPace(ped)
 end
 
 -- A driver without its vehicle walks like a wanderer until the edge culls it.
@@ -241,13 +270,12 @@ end
 
 function HumalikeNpcPopulationClient.OwnsReactions(ped)
     if not DoesEntityExist(ped) then return false end
-    local state = Entity(ped).state
+    local state = snapshot(ped)
     return state.humalike_npc_kind == 'population' and hasMind(state)
 end
 
-local function configure(ped, state, now)
+local function configure(ped, state, now, isManaged)
     configured[ped] = state.humalike_body_id or true
-    local isManaged = managed(ped)
     ownReactions(ped, state, not isManaged)
     if isManaged then
         HumalikeNpcPopulationClient.OwnPace(ped)
@@ -257,10 +285,10 @@ local function configure(ped, state, now)
     if not incapacitated(ped, state) then applyBehaviour(ped, state, now) end
 end
 
-local function refresh(ped, state, now)
+local function refresh(ped, state, now, isManaged)
     -- A release or a migration may have handed the reactions back to GTA.
     ownReactions(ped, state, false)
-    if managed(ped) then
+    if isManaged then
         if paced[ped] then HumalikeNpcPopulationClient.OwnPace(ped) end
         return
     end
@@ -289,13 +317,15 @@ end
 
 function HumalikeNpcPopulationClient.Reapply(ped)
     if not DoesEntityExist(ped) or not NetworkHasControlOfEntity(ped) then return false end
-    local state = Entity(ped).state
-    if state.humalike_npc_kind ~= 'population' or managed(ped) or incapacitated(ped, state) then
+    local state = snapshot(ped)
+    if state.humalike_npc_kind ~= 'population' or managed(ped, state)
+        or incapacitated(ped, state) then
         return false
     end
     ClearPedTasks(ped)
     pace(ped, state)
     applyBehaviour(ped, state, GetGameTimer())
+    HumalikeNpcPopulationClient.RefreshPace(ped)
     return true
 end
 
@@ -333,13 +363,25 @@ local function nearAnyPlayer(coords, players, minDistance)
     return false
 end
 
-local function gtaLeftover(ped, state, players)
-    if state.humalike_npc_kind ~= nil or state.humalike_npc_id ~= nil then return false end
+local function gtaLeftover(ped, populationType, players)
     local cfg = config()
-    if not cfg.GtaPopulationTypes[GetEntityPopulationType(ped)] or IsPedInAnyVehicle(ped, false)
+    if not cfg.GtaPopulationTypes[populationType] or IsPedInAnyVehicle(ped, false)
         or IsEntityAMissionEntity(ped) then return false end
     if copsAllowed and cfg.CopPedTypes[GetPedType(ped)] then return false end
     return not nearAnyPlayer(GetEntityCoords(ped), players, cfg.SweepMinPlayerDistance)
+end
+
+-- Our bodies are script peds. A street ped's bag is read on sweep ticks only,
+-- two keys, so the sweep never deletes a body of ours GTA typed oddly.
+local function bodyState(ped, populationType, sweep)
+    if populationType == SCRIPT_POPULATION_TYPE or IsEntityAMissionEntity(ped) then
+        return snapshot(ped), false
+    end
+    if not sweep then return nil, false end
+    local live = Entity(ped).state
+    local kind = live.humalike_npc_kind
+    if kind == 'population' then return snapshot(ped), false end
+    return nil, kind == nil and live.humalike_npc_id == nil
 end
 
 function HumalikeNpcPopulationClient.Tick(now, sweep)
@@ -347,23 +389,29 @@ function HumalikeNpcPopulationClient.Tick(now, sweep)
     local cfg = config()
     local removed = 0
     local walkers = {}
+    local pacing = {}
     sweep = sweep and enabled
     local players = sweep and playerPeds() or nil
     for _, ped in ipairs(GetGamePool('CPed')) do
         if DoesEntityExist(ped) and not IsPedAPlayer(ped) and NetworkHasControlOfEntity(ped) then
-            local state = Entity(ped).state
-            if state.humalike_npc_kind == 'population' and state.humalike_body_kind == nil then
+            local populationType = GetEntityPopulationType(ped)
+            local state, unclaimed = bodyState(ped, populationType, sweep)
+            if state and state.humalike_npc_kind == 'population' and state.humalike_body_kind == nil then
                 seen[ped] = true -- kind not replicated yet; leave it alone this tick
-            elseif state.humalike_npc_kind == 'population' then
+            elseif state and state.humalike_npc_kind == 'population' then
                 seen[ped] = true
-                walkers[ped] = not drives(state)
+                local walks = not drives(state)
+                walkers[ped] = walks
                 dress(ped, state)
+                local isManaged = managed(ped, state)
+                if walks and not isManaged then pacing[ped] = true end
                 if configured[ped] == (state.humalike_body_id or true) then
-                    refresh(ped, state, now)
+                    refresh(ped, state, now, isManaged)
                 else
-                    configure(ped, state, now)
+                    configure(ped, state, now, isManaged)
                 end
-            elseif sweep and removed < cfg.SweepMaxPerTick and gtaLeftover(ped, state, players) then
+            elseif unclaimed and sweep and removed < cfg.SweepMaxPerTick
+                and gtaLeftover(ped, populationType, players) then
                 SetEntityAsMissionEntity(ped, true, true)
                 DeleteEntity(ped)
                 removed = removed + 1
@@ -377,25 +425,28 @@ function HumalikeNpcPopulationClient.Tick(now, sweep)
     forgetUnseen(paced, seen)
     if HumalikeNpcDriving then HumalikeNpcDriving.Forget(seen) end
     ownedBodies = walkers
+    paceSet = pacing
     return removed
 end
 
--- SetPedMoveRateOverride lasts one frame; managed() is checked per frame so a
--- hold or lease that starts mid-tick stops the override at once. Drivers are exempt.
+-- SetPedMoveRateOverride lasts one frame, so this runs every frame, but over a
+-- list the tick and the takeover hooks keep, with no lookups of its own.
 function HumalikeNpcPopulationClient.PaceTick()
     local rate = config().MoveRate
-    if rate == 1.0 then return end
-    for ped, walks in pairs(ownedBodies) do
-        if walks and DoesEntityExist(ped) and NetworkHasControlOfEntity(ped) and not managed(ped) then
-            SetPedMoveRateOverride(ped, rate)
-        end
+    if rate == 1.0 then return false end
+    local any = false
+    for ped in pairs(paceSet) do
+        SetPedMoveRateOverride(ped, rate)
+        any = true
     end
+    return any
 end
 
 CreateThread(function()
     while true do
-        Wait(0)
-        HumalikeNpcPopulationClient.PaceTick()
+        local density = HumalikeNpcPopulationClient.DensityTick()
+        local pacing = HumalikeNpcPopulationClient.PaceTick()
+        Wait((density or pacing) and 0 or 250)
     end
 end)
 
@@ -412,6 +463,7 @@ end)
 AddEventHandler('onResourceStop', function(resourceName)
     if resourceName ~= GetCurrentResourceName() then return end
     stoppedSince, scenarioIdleSince, configured, dressed, paced = {}, {}, {}, {}, {}
+    paceSet = {}
     if copsDisabled then
         setRandomCops(true)
         copsDisabled = false
