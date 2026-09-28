@@ -13,6 +13,10 @@ test("a region suffix selects the base language", () => {
   assert.equal(setLanguage("pl-PL"), "pl");
   assert.equal(t("title"), "Ustawienia głosu");
   assert.equal(setLanguage("PL"), "pl");
+  assert.equal(setLanguage("es-ES"), "es");
+  assert.equal(t("title"), "Ajustes de voz");
+  assert.equal(setLanguage("fr"), "fr");
+  assert.equal(t("title"), "Paramètres vocaux");
   setLanguage("en");
 });
 

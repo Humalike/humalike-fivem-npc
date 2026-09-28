@@ -90,7 +90,8 @@ never required. [COMPATIBILITY.md](COMPATIBILITY.md) explains how the values
 reach the player's game.
 
 The texts HumaLike shows players itself (the `/voice` panel, its own prompts)
-are English by default; `set humalike_ui_language pl` switches them to Polish.
+are English by default; `set humalike_ui_language pl` switches them to Polish,
+`es` to Spanish and `fr` to French.
 Revive, mortuary and wound labels stay overridable one by one through their
 own convars. NPC labels show a flag next to NPCs whose language differs from
 the server's main one, `set humalike_npc_labels_default_language en` by
