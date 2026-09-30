@@ -68,7 +68,7 @@ CreateThread(function()
             end
             Wait(0)
         else
-            Wait(250)
+            Wait(100)
         end
     end
 end)

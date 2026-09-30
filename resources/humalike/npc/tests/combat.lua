@@ -68,7 +68,7 @@ function Wait(ms)
     if #waits > 2 then error('done') end
 end
 pcall(threads[2])
-assert(waits[1] == 250 and waits[2] == 250 and shootingChecks == 0,
+assert(waits[1] == 100 and waits[2] == 100 and shootingChecks == 0,
     'holstered, the gun poll sleeps and never asks')
 
 local damageNotes = {}

@@ -81,7 +81,10 @@ CreateThread(function()
                 ('%s~INPUT_CONTEXT~  %s'):format(
                     choiceHint, selectedOption.text or 'interact'))
             EndTextCommandDisplayHelp(0, false, true, -1)
-            if IsControlJustReleased(0, 38) and selectedOption.onSelect then
+            if IsControlJustReleased(0, 38) and selectedOption.onSelect
+                and DoesEntityExist(closest.entity) and usable(selectedOption, closest.entity)
+                and #(GetEntityCoords(PlayerPedId()) - GetEntityCoords(closest.entity))
+                    <= ((Config.AmbientControl or {}).InteractionDistance or 3.0) then
                 pcall(selectedOption.onSelect, closest.entity)
             end
             Wait(0)

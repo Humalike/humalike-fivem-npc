@@ -18,17 +18,23 @@ local BODY_KEYS = {
     'humalike_body_behaviour', 'humalike_body_scenario', 'humalike_walk_rate',
     'humalike_style_seed', 'humalike_vehicle_net',
 }
+local BODY_KEY = {}
+for _, key in ipairs(BODY_KEYS) do BODY_KEY[key] = true end
 
 local function config()
     return Config.Population
 end
 
--- One read per key per tick. Keys outside the list, and `:set`, reach the live bag.
+-- One read per key per tick, absent keys included. Keys outside the list,
+-- and `:set`, reach the live bag.
 local function snapshot(ped)
     local live = Entity(ped).state
     local state = {}
     for _, key in ipairs(BODY_KEYS) do state[key] = live[key] end
-    return setmetatable(state, { __index = live })
+    return setmetatable(state, { __index = function(_, key)
+        if BODY_KEY[key] then return nil end
+        return live[key]
+    end })
 end
 
 -- GetSafeCoordForPed: 2 not isolated, 4 not interior, 8 not water.

@@ -683,6 +683,20 @@ function Entity(ped)
 end
 HumalikeNpcPopulationClient.Tick(400000, false)
 assert(entityReads == 3, 'one bag read per script ped; GTA pedestrians are never read')
+local keyReads = 0
+local snapshotEntity = Entity
+function Entity(ped)
+    local entity = snapshotEntity(ped)
+    local values = entity.state
+    entity.state = setmetatable({}, { __index = function(_, key)
+        keyReads = keyReads + 1
+        return values[key]
+    end })
+    return entity
+end
+HumalikeNpcPopulationClient.Tick(400500, false)
+assert(keyReads == 27, 'nine keys per script ped, absent ones included, read once each')
+Entity = snapshotEntity
 entityReads = 0
 HumalikeNpcPopulationClient.SetState(true, false)
 HumalikeNpcPopulationClient.Tick(401000, true)
