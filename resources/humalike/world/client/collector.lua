@@ -13,6 +13,23 @@ local LISTENER_TURN_MIN_DOT = math.cos(math.rad(1.0))
 local LISTENER_HEARTBEAT_MS = 1000
 local lastAnnouncedListener = nil
 
+-- In-resource readers of the motion and listener samples are called directly:
+-- a local event would serialise every sample and visit every running resource.
+local subscribers = { motion = {}, listener = {} }
+
+function HumalikeWorldCollector.Subscribe(kind, callback)
+    local list = subscribers[kind]
+    if not list or type(callback) ~= 'function' then return false end
+    list[#list + 1] = callback
+    return true
+end
+
+local function publish(kind, value)
+    for _, callback in ipairs(subscribers[kind]) do
+        callback(HumalikeWorldContracts.Copy(value))
+    end
+end
+
 local function listenerChanged(listener)
     local last = lastAnnouncedListener
     if not last then return true end
@@ -87,7 +104,7 @@ function HumalikeWorldCollector.Sample(ped, now, position, velocity)
         },
     }
     HumalikeWorldCollector.latest = sample
-    TriggerEvent('humalike:world:playerMotion', HumalikeWorldContracts.Copy(sample))
+    publish('motion', sample)
     return sample
 end
 
@@ -112,7 +129,7 @@ function HumalikeWorldCollector.SampleListener(now, ped, position)
     HumalikeWorldCollector.listener = listener
     if listenerChanged(listener) then
         lastAnnouncedListener = listener
-        TriggerEvent('humalike:world:listener', HumalikeWorldContracts.Copy(listener))
+        publish('listener', listener)
     end
     return listener
 end

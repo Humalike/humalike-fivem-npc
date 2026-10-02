@@ -11,7 +11,8 @@ function RegisterNetEvent(name, callback)
     if callback then handlers[name] = callback end
 end
 function AddEventHandler(name, callback) handlers[name] = callback end
-function CreateThread() end
+local threads = {}
+function CreateThread(callback) threads[#threads + 1] = callback end
 function SetTimeout() end
 function TriggerServerEvent(name, ...)
     serverEvents[#serverEvents + 1] = { name = name, args = { ... } }
@@ -30,6 +31,10 @@ exports = setmetatable({
     },
 }, { __call = function() end })
 
+local collectorSubscribers = {}
+HumalikeWorldCollector = {
+    Subscribe = function(kind, callback) collectorSubscribers[kind] = callback end,
+}
 HumalikeVoicePtt = {}
 HumalikeUiLanguage = function() return 'en' end
 local directTargetsAvailable
@@ -45,6 +50,11 @@ assert(loadfile('client/main.lua'))()
 assert(type(nuiCallbacks.ready) == 'function')
 assert(type(handlers['humalike:world:registrationRequested']) == 'function')
 assert(type(handlers['humalike:world:voiceReconnect']) == 'function')
+collectorSubscribers.listener({ position = { x = 2 }, forward = { x = 1 } })
+assert(nuiMessages[#nuiMessages].type == 'game:listener'
+    and nuiMessages[#nuiMessages].position.x == 2, 'the listener goes straight to the NUI')
+collectorSubscribers.motion({ seq = 2 })
+assert(nuiMessages[#nuiMessages].type == 'game:realtime', 'and so does player motion')
 
 assert(nuiCallbacks.diagnostic == nil)
 assert(nuiCallbacks.cabinDiagnostic == nil)
@@ -82,4 +92,25 @@ assert(replayed['game:listener'], 'new NUI document did not receive current list
 handlers['humalike:world:voiceReconnect']()
 assert(nuiMessages[#nuiMessages].type == 'voice:reconnect',
     'voice assignment change did not request a NUI reconnect')
+
+-- The PTT poll reads the shared game key every 50 ms instead of every frame.
+dofile('client/ptt.lua')
+local controlDown = false
+function IsControlPressed() return controlDown end
+function IsDisabledControlPressed() return false end
+function PlayerPedId() return 0 end
+function DoesEntityExist() return false end
+function Wait(ms) coroutine.yield(ms) end
+local poll = coroutine.create(threads[1])
+local _, waited = coroutine.resume(poll)
+assert(waited == 50, 'a shared key is polled at 50 ms')
+controlDown = true
+_, waited = coroutine.resume(poll)
+assert(nuiMessages[#nuiMessages].type == 'voice:ptt' and nuiMessages[#nuiMessages].active == true,
+    'a press on the shared key is picked up on the next poll')
+controlDown = false
+function GetControlInstructionalButton(_, control) return control == 249 and 't_V' or 't_PTT' end
+nuiCallbacks.ready({ bootId = 'boot-c' }, function(response) assert(response.ok) end)
+_, waited = coroutine.resume(poll)
+assert(waited == 100, 'a key of its own needs only the busy poll')
 print('session_ready: ok')

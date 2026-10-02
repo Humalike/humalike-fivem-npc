@@ -12,6 +12,9 @@ local nuiBootId = nil
 local sessionRetryGeneration = 0
 local PTT_RELEASE_TAIL_MS = 200
 local PTT_POLL_MS = 100
+-- A key shared with the game's own PTT is read off the control natives; a
+-- held key shows up within this many ms.
+local PTT_SHARED_POLL_MS = 50
 local PTT_COMMAND = '+humalike_voice_ptt'
 local PTT_RELEASE_COMMAND = '-' .. PTT_COMMAND:sub(2)
 local PTT_CONTROL = GetHashKey(PTT_COMMAND) | 0x80000000
@@ -209,11 +212,11 @@ RegisterNetEvent('humalike:world:cabinMembership', function(snapshot)
         membership = cabinMembership, epoch = cabinEpoch, revision = cabinRevision })
 end)
 
-AddEventHandler('humalike:world:playerMotion', function(state)
+HumalikeWorldCollector.Subscribe('motion', function(state)
     SendNUIMessage({ type = 'game:realtime', state = state })
 end)
 
-AddEventHandler('humalike:world:listener', function(listener)
+HumalikeWorldCollector.Subscribe('listener', function(listener)
     SendNUIMessage({
         type = 'game:listener',
         position = listener.position,
@@ -281,7 +284,7 @@ RegisterKeyMapping(PTT_COMMAND, 'Humalike AI voice PTT', 'keyboard', 'N')
 CreateThread(function()
     while true do
         evaluatePtt()
-        Wait(pttSharesNativeBinding and 0 or PTT_POLL_MS)
+        Wait(pttSharesNativeBinding and PTT_SHARED_POLL_MS or PTT_POLL_MS)
     end
 end)
 
