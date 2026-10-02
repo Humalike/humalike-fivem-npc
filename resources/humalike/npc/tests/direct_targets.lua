@@ -22,7 +22,8 @@ HumalikeWorldRegistry = { entries = {
 } }
 
 function AddEventHandler(name, callback) handlers[name] = callback end
-function CreateThread() end
+local thread
+function CreateThread(callback) thread = callback end
 function GetGameTimer() return timer end
 function PlayerId() return 0 end
 function PlayerPedId() return 100 end
@@ -72,4 +73,26 @@ assert(#latest == 2 and latest[1] == 'follower' and latest[2] == 'far',
 HumalikeNpcDirectTargets.SetAvailable(false)
 assert(not HumalikeNpcDirectTargets.IsExclusive())
 assert(not HumalikeNpcDirectTargets.IsReady('follower'), 'UI readiness is capability gated')
+
+-- The refresh slows down while no NPC is within ten metres and nobody is a target.
+ActionControlledPeds = {}
+local forward = { forward = { x = 1, y = 0, z = 0 } }
+assert(HumalikeNpcDirectTargets.Refresh(forward) == true, 'NPCs within ten metres keep the fast refresh')
+for ped in pairs(positions) do
+    if ped ~= 100 then positions[ped] = { x = 50 + ped, y = 0, z = 0 } end
+end
+assert(HumalikeNpcDirectTargets.Refresh(forward) == false, 'an empty street is idle')
+ActionControlledPeds = { [1] = 'follow_player' }
+assert(HumalikeNpcDirectTargets.Refresh(forward) == true, 'a far follower is still a target')
+ActionControlledPeds = {}
+HumalikeWorldCollector = { listener = forward }
+function Wait(ms) coroutine.yield(ms) end
+local loop = coroutine.create(thread)
+local _, waited = coroutine.resume(loop)
+assert(waited == 100)
+_, waited = coroutine.resume(loop)
+assert(waited == 400, 'nothing nearby: the next refresh comes 400 ms later')
+positions[3] = { x = 4, y = 0, z = 0 }
+_, waited = coroutine.resume(loop)
+assert(waited == 100, 'and the fast refresh is back once an NPC is near')
 print('direct_targets: ok')

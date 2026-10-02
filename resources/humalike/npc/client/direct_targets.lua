@@ -1,6 +1,10 @@
 HumalikeNpcDirectTargets = HumalikeNpcDirectTargets or {}
 
 local REFRESH_MS = 100
+-- With no NPC this close (and no target), the refresh runs this much slower:
+-- nobody covers the distance to a gaze target between two refreshes.
+local IDLE_DISTANCE = 10.0
+local IDLE_REFRESH_MS = 400
 local GAZE_DISTANCE = 3.0
 local GAZE_MIN_DOT = math.cos(math.rad(20.0))
 local MAX_TARGETS = 16
@@ -59,6 +63,7 @@ local function calculate(listener)
     local forward = listener and listener.forward or nil
     local followers, vehiclePeers = {}, {}
     local gazeId, gazeDistance = nil, GAZE_DISTANCE + 1.0
+    local nearby = false
 
     for npcId, entry in pairs(HumalikeWorldRegistry.entries) do
         local ped = entry.entity
@@ -70,10 +75,11 @@ local function calculate(listener)
             if playerVehicle ~= 0 and GetVehiclePedIsIn(ped, false) == playerVehicle then
                 vehiclePeers[#vehiclePeers + 1] = npcId
             end
+            local coords = GetEntityCoords(ped)
+            local px, py, pz = coords.x - playerCoords.x, coords.y - playerCoords.y, coords.z - playerCoords.z
+            local playerDistance = math.sqrt(px * px + py * py + pz * pz)
+            if playerDistance <= IDLE_DISTANCE then nearby = true end
             if forward then
-                local coords = GetEntityCoords(ped)
-                local px, py, pz = coords.x - playerCoords.x, coords.y - playerCoords.y, coords.z - playerCoords.z
-                local playerDistance = math.sqrt(px * px + py * py + pz * pz)
                 if playerDistance > 0.01 and playerDistance <= GAZE_DISTANCE then
                     local dx, dy, dz = coords.x - camera.x, coords.y - camera.y, coords.z - camera.z
                     local cameraDistance = math.sqrt(dx * dx + dy * dy + dz * dz)
@@ -94,7 +100,7 @@ local function calculate(listener)
         local gazePed = HumalikeWorldRegistry.entries[gazeId].entity
         if HasEntityClearLosToEntity(playerPed, gazePed, 17) then result[#result + 1] = gazeId end
     end
-    return result
+    return result, nearby or #result > 0
 end
 
 function HumalikeNpcDirectTargets.Subscribe(callback)
@@ -137,15 +143,20 @@ function HumalikeNpcDirectTargets.IsExclusive()
     return available and #active > 0
 end
 
+-- True while an NPC is close enough (or already a target) to keep the fast refresh.
 function HumalikeNpcDirectTargets.Refresh(listener)
-    observed = calculate(listener)
+    local nearby
+    observed, nearby = calculate(listener)
     if not locked then publish(observed) end
+    return nearby
 end
 
 CreateThread(function()
+    local nearby = true
     while true do
-        Wait(REFRESH_MS)
+        Wait(nearby and REFRESH_MS or IDLE_REFRESH_MS)
         local listener = HumalikeWorldCollector and HumalikeWorldCollector.listener or nil
-        if listener then HumalikeNpcDirectTargets.Refresh(listener) end
+        nearby = true
+        if listener then nearby = HumalikeNpcDirectTargets.Refresh(listener) end
     end
 end)
