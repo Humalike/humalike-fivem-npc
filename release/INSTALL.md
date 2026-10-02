@@ -1,7 +1,8 @@
 # Install HumaLike for FiveM
 
 1. Verify `humalike.zip` using the adjacent `.sha256` file.
-2. Extract the included `humalike` directory into your FXServer resources directory.
+2. Extract the included `humalike` and `humalike-updater` directories into your
+   FXServer resources directory.
 3. Copy the required values from `humalike.example.cfg` into `server.cfg`.
 4. Keep the license behind `set`, never `setr`.
 5. Run `refresh`, then `ensure humalike`.
@@ -25,18 +26,21 @@ https://docs.humalike.com/ai-npc.
 
 On every start HumaLike checks for a newer release, installs it and restarts
 itself. Each update is signed by HumaLike and verified before any file is
-written; an update that fails verification is never installed. To let the
-resource restart itself, add these four lines to `server.cfg` (`ensure` runs
-`stop` and `start` on the resource's behalf):
+written; an update that fails verification is never installed.
+
+The archive includes a second, small resource, `humalike-updater`, which only
+restarts `humalike` after an update (a resource cannot safely restart itself).
+Put it next to `humalike` and add to `server.cfg`, before `ensure humalike`:
 
 ```cfg
-add_ace resource.humalike command.refresh allow
-add_ace resource.humalike command.ensure allow
-add_ace resource.humalike command.stop allow
-add_ace resource.humalike command.start allow
+ensure humalike-updater
+add_ace resource.humalike-updater command.refresh allow
+add_ace resource.humalike-updater command.ensure allow
+add_ace resource.humalike-updater command.stop allow
+add_ace resource.humalike-updater command.start allow
 ```
 
-Without these lines the update is still downloaded and applies on the next
+Without these lines the update is still installed and applies on the next
 server restart.
 
 | Setting | Effect |

@@ -11,13 +11,16 @@
 // Convars (server.cfg):
 //   set humalike_auto_update auto|notify|off   (default auto)
 //   set humalike_version "0.6.0"               pin one version (up or down)
-// Restarting itself needs four ACE grants (`ensure` runs `stop` and `start`
-// under the same principal); without them the files are written and the
-// update applies on the next server restart:
-//   add_ace resource.humalike command.refresh allow
-//   add_ace resource.humalike command.ensure allow
-//   add_ace resource.humalike command.stop allow
-//   add_ace resource.humalike command.start allow
+// A resource cannot safely restart itself from async code (it takes the whole
+// FXServer down, citizenfx/fivem#1421), so the companion resource
+// humalike-updater runs the restart. It needs four ACE grants (`ensure` runs
+// `stop` and `start` under its principal); without the companion or the grants
+// the files are written and the update applies on the next server restart:
+//   ensure humalike-updater
+//   add_ace resource.humalike-updater command.refresh allow
+//   add_ace resource.humalike-updater command.ensure allow
+//   add_ace resource.humalike-updater command.stop allow
+//   add_ace resource.humalike-updater command.start allow
 
 const crypto = require('crypto');
 const fs = require('fs');
@@ -35,8 +38,9 @@ const MAX_JSON_BYTES = 2 * 1024 * 1024;
 const MAX_BUNDLE_BYTES = 64 * 1024 * 1024;
 const REQUEST_TIMEOUT_MS = 30000;
 const MAX_REDIRECTS = 5;
-// `ensure` restarts the resource by running `stop` and `start` as this
-// resource's principal, so all four must be granted.
+// The companion that restarts humalike. `ensure` runs `stop` and `start` as
+// its principal, so it needs all four grants.
+const COMPANION = 'humalike-updater';
 const RESTART_COMMANDS = ['refresh', 'ensure', 'stop', 'start'];
 
 // Public halves of the keys allowed to sign releases. The private key lives
@@ -401,11 +405,11 @@ async function runUpdate(env, { force = false } = {}) {
     fs.writeFileSync(statePath, `${JSON.stringify({ attempted: target.version, from: current, at: new Date().toISOString() })}\n`);
 
     if (env.canRestart()) {
-        log(`update: installed ${target.version} (was ${current}); restarting humalike to apply it`);
+        log(`update: installed ${target.version} (was ${current}); ${COMPANION} restarts humalike to apply it`);
         env.restart();
         return { action: 'installed', target, restarted: true, reason: decision.reason };
     }
-    const grants = RESTART_COMMANDS.map((command) => `add_ace resource.${env.resourceName} command.${command} allow`).join('; ');
+    const grants = [`ensure ${COMPANION}`, ...RESTART_COMMANDS.map((command) => `add_ace resource.${COMPANION} command.${command} allow`)].join('; ');
     log(`update: installed ${target.version} (was ${current}); it applies on the next server restart. To apply updates automatically, add to server.cfg: ${grants}`);
     return { action: 'installed', target, restarted: false, reason: decision.reason };
 }
@@ -413,7 +417,7 @@ async function runUpdate(env, { force = false } = {}) {
 function fivemEnvironment() {
     const resourceName = GetCurrentResourceName();
     const source = String(GetConvar('humalike_update_source', DEFAULT_SOURCE) || DEFAULT_SOURCE).replace(/\/+$/, '');
-    const principal = `resource.${resourceName}`;
+    const principal = `resource.${COMPANION}`;
     return {
         resourceName,
         resourceDir: GetResourcePath(resourceName),
@@ -423,10 +427,11 @@ function fivemEnvironment() {
         log: (message) => console.log(`[humalike] ${message}`),
         fetchRelease: (suffix) => fetchRelease(source, suffix),
         download,
-        canRestart: () => RESTART_COMMANDS.every((command) => IsPrincipalAceAllowed(principal, `command.${command}`)),
-        // Never ExecuteCommand the restart from here: stopping the resource
-        // from its own JavaScript kills the FXServer process. restart.lua
-        // does it from the main thread.
+        canRestart: () => GetResourceState(COMPANION) === 'started'
+            && RESTART_COMMANDS.every((command) => IsPrincipalAceAllowed(principal, `command.${command}`)),
+        // Never ExecuteCommand the restart from here: a resource restarting
+        // itself from async code kills the FXServer process. The companion
+        // resource does it.
         restart: () => emit('humalike:update:restart'),
     };
 }
@@ -456,6 +461,7 @@ if (typeof GetCurrentResourceName === 'function' && typeof RegisterCommand === '
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
         BUNDLE_ASSET,
+        COMPANION,
         RESTART_COMMANDS,
         SIGNATURE_ASSET,
         STATE_DIR,

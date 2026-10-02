@@ -25,7 +25,6 @@ shared_scripts {
 
 server_scripts {
     'server/updater/updater.js',
-    'server/updater/restart.lua',
     'server/core/status.lua',
     'server/core/retries.lua',
     'server/core/export_result.lua',

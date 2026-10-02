@@ -279,7 +279,11 @@ def _write_deterministic_zip(source: Path, destination: Path) -> None:
 
 
 def _write_update_bundle(
-    resource_root: Path, destination: Path, lock: dict[str, Any], revision: str
+    resource_root: Path,
+    destination: Path,
+    lock: dict[str, Any],
+    resource: dict[str, Any],
+    revision: str,
 ) -> None:
     """The signed payload the in-game updater installs: every released file of
     the resource, relative to its directory, with its size and SHA-256."""
@@ -297,8 +301,8 @@ def _write_update_bundle(
     bundle = {
         "schema": 1,
         "product": lock["product"]["name"],
-        "resource": lock["resources"][0]["name"],
-        "version": lock["resources"][0]["version"],
+        "resource": resource["name"],
+        "version": resource["version"],
         "revision": revision,
         "files": files,
     }
@@ -323,10 +327,13 @@ def compose(lock_path: Path, output: Path, *, revision: str = "HEAD") -> Path:
         )
         lock = load_lock(committed_lock)
     resources = lock["resources"]
-    if len(resources) != 1:
-        raise ReleaseError("installable archive requires exactly one resource")
+    # One archive holds every released resource; the signed update bundle is
+    # the main resource's (the companion only restarts it).
+    main = next((item for item in resources if item["name"] == "humalike"), None)
+    if main is None:
+        raise ReleaseError("installable archive requires the humalike resource")
     output.mkdir(parents=True, exist_ok=True)
-    archive_path = output / f"{resources[0]['name']}.zip"
+    archive_path = output / "humalike.zip"
 
     with tempfile.TemporaryDirectory(prefix="humalike-release-") as temporary:
         scratch = Path(temporary)
@@ -351,9 +358,10 @@ def compose(lock_path: Path, output: Path, *, revision: str = "HEAD") -> Path:
 
         _write_deterministic_zip(package_root, archive_path)
         _write_update_bundle(
-            package_root / resources[0]["name"],
-            output / f"{resources[0]['name']}.update.json",
+            package_root / main["name"],
+            output / "humalike.update.json",
             lock,
+            main,
             resolved_revision,
         )
 

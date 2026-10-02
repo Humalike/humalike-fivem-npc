@@ -77,6 +77,11 @@ class ComposeReleaseTest(unittest.TestCase):
                 "web/dist/assets/app.js": "console.log('voice')\n",
             },
         )
+        self._resource(
+            "humalike-updater",
+            "fx_version 'cerulean'\ngame 'gta5'\nversion '0.1.0'\nserver_script 'server.lua'\n",
+            {"server.lua": "return true\n"},
+        )
         lock = {
             "schema_version": 2,
             "product": {
@@ -86,6 +91,7 @@ class ComposeReleaseTest(unittest.TestCase):
             },
             "resources": [
                 self._entry("humalike", ["fxmanifest.lua", "client", "web/dist"]),
+                self._entry("humalike-updater", ["fxmanifest.lua", "server.lua"]),
             ],
         }
         lock_path = self.root / "release.lock.json"
@@ -109,7 +115,13 @@ class ComposeReleaseTest(unittest.TestCase):
         with zipfile.ZipFile(first) as archive:
             names = archive.namelist()
             self.assertEqual(first.name, "humalike.zip")
-            self.assertTrue(all(name.startswith("humalike/") for name in names))
+            self.assertTrue(
+                all(
+                    name.startswith(("humalike/", "humalike-updater/"))
+                    for name in names
+                )
+            )
+            self.assertIn("humalike-updater/server.lua", names)
             self.assertIn("humalike/fxmanifest.lua", names)
             self.assertIn("humalike/client/main.lua", names)
             self.assertFalse(any("uncommitted-secret" in name for name in names))
@@ -134,7 +146,9 @@ class ComposeReleaseTest(unittest.TestCase):
                 self.assertEqual(base64.b64decode(entry["data"]), data)
             self.assertEqual(
                 sorted(f"humalike/{entry['path']}" for entry in bundle["files"]),
-                sorted(archive.namelist()),
+                sorted(
+                    name for name in archive.namelist() if name.startswith("humalike/")
+                ),
             )
         manifest = json.loads(first.with_suffix(".manifest.json").read_text())
         self.assertEqual(manifest["source"]["revision"], revision)
