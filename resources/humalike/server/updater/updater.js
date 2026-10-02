@@ -1,27 +1,5 @@
 'use strict';
 
-// Startup auto-update for the humalike resource.
-//
-// On resource start the server asks GitHub for the newest release (or the
-// version pinned with `humalike_version`), downloads its update bundle, checks
-// the Ed25519 signature against the keys below, writes the files over this
-// resource and restarts it. Nothing is installed unless the signature is valid
-// and every file matches the hash the signed bundle lists for it.
-//
-// Convars (server.cfg):
-//   set humalike_auto_update auto|notify|off   (default auto)
-//   set humalike_version "0.6.0"               pin one version (up or down)
-// A resource cannot safely restart itself from async code (it takes the whole
-// FXServer down, citizenfx/fivem#1421), so the companion resource
-// humalike-updater runs the restart. It needs four ACE grants (`ensure` runs
-// `stop` and `start` under its principal); without the companion or the grants
-// the files are written and the update applies on the next server restart:
-//   ensure humalike-updater
-//   add_ace resource.humalike-updater command.refresh allow
-//   add_ace resource.humalike-updater command.ensure allow
-//   add_ace resource.humalike-updater command.stop allow
-//   add_ace resource.humalike-updater command.start allow
-
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
@@ -38,14 +16,10 @@ const MAX_JSON_BYTES = 2 * 1024 * 1024;
 const MAX_BUNDLE_BYTES = 64 * 1024 * 1024;
 const REQUEST_TIMEOUT_MS = 30000;
 const MAX_REDIRECTS = 5;
-// The companion that restarts humalike. `ensure` runs `stop` and `start` as
-// its principal, so it needs all four grants.
 const COMPANION = 'humalike-updater';
 const RESTART_COMMANDS = ['refresh', 'ensure', 'stop', 'start'];
 
-// Public halves of the keys allowed to sign releases. The private key lives
-// only in the release pipeline. To rotate: add the new key here, ship a release
-// signed with the old one, then sign with the new key and drop the old one.
+// Rotate: add the new key, ship a release signed with the old one, then drop it.
 const TRUSTED_KEYS = [
     '-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA1JcqNqtX3ETrweHYLtrD5qH9X1328JUhAD2FCnlE7Rg=\n-----END PUBLIC KEY-----\n',
 ];
@@ -115,10 +89,7 @@ function releaseInfo(release) {
     };
 }
 
-// What to do this start. `latest` is the newest published release, `pinned`
-// the release named by humalike_version, `running` the release of the version
-// this server runs (null for unreleased builds). A release marked pre-release
-// after publication is withdrawn: servers on it move back to `latest`.
+// A release re-marked as pre-release is withdrawn: its servers move back to latest.
 function decide({ current, pin, latest, pinned, running }) {
     if (!parseVersion(current)) return { action: 'none', reason: `running version ${current} is not a release version` };
     if (pin) {
@@ -161,8 +132,6 @@ function verifySignature(bundleBytes, signatureText, keys = TRUSTED_KEYS) {
     });
 }
 
-// Checks the signature first, then the contents it vouches for. Returns the
-// files to install; throws on anything unexpected.
 function openBundle(bundleBytes, signatureText, expectedVersion, keys = TRUSTED_KEYS) {
     if (!verifySignature(bundleBytes, signatureText, keys)) {
         throw new UpdateError('update signature is not valid for any trusted key');
@@ -198,8 +167,7 @@ function openBundle(bundleBytes, signatureText, expectedVersion, keys = TRUSTED_
     return { version: bundle.version, revision: bundle.revision, files };
 }
 
-// FXServer wraps Node's fs and refuses mkdir on a resource's own root (even a
-// no-op recursive one), so only create directories that are actually missing.
+// FXServer refuses mkdir on a resource's own root, even a no-op recursive one.
 function ensureDir(dir) {
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 }
@@ -224,9 +192,6 @@ function listFiles(root, relative) {
     return out;
 }
 
-// Writes the bundle over the resource directory. Every file is staged first;
-// replaced files are kept in .humalike-update/previous until the next update,
-// and a failure while moving files into place restores them.
 function installBundle(resourceDir, bundle, currentVersion) {
     const stateDir = path.join(resourceDir, STATE_DIR);
     const staging = path.join(stateDir, 'staging');
@@ -242,8 +207,7 @@ function installBundle(resourceDir, bundle, currentVersion) {
     const incoming = new Set(bundle.files.map((file) => file.path));
     const record = readJson(path.join(stateDir, 'installed.json'));
     const recorded = record && Array.isArray(record.files) ? record.files.filter(safeRelativePath) : null;
-    // Without a record (first update from a hand-installed archive) only the
-    // NUI build is pruned: the manifest globs it, so stale chunks would ship.
+    // Without a record only the globbed NUI build is pruned.
     const stale = (recorded || listFiles(resourceDir, 'nui/host/dist'))
         .filter((relative) => !incoming.has(relative));
 
@@ -274,8 +238,6 @@ function installBundle(resourceDir, bundle, currentVersion) {
             moved.push(file.path);
         }
         for (const relative of stale) fs.rmSync(path.join(resourceDir, relative), { force: true });
-        // The record of what is installed changes only once every file is in
-        // place, so a failed update keeps the previous record.
         fs.writeFileSync(
             recordTemp,
             `${JSON.stringify({ version: bundle.version, revision: bundle.revision, files: [...incoming].sort() }, null, 2)}\n`,
@@ -285,9 +247,7 @@ function installBundle(resourceDir, bundle, currentVersion) {
         for (const relative of touched) {
             try {
                 fs.copyFileSync(path.join(previous, relative), path.join(resourceDir, relative));
-            } catch (restoreError) {
-                // keep restoring the rest
-            }
+            } catch (restoreError) {}
         }
         for (const relative of moved) {
             if (!touched.includes(relative)) fs.rmSync(path.join(resourceDir, relative), { force: true });
@@ -324,8 +284,6 @@ function request(url, { maxBytes, headers = {}, redirects = 0 } = {}) {
                     return;
                 }
                 const next = new URL(res.headers.location, parsed).toString();
-                // Asset downloads redirect to a storage host; never forward the
-                // API's Accept header there.
                 resolve(request(next, { maxBytes, headers: {}, redirects: redirects + 1 }));
                 return;
             }
@@ -368,8 +326,6 @@ async function download(asset, label) {
     return response.body;
 }
 
-// One update check. `env` carries everything FXServer-specific so tests can
-// run it with plain Node.
 async function runUpdate(env, { force = false } = {}) {
     const log = env.log;
     if (env.mode === 'off' && !force) return { action: 'none', reason: 'auto update is off' };
@@ -435,9 +391,8 @@ function fivemEnvironment() {
         download,
         canRestart: () => GetResourceState(COMPANION) === 'started'
             && RESTART_COMMANDS.every((command) => IsPrincipalAceAllowed(principal, `command.${command}`)),
-        // Never ExecuteCommand the restart from here: a resource restarting
-        // itself from async code kills the FXServer process. The companion
-        // resource does it.
+        // A resource restarting itself from async code crashes FXServer
+        // (citizenfx/fivem#1421), so humalike-updater does it.
         restart: () => emit('humalike:update:restart'),
     };
 }
@@ -457,7 +412,6 @@ async function guardedRun(options) {
 
 if (typeof GetCurrentResourceName === 'function' && typeof RegisterCommand === 'function') {
     setTimeout(() => guardedRun({}), 0);
-    // Server console only: check now and install even when the mode is notify.
     RegisterCommand('humalike_update', (source) => {
         if (Number(source) !== 0) return;
         guardedRun({ force: true });

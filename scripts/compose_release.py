@@ -89,9 +89,6 @@ def load_lock(path: Path) -> dict[str, Any]:
             raise ReleaseError(f"{name} must live at resources/{name}")
         if not SEMVER_PATTERN.fullmatch(str(resource.get("version", ""))):
             raise ReleaseError(f"{name} has an invalid version")
-        # Servers check the signed bundle's version against the release tag,
-        # which is the product version: a resource on another version would
-        # publish a release no server can install.
         if resource["version"] != product["version"]:
             raise ReleaseError(
                 f"{name} version {resource['version']} must equal product version {product['version']}"
@@ -292,8 +289,7 @@ def _write_update_bundle(
     resource: dict[str, Any],
     revision: str,
 ) -> None:
-    """The signed payload the in-game updater installs: every released file of
-    the resource, relative to its directory, with its size and SHA-256."""
+    """Write the bundle the in-game updater installs once it is signed."""
     files = []
     for path in sorted(item for item in resource_root.rglob("*") if item.is_file()):
         data = path.read_bytes()
@@ -334,8 +330,6 @@ def compose(lock_path: Path, output: Path, *, revision: str = "HEAD") -> Path:
         )
         lock = load_lock(committed_lock)
     resources = lock["resources"]
-    # One archive holds every released resource; the signed update bundle is
-    # the main resource's (the companion only restarts it).
     main = next((item for item in resources if item["name"] == "humalike"), None)
     if main is None:
         raise ReleaseError("installable archive requires the humalike resource")

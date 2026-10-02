@@ -161,7 +161,6 @@ test('installing replaces files, keeps the previous version and prunes stale NUI
     assert.equal(read(dir, 'fxmanifest.lua'), "version '0.6.0'\n");
     assert.equal(read(dir, 'nui/host/dist/assets/index-NEW.js'), 'new chunk\n');
     assert.equal(fs.existsSync(path.join(dir, 'nui/host/dist/assets/index-OLD.js')), false);
-    // Without an install record only the NUI build is pruned.
     assert.equal(read(dir, 'server/old.lua'), 'old\n');
     assert.equal(read(dir, 'custom.txt'), 'owner file\n');
     assert.equal(read(dir, '.humalike-update/previous/fxmanifest.lua'), "version '0.5.1'\n");
@@ -185,7 +184,6 @@ test('a second update removes files the previous release shipped and the new one
 
 test('a failed write restores the files that were there', () => {
     const dir = resourceDir({ 'fxmanifest.lua': 'old\n', 'server/a.lua': 'old a\n' });
-    // A directory where a file must go makes the rename fail midway.
     fs.mkdirSync(path.join(dir, 'server/b.lua'));
     const bytes = bundleFor('0.6.0', { 'fxmanifest.lua': 'new\n', 'server/a.lua': 'new a\n', 'server/b.lua': 'b' });
     assert.throws(
@@ -271,11 +269,9 @@ test('an install that did not take effect is not retried on every start', async 
     publish('0.6.0');
     env.releases.latest = release('0.6.0');
     await updater.runUpdate(env);
-    // Restarted, but the server still reports the old version.
     const again = await updater.runUpdate(env);
     assert.equal(again.action, 'none');
     assert.equal(events.restarts, 1);
-    // The console command forces a retry.
     const forced = await updater.runUpdate(env, { force: true });
     assert.equal(forced.action, 'installed');
 });

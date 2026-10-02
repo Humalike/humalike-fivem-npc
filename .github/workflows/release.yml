@@ -15,8 +15,6 @@ concurrency:
 jobs:
   release:
     runs-on: ubuntu-latest
-    # Servers install signed releases automatically, so publishing waits for a
-    # reviewer and the signing key exists only in this protected environment.
     environment: release
     steps:
       - uses: actions/checkout@v4

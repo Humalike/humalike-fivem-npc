@@ -1,11 +1,4 @@
 #!/usr/bin/env node
-// Signs a release's update bundle with the Ed25519 release key and refuses to
-// produce a signature the shipped updater would not accept.
-//
-//   HUMALIKE_RELEASE_SIGNING_KEY="$(cat key.pem)" node scripts/sign_update.mjs artifacts/humalike.update.json
-//
-// Writes <bundle>.sig (base64). The private key is only ever read from the
-// environment; it is never written to disk by this script.
 import { createPrivateKey, sign } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
