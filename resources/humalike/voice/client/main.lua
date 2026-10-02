@@ -113,6 +113,7 @@ RegisterNUICallback('ready', function(data, callback)
     callback({ ok = true })
     if bootChanged then
         HumalikeNpcDirectTargets.SetAvailable(false)
+        HumalikeWorldCollector.SetListenerDemand(false)
         syncNuiState()
         requestSession()
     end
@@ -212,16 +213,59 @@ RegisterNetEvent('humalike:world:cabinMembership', function(snapshot)
         membership = cabinMembership, epoch = cabinEpoch, revision = cabinRevision })
 end)
 
+-- The motion and listener samples are the two messages the NUI hears most
+-- (up to ten and thirty a second); they are encoded by hand instead of
+-- through the generic JSON encoder.
+local function finite(value)
+    value = tonumber(value) or 0.0
+    if value ~= value or value == math.huge or value == -math.huge then return 0.0 end
+    return value
+end
+
+local function jsonString(value)
+    value = tostring(value or '')
+    if value:find('[%c"\\]') then
+        value = value:gsub('[%c"\\]', function(char)
+            if char == '"' then return '\\"' end
+            if char == '\\' then return '\\\\' end
+            return ('\\u%04x'):format(char:byte())
+        end)
+    end
+    return '"' .. value .. '"'
+end
+
+function HumalikeVoiceRealtimeJson(state)
+    local p, v, flags = state.position, state.velocity, state.flags or {}
+    local vehicle = state.vehicle
+    local vehiclePart = vehicle and vehicle.networkId and vehicle.seat
+        and (',"vehicle":{"networkId":%d,"seat":%d}'):format(vehicle.networkId, vehicle.seat) or ''
+    return ('{"type":"game:realtime","state":{"v":%d,"type":"player_motion","bootId":%s,"sequence":%d,"clientTimeMs":%d,"position":{"x":%.3f,"y":%.3f,"z":%.3f},"velocity":{"x":%.3f,"y":%.3f,"z":%.3f},"heading":%.2f%s,"effectiveVoiceDistance":%.2f,"voiceMode":%d,"zone":%s,"flags":{"dead":%s,"paused":%s}}}'):format(
+        tonumber(state.v) or 1, jsonString(state.bootId), tonumber(state.sequence) or 0,
+        tonumber(state.clientTimeMs) or 0, finite(p.x), finite(p.y), finite(p.z),
+        finite(v.x), finite(v.y), finite(v.z), finite(state.heading), vehiclePart,
+        finite(state.effectiveVoiceDistance), tonumber(state.voiceMode) or 2,
+        jsonString(state.zone), flags.dead and 'true' or 'false', flags.paused and 'true' or 'false')
+end
+
+function HumalikeVoiceListenerJson(listener)
+    local p, f = listener.position, listener.forward
+    return ('{"type":"game:listener","position":{"x":%.3f,"y":%.3f,"z":%.3f},"forward":{"x":%.4f,"y":%.4f,"z":%.4f}}'):format(
+        finite(p.x), finite(p.y), finite(p.z), finite(f.x), finite(f.y), finite(f.z))
+end
+
 HumalikeWorldCollector.Subscribe('motion', function(state)
-    SendNUIMessage({ type = 'game:realtime', state = state })
+    SendNuiMessage(HumalikeVoiceRealtimeJson(state))
 end)
 
 HumalikeWorldCollector.Subscribe('listener', function(listener)
-    SendNUIMessage({
-        type = 'game:listener',
-        position = listener.position,
-        forward = listener.forward,
-    })
+    SendNuiMessage(HumalikeVoiceListenerJson(listener))
+end)
+
+-- The NUI reports whether any spatial voice source is attached; the ear is
+-- sampled thirty times a second only then.
+RegisterNUICallback('listenerDemand', function(data, callback)
+    HumalikeWorldCollector.SetListenerDemand(type(data) == 'table' and data.active == true)
+    callback({ ok = true })
 end)
 
 AddEventHandler('humalike:settings:applied', sendLocale)
@@ -294,9 +338,13 @@ CreateThread(function()
     if nuiReady then syncNuiState() end
 end)
 
+-- GetControlInstructionalButton costs a good fraction of a millisecond; a
+-- rebinding shows up within this many seconds (at once when the panel opens).
+local PTT_BINDING_REFRESH_MS = 15000
+
 CreateThread(function()
     while not stopping do
-        Wait(2000)
+        Wait(PTT_BINDING_REFRESH_MS)
         refreshPttBindings()
     end
 end)

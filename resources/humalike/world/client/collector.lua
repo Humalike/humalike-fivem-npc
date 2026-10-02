@@ -5,16 +5,19 @@ HumalikeWorldCollector = {
     latest = nil,
     listener = nil,
     voiceMode = 2,
+    listenerDemand = false,
 }
 
 -- The listener is announced when the ear moved or turned, or every heartbeat.
 local LISTENER_MOVE_THRESHOLD = 0.05 -- metres
 local LISTENER_TURN_MIN_DOT = math.cos(math.rad(1.0))
 local LISTENER_HEARTBEAT_MS = 1000
+-- With nothing spatial playing in the NUI the ear is sampled this often instead.
+local LISTENER_IDLE_MS = 250
 local lastAnnouncedListener = nil
 
--- In-resource readers of the motion and listener samples are called directly:
--- a local event would serialise every sample and visit every running resource.
+-- In-resource readers of the motion and listener samples are called directly
+-- with the one sample table; they read it and never keep or change it.
 local subscribers = { motion = {}, listener = {} }
 
 function HumalikeWorldCollector.Subscribe(kind, callback)
@@ -25,20 +28,19 @@ function HumalikeWorldCollector.Subscribe(kind, callback)
 end
 
 local function publish(kind, value)
-    for _, callback in ipairs(subscribers[kind]) do
-        callback(HumalikeWorldContracts.Copy(value))
-    end
+    local list = subscribers[kind]
+    for index = 1, #list do list[index](value) end
 end
 
-local function listenerChanged(listener)
+local function listenerChanged(now, px, py, pz, fx, fy, fz)
     local last = lastAnnouncedListener
     if not last then return true end
-    if listener.clientTimeMs - last.clientTimeMs >= LISTENER_HEARTBEAT_MS then return true end
-    local p, q = listener.position, last.position
-    if math.abs(p.x - q.x) > LISTENER_MOVE_THRESHOLD or math.abs(p.y - q.y) > LISTENER_MOVE_THRESHOLD
-        or math.abs(p.z - q.z) > LISTENER_MOVE_THRESHOLD then return true end
-    local f, g = listener.forward, last.forward
-    return f.x * g.x + f.y * g.y + f.z * g.z < LISTENER_TURN_MIN_DOT
+    if now - last.clientTimeMs >= LISTENER_HEARTBEAT_MS then return true end
+    local q = last.position
+    if math.abs(px - q.x) > LISTENER_MOVE_THRESHOLD or math.abs(py - q.y) > LISTENER_MOVE_THRESHOLD
+        or math.abs(pz - q.z) > LISTENER_MOVE_THRESHOLD then return true end
+    local g = last.forward
+    return fx * g.x + fy * g.y + fz * g.z < LISTENER_TURN_MIN_DOT
 end
 
 local function randomHex(length)
@@ -54,24 +56,6 @@ end
 
 local function vec(value)
     return { x = value.x + 0.0, y = value.y + 0.0, z = value.z + 0.0 }
-end
-
-local function cameraForward()
-    local rotation = GetGameplayCamRot(2)
-    local pitch, yaw = math.rad(rotation.x), math.rad(rotation.z)
-    local cosPitch = math.abs(math.cos(pitch))
-    return { x = -math.sin(yaw) * cosPitch, y = math.cos(yaw) * cosPitch, z = math.sin(pitch) }
-end
-
-local function vehicleState(ped)
-    local vehicle = GetVehiclePedIsIn(ped, false)
-    if vehicle == 0 or not NetworkGetEntityIsNetworked(vehicle) then return nil end
-    local seat = -2
-    for index = -1, GetVehicleMaxNumberOfPassengers(vehicle) - 1 do
-        if GetPedInVehicleSeat(vehicle, index) == ped then seat = index break end
-    end
-    if seat == -2 then return nil end
-    return { networkId = NetworkGetNetworkIdFromEntity(vehicle), seat = seat }
 end
 
 local function voiceDistance()
@@ -94,7 +78,7 @@ function HumalikeWorldCollector.Sample(ped, now, position, velocity)
         position = vec(position),
         velocity = vec(velocity),
         heading = GetEntityHeading(ped) + 0.0,
-        vehicle = vehicleState(ped),
+        vehicle = HumalikeWorldVehicle.StreamState(ped, now),
         effectiveVoiceDistance = voiceDistance(),
         voiceMode = HumalikeWorldCollector.voiceMode,
         zone = GetNameOfZone(position.x, position.y, position.z),
@@ -115,19 +99,30 @@ function HumalikeWorldCollector.SetVoiceMode(mode)
     return true
 end
 
+-- The NUI says whether anything spatial is playing; only then is the ear
+-- worth sampling thirty times a second.
+function HumalikeWorldCollector.SetListenerDemand(active)
+    HumalikeWorldCollector.listenerDemand = active == true
+end
+
 function HumalikeWorldCollector.SampleListener(now, ped, position)
     ped = ped or PlayerPedId()
-    if not ped or ped <= 0 or not DoesEntityExist(ped) then return nil end
+    if not ped or ped <= 0 then return nil end
+    position = position or GetEntityCoords(ped)
+    local rotation = GetGameplayCamRot(2)
+    local pitch, yaw = math.rad(rotation.x), math.rad(rotation.z)
+    local cosPitch = math.abs(math.cos(pitch))
+    local fx, fy, fz = -math.sin(yaw) * cosPitch, math.cos(yaw) * cosPitch, math.sin(pitch)
     HumalikeWorldCollector.listenerSequence = HumalikeWorldCollector.listenerSequence + 1
     local listener = {
         v = 1,
         sequence = HumalikeWorldCollector.listenerSequence,
         clientTimeMs = now,
-        position = vec(position or GetEntityCoords(ped)),
-        forward = cameraForward(),
+        position = { x = position.x + 0.0, y = position.y + 0.0, z = position.z + 0.0 },
+        forward = { x = fx, y = fy, z = fz },
     }
     HumalikeWorldCollector.listener = listener
-    if listenerChanged(listener) then
+    if listenerChanged(now, position.x, position.y, position.z, fx, fy, fz) then
         lastAnnouncedListener = listener
         publish('listener', listener)
     end
@@ -139,11 +134,11 @@ function HumalikeWorldCollector.Start()
     CreateThread(function()
         while true do
             local ped = PlayerPedId()
-            if ped and ped > 0 and DoesEntityExist(ped) then
-                HumalikeWorldCollector.SampleListener(
-                    GetGameTimer(), ped, GetEntityCoords(ped))
+            if ped and ped > 0 then
+                HumalikeWorldCollector.SampleListener(GetGameTimer(), ped, GetEntityCoords(ped))
             end
-            Wait(WorldConfig.collector.listenerIntervalMs)
+            Wait(HumalikeWorldCollector.listenerDemand
+                and WorldConfig.collector.listenerIntervalMs or LISTENER_IDLE_MS)
         end
     end)
 
@@ -153,7 +148,7 @@ function HumalikeWorldCollector.Start()
             tonumber(WorldConfig.collector.movingIntervalMs) or 100))
         while true do
             local now, ped = GetGameTimer(), PlayerPedId()
-            if ped and ped > 0 and DoesEntityExist(ped) then
+            if ped and ped > 0 then
                 local position, velocity = GetEntityCoords(ped), GetEntityVelocity(ped)
                 local moving = #velocity > WorldConfig.collector.movementThreshold
                 local interval = moving and WorldConfig.collector.movingIntervalMs

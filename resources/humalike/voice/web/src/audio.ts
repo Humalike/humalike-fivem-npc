@@ -33,11 +33,14 @@ export class AudioEngine {
   #activeRemotes = new Set<string>();
   #renderTimer = 0;
   readonly #onNPCSpeaking: (id: string, active: boolean) => void;
+  readonly #onSpatialDemand: (active: boolean) => void;
 
   constructor(
     onNPCSpeaking: (id: string, active: boolean) => void = () => undefined,
+    onSpatialDemand: (active: boolean) => void = () => undefined,
   ) {
     this.#onNPCSpeaking = onNPCSpeaking;
+    this.#onSpatialDemand = onSpatialDemand;
     this.npc.connect(this.master); this.master.connect(this.context.destination);
     this.context.addEventListener("statechange", () => {
       for (const remote of this.#remotes.values()) this.updateRoute(remote.route);
@@ -110,6 +113,7 @@ export class AudioEngine {
       velocity: route.velocity ?? { x: 0, y: 0, z: 0 }, receivedAt: performance.now(),
       route, transmitting: false, releaseTimer: 0,
     });
+    if (this.#remotes.size === 1) this.#onSpatialDemand(true);
     this.updateRoute(route);
   }
 
@@ -162,6 +166,7 @@ export class AudioEngine {
     remote.source.disconnect(); remote.audible.disconnect();
     remote.distance.disconnect(); remote.panner?.disconnect(); this.#remotes.delete(identity);
     this.#activeRemotes.delete(identity); this.#stopRenderLoopIfIdle();
+    if (this.#remotes.size === 0) this.#onSpatialDemand(false);
   }
 
   #ensureRenderLoop(): void {

@@ -8,8 +8,7 @@ WorldConfig = {
         defaultVoiceDistance = 10.0, maxVoiceDistance = 20.0,
     },
 }
-local copies = 0
-HumalikeWorldContracts = { Copy = function(value) copies = copies + 1 return value end }
+HumalikeWorldContracts = { Copy = function() error('readers get the sample itself, not a copy') end }
 local announced = {}
 local position = { x = 0.0, y = 0.0, z = 0.0 }
 local yaw = 0.0
@@ -45,5 +44,22 @@ assert(#announced == 3, 'half a degree is noise')
 yaw = 3.0
 sample()
 assert(#announced == 4 and announced[4].position.x == 0.2, 'a turn is announced')
-assert(copies == 4, 'each reader gets its own copy')
+assert(announced[4] == HumalikeWorldCollector.listener, 'readers see the one sample table')
+
+-- The ear is sampled fast only while the NUI has something spatial playing.
+local waits = {}
+function Wait(ms) waits[#waits + 1] = ms coroutine.yield() end
+function GetGameTimer() return now end
+local threads = {}
+function CreateThread(callback) threads[#threads + 1] = callback end
+HumalikeWorldCollector.Start()
+local listenerThread = coroutine.create(threads[1])
+coroutine.resume(listenerThread)
+assert(waits[1] == 250, 'idle: four samples a second')
+HumalikeWorldCollector.SetListenerDemand(true)
+coroutine.resume(listenerThread)
+assert(waits[2] == 33, 'with a voice source attached: thirty a second')
+HumalikeWorldCollector.SetListenerDemand(false)
+coroutine.resume(listenerThread)
+assert(waits[3] == 250)
 print('client_collector: ok')

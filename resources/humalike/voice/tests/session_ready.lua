@@ -18,6 +18,8 @@ function TriggerServerEvent(name, ...)
     serverEvents[#serverEvents + 1] = { name = name, args = { ... } }
 end
 function SendNUIMessage(message) nuiMessages[#nuiMessages + 1] = message end
+local rawMessages = {}
+function SendNuiMessage(message) rawMessages[#rawMessages + 1] = message end
 function SetNuiFocus() end
 function GetControlInstructionalButton() return 't_PTT' end
 function GetHashKey() return 0x1234 end
@@ -50,11 +52,24 @@ assert(loadfile('client/main.lua'))()
 assert(type(nuiCallbacks.ready) == 'function')
 assert(type(handlers['humalike:world:registrationRequested']) == 'function')
 assert(type(handlers['humalike:world:voiceReconnect']) == 'function')
-collectorSubscribers.listener({ position = { x = 2 }, forward = { x = 1 } })
-assert(nuiMessages[#nuiMessages].type == 'game:listener'
-    and nuiMessages[#nuiMessages].position.x == 2, 'the listener goes straight to the NUI')
-collectorSubscribers.motion({ seq = 2 })
-assert(nuiMessages[#nuiMessages].type == 'game:realtime', 'and so does player motion')
+collectorSubscribers.listener({ position = { x = 2, y = 0, z = 0 }, forward = { x = 1, y = 0, z = 0 } })
+assert(rawMessages[#rawMessages] == '{"type":"game:listener","position":{"x":2.000,"y":0.000,"z":0.000},"forward":{"x":1.0000,"y":0.0000,"z":0.0000}}',
+    'the listener goes straight to the NUI, encoded by hand')
+collectorSubscribers.motion({ v = 1, bootId = 'boot', sequence = 2, clientTimeMs = 1234,
+    position = { x = 1, y = 2, z = 3 }, velocity = { x = 0, y = 0, z = 0 }, heading = 90,
+    vehicle = { networkId = 501, seat = -1, kind = 'car' }, effectiveVoiceDistance = 15,
+    voiceMode = 2, zone = 'DOWNT', flags = { dead = false, paused = true } })
+assert(rawMessages[#rawMessages] == '{"type":"game:realtime","state":{"v":1,"type":"player_motion","bootId":"boot","sequence":2,"clientTimeMs":1234,"position":{"x":1.000,"y":2.000,"z":3.000},"velocity":{"x":0.000,"y":0.000,"z":0.000},"heading":90.00,"vehicle":{"networkId":501,"seat":-1},"effectiveVoiceDistance":15.00,"voiceMode":2,"zone":"DOWNT","flags":{"dead":false,"paused":true}}}',
+    'and so does player motion, without the vehicle kind the voice router never asked for')
+collectorSubscribers.motion({ position = { x = 1, y = 2, z = 3 }, velocity = {}, flags = {} })
+assert(rawMessages[#rawMessages]:find('"zone":""', 1, true) and not rawMessages[#rawMessages]:find('vehicle', 1, true),
+    'a sample on foot has no vehicle')
+local listenerDemand
+HumalikeWorldCollector.SetListenerDemand = function(active) listenerDemand = active end
+nuiCallbacks.listenerDemand({ active = true }, function() end)
+assert(listenerDemand == true, 'the NUI drives the fast listener sampling')
+nuiCallbacks.listenerDemand({}, function() end)
+assert(listenerDemand == false)
 
 assert(nuiCallbacks.diagnostic == nil)
 assert(nuiCallbacks.cabinDiagnostic == nil)

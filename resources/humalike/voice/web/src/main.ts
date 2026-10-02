@@ -185,7 +185,7 @@ function handleControlMessage(message: ServerMessage): void {
 async function connectMedia(url: string, token: string, expectedServerId: string): Promise<void> {
   let client: MediaClient | null = null;
   try {
-    audio ??= new AudioEngine(reportNPCSpeech);
+    audio ??= new AudioEngine(reportNPCSpeech, reportSpatialDemand);
     audio.setNPCVolume(settings.npcVolume); audio.setMasterVolume(1);
     await audio.resume(); await applyOutput();
     client = new MediaClient(expectedServerId, (identity, stream) => {
@@ -369,7 +369,7 @@ async function testOutput(): Promise<void> {
   if (deviceTestRunning) return;
   deviceTestRunning = true; setDeviceTestButtons(true); clearError();
   try {
-    audio ??= new AudioEngine(reportNPCSpeech);
+    audio ??= new AudioEngine(reportNPCSpeech, reportSpatialDemand);
     audio.setNPCVolume(settings.npcVolume); audio.setMasterVolume(1);
     await applyOutput(); await audio.playHeadphoneTest("audio/voice-test.wav");
   } catch (error) { fail(error instanceof Error ? error.message : t("error.testOutput")); }
@@ -411,6 +411,11 @@ function sameStrings(left: string[], right: string[]): boolean {
 }
 function reportNPCSpeech(id: string, active: boolean): void {
   nuiBestEffort("actorSpeechState", { kind: "npc", id, active });
+}
+// The game samples the listener thirty times a second only while something
+// spatial is attached here.
+function reportSpatialDemand(active: boolean): void {
+  nuiBestEffort("listenerDemand", { active });
 }
 function fillDevices(select: HTMLSelectElement, devices: MediaDeviceInfo[], selected: string, fallback: string): void {
   select.replaceChildren(new Option(fallback, ""));

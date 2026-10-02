@@ -7,110 +7,151 @@ HumalikeWorldNpcEdge = {
     sentFrames = 0,
     coalescedFrames = 0,
     lastError = nil,
+    lastSentAt = 0,
+    lastKeyframeAt = nil, -- nil: the next frame is a keyframe
 }
+
+-- The edge keeps an NPC's last position until it is told otherwise, so a frame
+-- carries only what changed. The whole scene goes out again every KEYFRAME_MS
+-- (a frame can be lost when two land in one of the edge's 200 ms windows),
+-- and a frame goes out at least every KEEPALIVE_MS: the edge forgets a player
+-- it has not heard from for three seconds.
+local KEEPALIVE_MS = 1000
+local KEYFRAME_MS = 2000
+local PLAYER_MOVE_EPSILON = 0.1 -- metres
+
+local sent = {} -- npcId -> track version last reported
+
+-- Frames are encoded by hand: the generic JSON encoder spent a millisecond or
+-- two on a 32-NPC frame, five times a second.
+local function jsonString(value)
+    value = tostring(value)
+    if value:find('[%c"\\]') then
+        value = value:gsub('[%c"\\]', function(char)
+            if char == '"' then return '\\"' end
+            if char == '\\' then return '\\\\' end
+            return ('\\u%04x'):format(char:byte())
+        end)
+    end
+    return '"' .. value .. '"'
+end
+
+local function finite(value)
+    value = tonumber(value) or 0.0
+    if value ~= value or value == math.huge or value == -math.huge then return 0.0 end
+    return value
+end
+
+local function vehicleJson(state)
+    if not state then return '' end
+    return (',"vehicle":{"network_id":%d,"seat":%d,"kind":"%s"}'):format(
+        state.network_id, state.seat, state.kind == 'bike' and 'bike' or 'car')
+end
+
+local function ownVehicleJson(own)
+    if not own then return '' end
+    return (',"own_vehicle":{"network_id":%d,"distance_m":%.2f,"in_reach":%s,"kind":"%s"}'):format(
+        own.network_id, finite(own.distance_m), own.in_reach and 'true' or 'false',
+        own.kind == 'bike' and 'bike' or 'car')
+end
 
 local function unsignedHash(value)
     return value < 0 and value + 4294967296 or value
 end
 
-local function ambientIdentityMatches(entry, ped, networkId)
-    if entry.kind ~= 'ambient' then return true end
-    if not NetworkGetEntityIsNetworked(ped)
-        or NetworkGetNetworkIdFromEntity(ped) ~= networkId
-        or not NetworkDoesEntityExistWithNetworkId(networkId)
-        or NetworkGetEntityFromNetworkId(networkId) ~= ped then return false end
-    return Entity(ped).state.humalike_npc_id == entry.npcId
+-- The identity half of an NPC's sample never changes for a registration.
+local function prefixOf(track)
+    if track.edgePrefix and track.edgePrefixGeneration == track.generation then
+        return track.edgePrefix
+    end
+    local entry = track.entry
+    local modelHash = entry.modelHash
+    if not modelHash then modelHash = unsignedHash(GetEntityModel(track.ped)) end
+    track.edgePrefix = ('{"npc_id":%s,"entity_id":%d,"network_id":%d,"model_hash":%d,"runtime_token":%s'):format(
+        jsonString(entry.npcId), entry.entityId, entry.networkId, modelHash, jsonString(entry.runtimeToken))
+    track.edgePrefixGeneration = track.generation
+    return track.edgePrefix
 end
 
--- A frame's samples are taken this many per game frame, so a crowd never
--- lands its whole cost on one frame.
-local SAMPLES_PER_SLICE = 8
-
-local function npcSample(candidate)
-    local entry, ped = candidate.entry, candidate.entry.entity
-    if not DoesEntityExist(ped) then return nil end -- gone since the scan, a frame or two ago
-    local entityId = tonumber(entry.entityId)
-    local networkId = tonumber(entry.networkId) or NetworkGetNetworkIdFromEntity(ped)
-    if not entityId or entityId <= 0 or not networkId or networkId <= 0 then return nil end
-    if not ambientIdentityMatches(entry, ped, networkId) then return nil end
-    local position = candidate.position
-    return {
-        npc_id = entry.npcId,
-        entity_id = entityId,
-        network_id = networkId,
-        model_hash = entry.modelHash or unsignedHash(GetEntityModel(ped)),
-        runtime_token = entry.runtimeToken,
-        x = position.x, y = position.y, z = position.z,
-        heading = GetEntityHeading(ped),
-        zone_code = GetNameOfZone(position.x, position.y, position.z),
-        vehicle = HumalikeWorldVehicle.StreamState(ped),
-        own_vehicle = HumalikeWorldVehicle.OwnState(ped),
-    }
+local function npcJson(track)
+    local zone = track.zone and (',"zone_code":%s'):format(jsonString(track.zone)) or ''
+    return ('%s,"x":%.3f,"y":%.3f,"z":%.3f,"heading":%.2f%s%s%s}'):format(
+        prefixOf(track), finite(track.x), finite(track.y), finite(track.z), finite(track.heading),
+        zone, vehicleJson(track.vehicleState), ownVehicleJson(track.ownVehicle))
 end
 
-local function priority(entry, distanceSquared, speedSquared)
-    if entry.activity == 'talking' then return 4 end
-    if entry.activity == 'moving' then return 3 end
-    local threshold = WorldConfig.collector.movementThreshold
-    if speedSquared > threshold * threshold then return 3 end
-    if distanceSquared <= 30.0 * 30.0 then return 2 end
-    return entry.activity == 'nearby' and 2 or 1
+local function reportable(track)
+    local entry = track.entry
+    local entityId, networkId = tonumber(entry.entityId), tonumber(entry.networkId)
+    return track.exists and track.identityOk and entityId and entityId > 0 and networkId and networkId > 0
 end
 
-local function collect(playerPosition, sliced)
+local function priority(track)
+    local activity = track.entry.activity
+    if activity == 'talking' then return 4 end
+    if activity == 'moving' then return 3 end
+    if track.speed > WorldConfig.collector.movementThreshold then return 3 end
+    if track.dist2 <= 30.0 * 30.0 then return 2 end
+    return activity == 'nearby' and 2 or 1
+end
+
+local sorter = function(a, b)
+    if a.priority ~= b.priority then return a.priority > b.priority end
+    return a.npcId < b.npcId
+end
+
+-- The tracks to report this frame, urgent ones first. A keyframe takes every
+-- reportable track; a delta takes the ones whose cache changed since they were
+-- last reported. More than the per-frame cap rotates through the rest.
+function HumalikeWorldNpcEdge.Select(keyframe)
     local urgent, regular = {}, {}
-    local reportRadiusSquared = WorldConfig.npcEdge.reportRadius
-        * WorldConfig.npcEdge.reportRadius
-    for _, entry in pairs(HumalikeWorldRegistry.entries) do
-        local ped = entry.entity
-        if DoesEntityExist(ped) then
-            local position = GetEntityCoords(ped)
-            local dx, dy, dz = position.x - playerPosition.x, position.y - playerPosition.y,
-                position.z - playerPosition.z
-            local distanceSquared = dx * dx + dy * dy + dz * dz
-            if distanceSquared <= reportRadiusSquared then
-                local velocity = GetEntityVelocity(ped)
-                local speedSquared = velocity.x * velocity.x + velocity.y * velocity.y
-                    + velocity.z * velocity.z
-                local candidate = {
-                    entry = entry,
-                    position = position,
-                    priority = priority(entry, distanceSquared, speedSquared),
-                }
-                local target = candidate.priority >= 3 and urgent or regular
-                target[#target + 1] = candidate
-            end
+    local radius2 = WorldConfig.npcEdge.reportRadius * WorldConfig.npcEdge.reportRadius
+    for npcId, track in pairs(HumalikeWorldTrack.tracks) do
+        if reportable(track) and track.dist2 <= radius2
+            and (keyframe or sent[npcId] ~= track.version) then
+            track.priority = priority(track)
+            local target = track.priority >= 3 and urgent or regular
+            target[#target + 1] = track
         end
     end
-    local sorter = function(a, b)
-        if a.priority ~= b.priority then return a.priority > b.priority end
-        return a.entry.npcId < b.entry.npcId
+    for npcId in pairs(sent) do
+        if not HumalikeWorldTrack.tracks[npcId] then sent[npcId] = nil end
     end
+    if #urgent == 0 and #regular == 0 then return urgent end
     table.sort(urgent, sorter)
     table.sort(regular, sorter)
-    if #urgent == 0 and #regular == 0 then return {} end
-    local samples = {}
-    local taken = 0
-    local function sampleOf(candidate)
-        if sliced and taken > 0 and taken % SAMPLES_PER_SLICE == 0 then Wait(0) end
-        taken = taken + 1
-        return npcSample(candidate)
-    end
-    for index = 1, math.min(#urgent, WorldConfig.npcEdge.maxNpcsPerFrame) do
-        local sample = sampleOf(urgent[index])
-        if sample then samples[#samples + 1] = sample end
-    end
-    local remaining = WorldConfig.npcEdge.maxNpcsPerFrame - #samples
+    local cap = WorldConfig.npcEdge.maxNpcsPerFrame
+    local selected = {}
+    for index = 1, math.min(#urgent, cap) do selected[#selected + 1] = urgent[index] end
+    local remaining = cap - #selected
     if remaining > 0 and #regular > 0 then
         if HumalikeWorldNpcEdge.cursor > #regular then HumalikeWorldNpcEdge.cursor = 1 end
         for offset = 0, math.min(remaining, #regular) - 1 do
             local index = ((HumalikeWorldNpcEdge.cursor + offset - 1) % #regular) + 1
-            local sample = sampleOf(regular[index])
-            if sample then samples[#samples + 1] = sample end
+            selected[#selected + 1] = regular[index]
         end
         HumalikeWorldNpcEdge.cursor = ((HumalikeWorldNpcEdge.cursor + remaining - 1) % #regular) + 1
     end
-    return samples
+    return selected
+end
+
+-- The NUI message, pre-encoded: `{"type":"npc_edge_frame","frame":{...}}`.
+function HumalikeWorldNpcEdge.Encode(player, sequence, selected)
+    local parts = {}
+    for index, track in ipairs(selected) do
+        parts[index] = npcJson(track)
+        sent[track.npcId] = track.version
+    end
+    local position = player.position
+    local vehicle = player.vehicle
+    local vehiclePart = ''
+    if vehicle and vehicle.networkId and vehicle.seat then
+        vehiclePart = (',"vehicle":{"network_id":%d,"seat":%d,"kind":"%s"}'):format(
+            vehicle.networkId, vehicle.seat, vehicle.kind == 'bike' and 'bike' or 'car')
+    end
+    return ('{"type":"npc_edge_frame","frame":{"type":"positions","sequence":%d,"player":{"x":%.3f,"y":%.3f,"z":%.3f,"effective_voice_distance":%.2f%s},"npcs":[%s]}}'):format(
+        sequence, finite(position.x), finite(position.y), finite(position.z),
+        finite(player.effectiveVoiceDistance), vehiclePart, table.concat(parts, ','))
 end
 
 function HumalikeWorldNpcEdge.RequestTicket()
@@ -127,6 +168,11 @@ function HumalikeWorldNpcEdge.RequestTicket()
     end)
 end
 
+local function resetReports()
+    sent = {}
+    HumalikeWorldNpcEdge.lastKeyframeAt = nil
+end
+
 RegisterNetEvent('humalike:world:npcEdgeTicket', function(ticket, expectedBootId)
     if expectedBootId ~= HumalikeWorldCollector.bootId or type(ticket) ~= 'table' then return end
     HumalikeWorldNpcEdge.ticketGeneration = HumalikeWorldNpcEdge.ticketGeneration + 1
@@ -134,6 +180,7 @@ RegisterNetEvent('humalike:world:npcEdgeTicket', function(ticket, expectedBootId
     ticket.type = 'npc_edge_connect'
     ticket.client_boot_id = HumalikeWorldCollector.bootId
     HumalikeWorldNpcEdge.connected = false
+    resetReports()
     SendNUIMessage(ticket)
 end)
 
@@ -141,6 +188,7 @@ RegisterNetEvent('humalike:world:npcEdgeReconnect', function()
     HumalikeWorldNpcEdge.ticketGeneration = HumalikeWorldNpcEdge.ticketGeneration + 1
     HumalikeWorldNpcEdge.ticketPending = false
     HumalikeWorldNpcEdge.connected = false
+    resetReports()
     SendNUIMessage({ type = 'npc_edge_disconnect' })
     HumalikeWorldNpcEdge.RequestTicket()
 end)
@@ -148,6 +196,7 @@ end)
 RegisterNUICallback('npcEdgeReady', function(_, callback)
     HumalikeWorldNpcEdge.connected = true
     HumalikeWorldNpcEdge.lastError = nil
+    resetReports() -- a fresh socket starts with a keyframe
     TriggerEvent('humalike:world:npcSinkStatus', 'ready')
     callback({ ok = true })
 end)
@@ -167,18 +216,40 @@ RegisterNUICallback('npcEdgeStats', function(body, callback)
     callback({ ok = true })
 end)
 
--- `sliced` spreads the per-NPC sampling over a few frames (the caller is a thread).
-function HumalikeWorldNpcEdge.BuildPositionsFrame(player, playerPed, sequence, sliced)
-    return {
-        type = 'positions',
-        sequence = sequence,
-        player = {
-            x = player.position.x, y = player.position.y, z = player.position.z,
-            effective_voice_distance = player.effectiveVoiceDistance,
-            vehicle = HumalikeWorldVehicle.StreamState(playerPed),
-        },
-        npcs = collect(vector3(player.position.x, player.position.y, player.position.z), sliced),
+local lastPlayer = nil -- position and seat of the last frame sent
+
+local function playerChanged(player)
+    local last = lastPlayer
+    if not last then return true end
+    local p = player.position
+    if math.abs(p.x - last.x) > PLAYER_MOVE_EPSILON or math.abs(p.y - last.y) > PLAYER_MOVE_EPSILON
+        or math.abs(p.z - last.z) > PLAYER_MOVE_EPSILON then return true end
+    local vehicle = player.vehicle
+    local networkId, seat = vehicle and vehicle.networkId or false, vehicle and vehicle.seat or false
+    return networkId ~= last.networkId or seat ~= last.seat
+        or player.effectiveVoiceDistance ~= last.voiceDistance
+end
+
+-- One frame decision; returns the encoded message or nil when nothing is due.
+function HumalikeWorldNpcEdge.Frame(player, now)
+    local lastKeyframeAt = HumalikeWorldNpcEdge.lastKeyframeAt
+    local keyframe = lastKeyframeAt == nil or now - lastKeyframeAt >= KEYFRAME_MS
+    local selected = HumalikeWorldNpcEdge.Select(keyframe)
+    if #selected == 0 and not keyframe and not playerChanged(player)
+        and now - HumalikeWorldNpcEdge.lastSentAt < KEEPALIVE_MS then
+        return nil
+    end
+    HumalikeWorldNpcEdge.sequence = HumalikeWorldNpcEdge.sequence + 1
+    local message = HumalikeWorldNpcEdge.Encode(player, HumalikeWorldNpcEdge.sequence, selected)
+    HumalikeWorldNpcEdge.lastSentAt = now
+    if keyframe then HumalikeWorldNpcEdge.lastKeyframeAt = now end
+    local vehicle = player.vehicle
+    lastPlayer = {
+        x = player.position.x, y = player.position.y, z = player.position.z,
+        networkId = vehicle and vehicle.networkId or false, seat = vehicle and vehicle.seat or false,
+        voiceDistance = player.effectiveVoiceDistance,
     }
+    return message
 end
 
 function HumalikeWorldNpcEdge.Start()
@@ -192,12 +263,9 @@ function HumalikeWorldNpcEdge.Start()
             startedAt = GetGameTimer()
             local player = HumalikeWorldCollector.latest
             if HumalikeWorldNpcEdge.connected and player then
-                HumalikeWorldNpcEdge.sequence = HumalikeWorldNpcEdge.sequence + 1
-                local frame = HumalikeWorldNpcEdge.BuildPositionsFrame(
-                    player, PlayerPedId(), HumalikeWorldNpcEdge.sequence, true
-                )
-                if HumalikeWorldNpcEdge.connected then
-                    SendNUIMessage({ type = 'npc_edge_frame', frame = frame })
+                local message = HumalikeWorldNpcEdge.Frame(player, startedAt)
+                if message and HumalikeWorldNpcEdge.connected then
+                    SendNuiMessage(message)
                     HumalikeWorldNpcEdge.sentFrames = HumalikeWorldNpcEdge.sentFrames + 1
                 end
             end

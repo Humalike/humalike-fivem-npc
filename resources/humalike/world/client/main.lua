@@ -36,6 +36,7 @@ exports('GetStatus', function()
             active = HumalikeWorldCabin.membership ~= nil,
             membership = HumalikeWorldContracts.Copy(HumalikeWorldCabin.membership),
         },
+        tracks = HumalikeWorldTrack.count,
         npcEdge = {
             enabled = WorldConfig.npcEdge.enabled,
             connected = HumalikeWorldNpcEdge.connected,
@@ -59,6 +60,7 @@ end)
 CreateThread(function()
     HumalikeSettings.Wait(5000)
     HumalikeWorldCollector.Start()
+    HumalikeWorldTrack.Start()
     HumalikeWorldNpcEdge.Start()
     Wait(0)
     TriggerEvent('humalike:world:registrationRequested', HumalikeWorldCollector.bootId)

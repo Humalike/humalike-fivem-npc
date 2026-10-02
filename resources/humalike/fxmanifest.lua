@@ -92,6 +92,7 @@ client_scripts {
     'world/client/contracts.lua',
     'world/client/registry.lua',
     'world/client/vehicle.lua',
+    'world/client/track.lua',
     'world/client/collector.lua',
     'world/client/cabins.lua',
     'world/client/npc_edge.lua',
