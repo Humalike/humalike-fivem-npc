@@ -4,6 +4,8 @@
 HumalikeLocale = {
     en = { help_up = 'Help up' },
     pl = { help_up = 'Pomóż wstać' },
+    es = { help_up = 'Ayudar a levantarse' },
+    fr = { help_up = 'Aider à se relever' },
 }
 
 function HumalikeUiLanguage()
