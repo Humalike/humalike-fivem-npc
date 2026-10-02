@@ -13,9 +13,25 @@ local voiceRetryCooldownSeconds = 30
 -- (server/core/http_node.js). PerformHttpRequest is kept only as a fallback
 -- when that runtime is unavailable.
 local nodeHttpExport = 'humalikeNodeHttpRequest'
-local nodeHttpTimeoutMs = 35000
+local defaultTimeoutMs = 30000
+local longTimeoutMs = 120000
+-- The Lua safety timer only fires if Node never answers, so it must outlast
+-- the Node abort for the same request.
+local luaTimeoutMarginMs = 5000
+-- Bootstrap and the full runtime-state syncs can carry large bodies or wait on
+-- slow backend work; everything else uses the default limit.
+local longEdgeActions = {
+    bootstrap_fivem_runtime = true,
+    sync_npc_runtime_state = true,
+    sync_player_sessions = true,
+    report_npc_bodies = true,
+}
+local longVoicePaths = {
+    ['/v1/fivem/state'] = true,
+}
 local pendingHttp = {}
 local nextHttpId = 0
+local nodeHttp = nil
 local nodeHttpFallbackLogged = false
 
 local function resolveHttp(id, status, body, headers, errorData)
@@ -25,28 +41,45 @@ local function resolveHttp(id, status, body, headers, errorData)
     callback(status, body, headers, errorData)
 end
 
-local function nodeHttpRequest(id, url, method, body, headers)
-    if exports == nil or GetCurrentResourceName == nil then return false end
-    return pcall(function()
+-- The export is looked up once and reused; the lookup itself is the only
+-- step that goes through FiveM's local export event.
+local function resolveNodeHttp()
+    if nodeHttp then return true end
+    if exports == nil or GetCurrentResourceName == nil then
+        return false, 'exports unavailable in this runtime'
+    end
+    local ok, result = pcall(function()
         local resource = exports[GetCurrentResourceName()]
-        resource[nodeHttpExport](resource, id, url, method,
-            body, headers, function(status, responseBody, responseHeaders, errorData)
-                -- Run like a PerformHttpRequest callback: on a Lua thread, so
-                -- callers may Wait and errors stay out of the Node runtime.
-                CreateThread(function()
-                    resolveHttp(id, tonumber(status) or 0, responseBody,
-                        responseHeaders or {}, errorData)
-                end)
-            end)
+        local request = resource[nodeHttpExport]
+        return { resource = resource, request = request }
     end)
+    if not ok then return false, result end
+    nodeHttp = result
+    return true
 end
 
-local function httpRequest(url, callback, method, body, headers)
+local function nodeHttpRequest(id, url, method, body, headers, timeoutMs)
+    local ok, err = resolveNodeHttp()
+    if not ok then return false, err end
+    return pcall(nodeHttp.request, nodeHttp.resource, id, url, method,
+        body, headers, timeoutMs, function(status, responseBody, responseHeaders, errorData)
+            -- Run like a PerformHttpRequest callback: on a Lua thread, so
+            -- callers may Wait and errors stay out of the Node runtime.
+            CreateThread(function()
+                resolveHttp(id, tonumber(status) or 0, responseBody,
+                    responseHeaders or {}, errorData)
+            end)
+        end)
+end
+
+local function httpRequest(url, callback, method, body, headers, timeoutMs)
+    timeoutMs = timeoutMs or defaultTimeoutMs
     nextHttpId = nextHttpId + 1
     local id = ('humalike-http-%d'):format(nextHttpId)
     pendingHttp[id] = callback
-    if nodeHttpRequest(id, url, method, body, headers) then
-        SetTimeout(nodeHttpTimeoutMs, function()
+    local ok, err = nodeHttpRequest(id, url, method, body, headers, timeoutMs)
+    if ok then
+        SetTimeout(timeoutMs + luaTimeoutMarginMs, function()
             resolveHttp(id, 0, nil, {}, 'request timed out')
         end)
         return
@@ -54,7 +87,8 @@ local function httpRequest(url, callback, method, body, headers)
     pendingHttp[id] = nil
     if not nodeHttpFallbackLogged then
         nodeHttpFallbackLogged = true
-        print('[humalike] node_http_unavailable; using PerformHttpRequest')
+        print(('[humalike] node_http_unavailable error=%s; using PerformHttpRequest')
+            :format(tostring(err)))
     end
     PerformHttpRequest(url, callback, method, body, headers)
 end
@@ -85,7 +119,8 @@ function HumaLike.EdgeRequest(action, token, payload, callback, targetUrl)
         {
             ['Authorization'] = 'Bearer ' .. token,
             ['Content-Type'] = 'application/json'
-        }
+        },
+        longEdgeActions[action] and longTimeoutMs or defaultTimeoutMs
     )
 end
 
@@ -207,5 +242,5 @@ function HumaLike.PostVoice(path, payload, callback)
     end, 'POST', encodeObject(payload), {
         ['Authorization'] = 'Bearer ' .. requestToken,
         ['Content-Type'] = 'application/json'
-    })
+    }, longVoicePaths[path] and longTimeoutMs or defaultTimeoutMs)
 end

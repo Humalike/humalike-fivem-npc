@@ -1,6 +1,60 @@
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 const http = require('node:http');
-const { performRequest, handleRequest } = require('../../server/core/http_node.js');
+const path = require('node:path');
+const vm = require('node:vm');
+const { performRequest, handleRequest, requestTimeout } = require('../../server/core/http_node.js');
+
+const scriptPath = path.join(__dirname, '../../server/core/http_node.js');
+
+// Load the script the way FXServer does: a plain script with FiveM globals and
+// no CommonJS module, so the export registration path runs.
+function loadInFxServer(invoker, fetchImpl) {
+  const registered = {};
+  const fetchCalls = [];
+  const context = {
+    exports: (name, fn) => { registered[name] = fn; },
+    fetch: async (url, options) => {
+      fetchCalls.push({ url, options });
+      return fetchImpl(url, options);
+    },
+    GetCurrentResourceName: () => 'humalike',
+    GetInvokingResource: () => invoker.current,
+    AbortController,
+    setTimeout,
+    clearTimeout,
+    console,
+  };
+  vm.createContext(context);
+  vm.runInContext(fs.readFileSync(scriptPath, 'utf8'), context, { filename: scriptPath });
+  return { registered, fetchCalls };
+}
+
+async function exportGuard() {
+  const invoker = { current: 'humalike' };
+  const { registered, fetchCalls } = loadInFxServer(invoker, async () => new Response('{"ok":true}',
+    { status: 200, headers: { 'Content-Type': 'application/json' } }));
+  const request = registered.humalikeNodeHttpRequest;
+  assert.equal(typeof request, 'function', 'the export must be registered under FXServer');
+
+  const own = await new Promise((resolve) => {
+    request('id-1', 'https://api.example/v1/npc/actions/a', 'POST', '{}',
+      { Authorization: 'Bearer t' }, 120000, (...args) => resolve(args));
+  });
+  assert.equal(own[0], 200);
+  assert.equal(own[1], '{"ok":true}');
+  assert.equal(own[3], null);
+  assert.equal(fetchCalls.length, 1);
+  assert.equal(fetchCalls[0].options.headers.Authorization, 'Bearer t');
+
+  invoker.current = 'other-resource';
+  let called = false;
+  assert.throws(() => request('id-2', 'https://api.example/x', 'POST', '{}',
+    { Authorization: 'Bearer t' }, 30000, () => { called = true; }), /private to this resource/);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(called, false, 'a refused call must not run its callback');
+  assert.equal(fetchCalls.length, 1, 'a refused call must not send a request');
+}
 
 async function main() {
   const seen = [];
@@ -43,10 +97,18 @@ async function main() {
   assert.ok(refused.error, 'network failures must report an error');
 
   const invalid = await new Promise((resolve) => {
-    handleRequest('id-1', 'file:///etc/passwd', 'GET', '', {}, (...args) => resolve(args));
+    handleRequest('id-1', 'file:///etc/passwd', 'GET', '', {}, 30000, (...args) => resolve(args));
   });
   assert.equal(invalid[0], 0);
   assert.equal(invalid[3], 'invalid url');
+
+  assert.equal(requestTimeout(undefined), 30000);
+  assert.equal(requestTimeout(null), 30000);
+  assert.equal(requestTimeout(-1), 30000);
+  assert.equal(requestTimeout(120000), 120000);
+  assert.equal(requestTimeout(10 ** 9), 600000);
+
+  await exportGuard();
   console.log('core_http_node.cjs: ok');
 }
 

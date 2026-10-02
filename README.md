@@ -18,8 +18,10 @@ providers.
 
 ## Requirements
 
-- A current FXServer build with OneSync enabled and the Node.js 22 server
-  runtime; server-side requests go through the resource's Node runtime.
+- A current FXServer build with OneSync enabled. Recent builds ship the
+  Node.js 22 server runtime, which the resource uses for its backend requests;
+  on builds without it the resource falls back to `PerformHttpRequest` and logs
+  `node_http_unavailable` once.
 - A HumaLike server license.
 - No framework dependency for standalone use.
 
