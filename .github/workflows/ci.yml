@@ -41,7 +41,10 @@ jobs:
         run: python scripts/audit_public_release.py
       - name: World tests
         working-directory: resources/humalike/world
-        run: sh tests/run.sh
+        run: |
+          sh tests/run.sh
+          node --check ../server/core/http_node.js
+          node tests/core_http_node.cjs
       - name: NPC tests
         working-directory: resources/humalike/npc
         run: |

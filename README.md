@@ -18,7 +18,8 @@ providers.
 
 ## Requirements
 
-- A current FXServer build with OneSync enabled.
+- A current FXServer build with OneSync enabled and the Node.js 22 server
+  runtime; server-side requests go through the resource's Node runtime.
 - A HumaLike server license.
 - No framework dependency for standalone use.
 

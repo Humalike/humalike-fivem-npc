@@ -8,6 +8,57 @@ local rejectedVoiceToken = nil
 local rejectedVoiceAssignment = nil
 local voiceRetryAfter = 0
 local voiceRetryCooldownSeconds = 30
+
+-- Server-side requests run through the resource's Node runtime
+-- (server/core/http_node.js). PerformHttpRequest is kept only as a fallback
+-- when that runtime is unavailable.
+local nodeHttpExport = 'humalikeNodeHttpRequest'
+local nodeHttpTimeoutMs = 35000
+local pendingHttp = {}
+local nextHttpId = 0
+local nodeHttpFallbackLogged = false
+
+local function resolveHttp(id, status, body, headers, errorData)
+    local callback = pendingHttp[id]
+    if not callback then return end
+    pendingHttp[id] = nil
+    callback(status, body, headers, errorData)
+end
+
+local function nodeHttpRequest(id, url, method, body, headers)
+    if exports == nil or GetCurrentResourceName == nil then return false end
+    return pcall(function()
+        local resource = exports[GetCurrentResourceName()]
+        resource[nodeHttpExport](resource, id, url, method,
+            body, headers, function(status, responseBody, responseHeaders, errorData)
+                -- Run like a PerformHttpRequest callback: on a Lua thread, so
+                -- callers may Wait and errors stay out of the Node runtime.
+                CreateThread(function()
+                    resolveHttp(id, tonumber(status) or 0, responseBody,
+                        responseHeaders or {}, errorData)
+                end)
+            end)
+    end)
+end
+
+local function httpRequest(url, callback, method, body, headers)
+    nextHttpId = nextHttpId + 1
+    local id = ('humalike-http-%d'):format(nextHttpId)
+    pendingHttp[id] = callback
+    if nodeHttpRequest(id, url, method, body, headers) then
+        SetTimeout(nodeHttpTimeoutMs, function()
+            resolveHttp(id, 0, nil, {}, 'request timed out')
+        end)
+        return
+    end
+    pendingHttp[id] = nil
+    if not nodeHttpFallbackLogged then
+        nodeHttpFallbackLogged = true
+        print('[humalike] node_http_unavailable; using PerformHttpRequest')
+    end
+    PerformHttpRequest(url, callback, method, body, headers)
+end
+
 local function encodeObject(payload)
     payload = payload or {}
     -- FiveM encodes an empty Lua table as []; edge expects {}.
@@ -19,7 +70,7 @@ end
 
 function HumaLike.EdgeRequest(action, token, payload, callback, targetUrl)
     local edgeBaseUrl = targetUrl or controlPlaneUrl
-    PerformHttpRequest(
+    httpRequest(
         ('%s/v1/npc/actions/%s'):format(edgeBaseUrl, action),
         function(status, body, headers, errorData)
             local decoded = nil
@@ -122,7 +173,7 @@ function HumaLike.PostVoice(path, payload, callback)
         if callback then callback(401, nil) end
         return
     end
-    PerformHttpRequest(requestUrl .. path, function(status, body)
+    httpRequest(requestUrl .. path, function(status, body)
         local decoded = nil
         if type(body) == 'string' and body ~= '' then
             local ok, result = pcall(json.decode, body)

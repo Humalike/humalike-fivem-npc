@@ -1,6 +1,7 @@
 fx_version 'cerulean'
 game 'gta5'
 lua54 'yes'
+node_version '22'
 
 name 'humalike'
 author 'HumaLike'
@@ -30,6 +31,7 @@ server_scripts {
     'server/core/text.lua',
     'server/core/credentials.lua',
     'server/core/http.lua',
+    'server/core/http_node.js',
     'server/core/callbacks.lua',
     'server/core/bootstrap.lua',
     'world/server/contracts.lua',
