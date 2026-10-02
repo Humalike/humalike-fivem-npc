@@ -194,6 +194,30 @@ test('a failed write restores the files that were there', () => {
     assert.equal(read(dir, 'server/a.lua'), 'old a\n');
 });
 
+test('a rollback that cannot restore a file says so and keeps the backups', () => {
+    const dir = resourceDir({ 'fxmanifest.lua': 'old\n', 'server/a.lua': 'old a\n' });
+    fs.mkdirSync(path.join(dir, 'server/b.lua'));
+    const bytes = bundleFor('0.6.0', { 'fxmanifest.lua': 'new\n', 'server/a.lua': 'new a\n', 'server/b.lua': 'b' });
+    const backups = path.join(dir, '.humalike-update/previous');
+    const copy = fs.copyFileSync;
+    fs.copyFileSync = (from, to, ...rest) => {
+        if (from === path.join(backups, 'server/a.lua')) throw new Error('disk full');
+        return copy(from, to, ...rest);
+    };
+    try {
+        assert.throws(
+            () => updater.installBundle(dir, updater.openBundle(bytes, signed(bytes), '0.6.0', trusted), '0.5.1'),
+            (error) => /rollback is incomplete for server\/a\.lua/.test(error.message)
+                && error.message.includes(backups)
+                && !/previous version restored/.test(error.message),
+        );
+    } finally {
+        fs.copyFileSync = copy;
+    }
+    assert.equal(read(dir, 'fxmanifest.lua'), 'old\n');
+    assert.equal(read(dir, '.humalike-update/previous/server/a.lua'), 'old a\n');
+});
+
 function environment(dir, overrides = {}) {
     const bundles = {};
     const events = { logs: [], restarts: 0 };

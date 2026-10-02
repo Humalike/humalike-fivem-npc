@@ -244,13 +244,28 @@ function installBundle(resourceDir, bundle, currentVersion) {
         );
         fs.renameSync(recordTemp, recordPath);
     } catch (error) {
+        const unrestored = [];
         for (const relative of touched) {
             try {
                 fs.copyFileSync(path.join(previous, relative), path.join(resourceDir, relative));
-            } catch (restoreError) {}
+            } catch (restoreError) {
+                unrestored.push(relative);
+            }
         }
         for (const relative of moved) {
-            if (!touched.includes(relative)) fs.rmSync(path.join(resourceDir, relative), { force: true });
+            if (touched.includes(relative)) continue;
+            try {
+                fs.rmSync(path.join(resourceDir, relative), { force: true });
+            } catch (cleanupError) {
+                unrestored.push(relative);
+            }
+        }
+        if (unrestored.length > 0) {
+            // The backups in `previous` stay in place for a manual restore.
+            throw new UpdateError(
+                `could not write update files and the rollback is incomplete for ${unrestored.join(', ')}; `
+                + `the previous files are kept in ${previous}: ${error.message}`,
+            );
         }
         throw new UpdateError(`could not write update files, previous version restored: ${error.message}`);
     } finally {
