@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 from pathlib import Path
@@ -116,6 +117,25 @@ class ComposeReleaseTest(unittest.TestCase):
             self.assertFalse(any("web/src/" in name for name in names))
             self.assertIn("humalike/LICENSE.md", names)
             self.assertIn("humalike/NOTICE", names)
+        update = first.parent / "humalike.update.json"
+        self.assertEqual(
+            update.read_bytes(),
+            (self.root / "second" / "humalike.update.json").read_bytes(),
+        )
+        bundle = json.loads(update.read_text())
+        self.assertEqual(bundle["schema"], 1)
+        self.assertEqual(bundle["resource"], "humalike")
+        self.assertEqual(bundle["revision"], revision)
+        with zipfile.ZipFile(first) as archive:
+            for entry in bundle["files"]:
+                data = archive.read(f"humalike/{entry['path']}")
+                self.assertEqual(entry["size"], len(data))
+                self.assertEqual(entry["sha256"], hashlib.sha256(data).hexdigest())
+                self.assertEqual(base64.b64decode(entry["data"]), data)
+            self.assertEqual(
+                sorted(f"humalike/{entry['path']}" for entry in bundle["files"]),
+                sorted(archive.namelist()),
+            )
         manifest = json.loads(first.with_suffix(".manifest.json").read_text())
         self.assertEqual(manifest["source"]["revision"], revision)
         self.assertEqual(

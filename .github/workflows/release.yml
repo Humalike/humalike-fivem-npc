@@ -45,6 +45,7 @@ jobs:
           ruff format --check scripts tests
           python -m unittest discover -s tests -v
           python scripts/audit_public_release.py
+          node --test tests/node/updater.test.cjs
       - name: Lua checks
         run: |
           (cd resources/humalike/world && sh tests/run.sh)
@@ -64,10 +65,15 @@ jobs:
           python scripts/compose_release.py --output artifacts
           python scripts/compose_release.py --output artifacts-second
           cmp artifacts/*.zip artifacts-second/*.zip
+          cmp artifacts/humalike.update.json artifacts-second/humalike.update.json
           python scripts/audit_public_release.py --archive artifacts/*.zip
           mkdir release-check
           unzip -q artifacts/*.zip -d release-check
           find release-check -name '*.lua' -print0 | xargs -0 -n1 luac5.4 -p
+      - name: Sign update bundle
+        env:
+          HUMALIKE_RELEASE_SIGNING_KEY: ${{ secrets.HUMALIKE_RELEASE_SIGNING_KEY }}
+        run: node scripts/sign_update.mjs artifacts/humalike.update.json
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}

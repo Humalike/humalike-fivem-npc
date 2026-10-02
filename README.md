@@ -51,6 +51,13 @@ of the final architecture. There is no static runtime fallback after cutover;
 reversing this order intentionally leaves the resource stopped instead of
 issuing or accepting assignment-unbound credentials.
 
+Releases update themselves on start: HumaLike checks GitHub, verifies the
+release's Ed25519 signature and installs it. Add
+`add_ace resource.humalike command.refresh allow` and
+`add_ace resource.humalike command.ensure allow` so it can restart itself;
+`humalike_auto_update` (`auto`, `notify`, `off`) and `humalike_version` (pin or
+roll back) control it. See the archive's `INSTALL.md`.
+
 Detailed installation and configuration documentation is available at
 [docs.humalike.com/ai-npc](https://docs.humalike.com/ai-npc).
 

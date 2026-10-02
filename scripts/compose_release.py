@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import io
 import json
@@ -277,6 +278,36 @@ def _write_deterministic_zip(source: Path, destination: Path) -> None:
             bundle.writestr(info, path.read_bytes(), compresslevel=9)
 
 
+def _write_update_bundle(
+    resource_root: Path, destination: Path, lock: dict[str, Any], revision: str
+) -> None:
+    """The signed payload the in-game updater installs: every released file of
+    the resource, relative to its directory, with its size and SHA-256."""
+    files = []
+    for path in sorted(item for item in resource_root.rglob("*") if item.is_file()):
+        data = path.read_bytes()
+        files.append(
+            {
+                "path": path.relative_to(resource_root).as_posix(),
+                "size": len(data),
+                "sha256": hashlib.sha256(data).hexdigest(),
+                "data": base64.b64encode(data).decode("ascii"),
+            }
+        )
+    bundle = {
+        "schema": 1,
+        "product": lock["product"]["name"],
+        "resource": lock["resources"][0]["name"],
+        "version": lock["resources"][0]["version"],
+        "revision": revision,
+        "files": files,
+    }
+    destination.write_text(
+        json.dumps(bundle, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+
+
 def compose(lock_path: Path, output: Path, *, revision: str = "HEAD") -> Path:
     repository = _repository_root(lock_path.resolve().parent)
     resolved_revision = _resolve_revision(repository, revision)
@@ -319,6 +350,12 @@ def compose(lock_path: Path, output: Path, *, revision: str = "HEAD") -> Path:
                 )
 
         _write_deterministic_zip(package_root, archive_path)
+        _write_update_bundle(
+            package_root / resources[0]["name"],
+            output / f"{resources[0]['name']}.update.json",
+            lock,
+            resolved_revision,
+        )
 
     digest = hashlib.sha256(archive_path.read_bytes()).hexdigest()
     checksum_path = archive_path.with_suffix(".zip.sha256")
