@@ -52,9 +52,9 @@ reversing this order intentionally leaves the resource stopped instead of
 issuing or accepting assignment-unbound credentials.
 
 Releases update themselves on start: HumaLike checks GitHub, verifies the
-release's Ed25519 signature and installs it. Add
-`add_ace resource.humalike command.refresh allow` and
-`add_ace resource.humalike command.ensure allow` so it can restart itself;
+release's Ed25519 signature and installs it. Grant
+`resource.humalike` the `command.refresh`, `command.ensure`, `command.stop` and
+`command.start` ACEs so it can restart itself;
 `humalike_auto_update` (`auto`, `notify`, `off`) and `humalike_version` (pin or
 roll back) control it. See the archive's `INSTALL.md`.
 

@@ -26,11 +26,14 @@ https://docs.humalike.com/ai-npc.
 On every start HumaLike checks for a newer release, installs it and restarts
 itself. Each update is signed by HumaLike and verified before any file is
 written; an update that fails verification is never installed. To let the
-resource restart itself, add to `server.cfg`:
+resource restart itself, add these four lines to `server.cfg` (`ensure` runs
+`stop` and `start` on the resource's behalf):
 
 ```cfg
 add_ace resource.humalike command.refresh allow
 add_ace resource.humalike command.ensure allow
+add_ace resource.humalike command.stop allow
+add_ace resource.humalike command.start allow
 ```
 
 Without these lines the update is still downloaded and applies on the next

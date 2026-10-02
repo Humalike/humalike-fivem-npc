@@ -11,10 +11,13 @@
 // Convars (server.cfg):
 //   set humalike_auto_update auto|notify|off   (default auto)
 //   set humalike_version "0.6.0"               pin one version (up or down)
-// Restarting itself needs two ACE grants; without them the files are written
-// and the update applies on the next server restart:
+// Restarting itself needs four ACE grants (`ensure` runs `stop` and `start`
+// under the same principal); without them the files are written and the
+// update applies on the next server restart:
 //   add_ace resource.humalike command.refresh allow
 //   add_ace resource.humalike command.ensure allow
+//   add_ace resource.humalike command.stop allow
+//   add_ace resource.humalike command.start allow
 
 const crypto = require('crypto');
 const fs = require('fs');
@@ -32,6 +35,9 @@ const MAX_JSON_BYTES = 2 * 1024 * 1024;
 const MAX_BUNDLE_BYTES = 64 * 1024 * 1024;
 const REQUEST_TIMEOUT_MS = 30000;
 const MAX_REDIRECTS = 5;
+// `ensure` restarts the resource by running `stop` and `start` as this
+// resource's principal, so all four must be granted.
+const RESTART_COMMANDS = ['refresh', 'ensure', 'stop', 'start'];
 
 // Public halves of the keys allowed to sign releases. The private key lives
 // only in the release pipeline. To rotate: add the new key here, ship a release
@@ -399,7 +405,8 @@ async function runUpdate(env, { force = false } = {}) {
         env.restart();
         return { action: 'installed', target, restarted: true, reason: decision.reason };
     }
-    log(`update: installed ${target.version} (was ${current}); it applies on the next server restart. To apply updates automatically, add to server.cfg: add_ace resource.${env.resourceName} command.refresh allow and add_ace resource.${env.resourceName} command.ensure allow`);
+    const grants = RESTART_COMMANDS.map((command) => `add_ace resource.${env.resourceName} command.${command} allow`).join('; ');
+    log(`update: installed ${target.version} (was ${current}); it applies on the next server restart. To apply updates automatically, add to server.cfg: ${grants}`);
     return { action: 'installed', target, restarted: false, reason: decision.reason };
 }
 
@@ -416,8 +423,7 @@ function fivemEnvironment() {
         log: (message) => console.log(`[humalike] ${message}`),
         fetchRelease: (suffix) => fetchRelease(source, suffix),
         download,
-        canRestart: () => IsPrincipalAceAllowed(principal, 'command.refresh')
-            && IsPrincipalAceAllowed(principal, 'command.ensure'),
+        canRestart: () => RESTART_COMMANDS.every((command) => IsPrincipalAceAllowed(principal, `command.${command}`)),
         restart: () => {
             ExecuteCommand('refresh');
             ExecuteCommand(`ensure ${resourceName}`);
@@ -450,6 +456,7 @@ if (typeof GetCurrentResourceName === 'function' && typeof RegisterCommand === '
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
         BUNDLE_ASSET,
+        RESTART_COMMANDS,
         SIGNATURE_ASSET,
         STATE_DIR,
         TRUSTED_KEYS,

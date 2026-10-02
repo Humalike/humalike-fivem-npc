@@ -245,7 +245,10 @@ test('without the ACE grants the update is written and waits for the next restar
     const result = await updater.runUpdate(env);
     assert.equal(result.restarted, false);
     assert.equal(events.restarts, 0);
-    assert.match(events.logs.at(-1), /add_ace resource\.humalike command\.refresh allow/);
+    for (const command of ['refresh', 'ensure', 'stop', 'start']) {
+        assert.match(events.logs.at(-1), new RegExp(`add_ace resource\\.humalike command\\.${command} allow`));
+    }
+    assert.deepEqual(updater.RESTART_COMMANDS, ['refresh', 'ensure', 'stop', 'start']);
 });
 
 test('notify and off modes never touch files', async () => {
