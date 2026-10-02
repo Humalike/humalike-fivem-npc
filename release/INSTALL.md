@@ -24,9 +24,11 @@ https://docs.humalike.com/ai-npc.
 
 ## Automatic updates
 
-On every start HumaLike checks for a newer release, installs it and restarts
-itself. Each update is signed by HumaLike and verified before any file is
-written; an update that fails verification is never installed.
+On every start HumaLike checks for a newer release and installs it. Each update
+is signed by HumaLike and verified before any file is written; an update that
+fails verification is never installed. The new version goes live immediately
+only when `humalike-updater` is started with the grants below; otherwise it
+applies on the next server restart.
 
 The archive includes a second, small resource, `humalike-updater`, which only
 restarts `humalike` after an update (a resource cannot safely restart itself).

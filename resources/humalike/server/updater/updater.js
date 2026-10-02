@@ -263,6 +263,8 @@ function installBundle(resourceDir, bundle, currentVersion) {
     }
     fs.writeFileSync(path.join(previous, '.version'), `${currentVersion}\n`);
 
+    const recordPath = path.join(stateDir, 'installed.json');
+    const recordTemp = `${recordPath}.tmp`;
     const moved = [];
     try {
         for (const file of bundle.files) {
@@ -272,6 +274,13 @@ function installBundle(resourceDir, bundle, currentVersion) {
             moved.push(file.path);
         }
         for (const relative of stale) fs.rmSync(path.join(resourceDir, relative), { force: true });
+        // The record of what is installed changes only once every file is in
+        // place, so a failed update keeps the previous record.
+        fs.writeFileSync(
+            recordTemp,
+            `${JSON.stringify({ version: bundle.version, revision: bundle.revision, files: [...incoming].sort() }, null, 2)}\n`,
+        );
+        fs.renameSync(recordTemp, recordPath);
     } catch (error) {
         for (const relative of touched) {
             try {
@@ -286,11 +295,8 @@ function installBundle(resourceDir, bundle, currentVersion) {
         throw new UpdateError(`could not write update files, previous version restored: ${error.message}`);
     } finally {
         fs.rmSync(staging, { recursive: true, force: true });
+        fs.rmSync(recordTemp, { force: true });
     }
-    fs.writeFileSync(
-        path.join(stateDir, 'installed.json'),
-        `${JSON.stringify({ version: bundle.version, revision: bundle.revision, files: [...incoming].sort() }, null, 2)}\n`,
-    );
 }
 
 function request(url, { maxBytes, headers = {}, redirects = 0 } = {}) {

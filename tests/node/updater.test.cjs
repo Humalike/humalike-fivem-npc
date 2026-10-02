@@ -334,3 +334,19 @@ test('installing never calls mkdir on the resource root (FXServer refuses it)', 
     assert.deepEqual(roots, []);
     assert.equal(read(dir, 'server/new/deep.lua'), 'x');
 });
+
+test('a failed update keeps the previous install record', () => {
+    const dir = resourceDir({});
+    const first = bundleFor('0.6.0', { 'fxmanifest.lua': '6', 'server/a.lua': 'a' });
+    updater.installBundle(dir, updater.openBundle(first, signed(first), '0.6.0', trusted), '0.5.1');
+    fs.mkdirSync(path.join(dir, 'server/b.lua'));
+    const second = bundleFor('0.7.0', { 'fxmanifest.lua': '7', 'server/b.lua': 'b' });
+    assert.throws(
+        () => updater.installBundle(dir, updater.openBundle(second, signed(second), '0.7.0', trusted), '0.6.0'),
+        /previous version restored/,
+    );
+    const record = JSON.parse(read(dir, '.humalike-update/installed.json'));
+    assert.equal(record.version, '0.6.0');
+    assert.deepEqual(record.files, ['fxmanifest.lua', 'server/a.lua']);
+    assert.equal(fs.existsSync(path.join(dir, '.humalike-update/installed.json.tmp')), false);
+});
