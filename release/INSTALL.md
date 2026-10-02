@@ -58,11 +58,13 @@ The files that an update replaced are kept in
 
 ## Manual update
 
-Replace the complete `humalike` directory with one verified release, then run:
+Set `humalike_auto_update off`, stop `humalike` and `humalike-updater` (or the
+server), replace both directories with one verified release, then run:
 
 ```text
 refresh
-restart humalike
+ensure humalike-updater
+ensure humalike
 ```
 
 Never combine files from different versions.
