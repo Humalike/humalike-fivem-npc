@@ -17,7 +17,7 @@ HumalikeDefineConfig(function()
 end)
 
 Config.PlayerSessionSyncIntervalMs = 15000
-Config.AppearancePollIntervalMs = 1000
+Config.AppearancePollIntervalMs = 3000 -- a clothing change reaches the server within this
 Config.AppearanceUpsertDebounceMs = 750
 Config.AppearancePropIds = { 0, 1, 2, 6, 7 }
 Config.AppearanceMaxDrawableId = 65535
@@ -45,11 +45,10 @@ Config.Population = {
     RetryBackoffMs = 500,
     RetryBackoffCapMs = 30000,
     ReleaseMaxAttempts = 8,
-    WanderTickMs = 1000,
-    MoveRate = 0.82, -- fraction of the walk animation rate; 1.0 is the CreatePed default
+    WanderTickMs = 2000, -- the bodies this client drives are looked at this often
     WanderIdleMs = 5000,
     ScenarioIdleMs = 10000,
-    SweepTickMs = 2000,
+    SweepTickMs = 10000, -- the ped pool is walked this often: bodies a bag missed, GTA leftovers
     SweepMinPlayerDistance = 15.0,
     SweepMaxPerTick = 5,
     DriverSpawnOffset = 2.5, -- metres beside the car a driver is created before being seated
@@ -122,6 +121,12 @@ function HumalikeJobList(value)
     return names
 end
 HumalikeDefineConfig(function()
+    -- Fraction of the walk animation rate for the bodies this client drives;
+    -- 1.0 is the game's own. Anything else is a native per body per frame.
+    local rate = tonumber(HumalikeConvar('humalike_population_move_rate', '1.0')) or 1.0
+    Config.Population.MoveRate = math.max(0.5, math.min(1.15, rate))
+end)
+HumalikeDefineConfig(function()
     Config.Wounded = {
         Enabled = HumalikeConvar('humalike_npc_wounded_enabled', 'true') == 'true',
         DurationMs = tonumber(HumalikeConvar('humalike_npc_wounded_duration', '300000')) or 300000,
@@ -165,7 +170,7 @@ HumalikeDefineConfig(function()
         CandidateRefreshMs = 200,
         CandidateMargin = 3.0,
         RenderFps = math.max(10, math.min(60,
-            tonumber(HumalikeConvar('humalike_npc_labels_fps', '60')) or 60)),
+            tonumber(HumalikeConvar('humalike_npc_labels_fps', '30')) or 30)),
         DefaultLanguage = HumalikeConvar('humalike_npc_labels_default_language', 'en'),
         ShowDefaultLanguage = HumalikeConvar('humalike_npc_labels_show_default_language', 'false') == 'true',
         LanguageLabels = { pl = 'pl', en = 'en', de = 'de', es = 'es', fr = 'fr' },
