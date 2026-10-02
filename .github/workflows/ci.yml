@@ -37,6 +37,8 @@ jobs:
           ruff format --check scripts tests
       - name: Unit tests
         run: python -m unittest discover -s tests -v
+      - name: Updater tests
+        run: node --test tests/node/updater.test.cjs
       - name: Audit public repository
         run: python scripts/audit_public_release.py
       - name: World tests
@@ -80,7 +82,9 @@ jobs:
       - name: Compose a second time
         run: python scripts/compose_release.py --output artifacts-second
       - name: Verify deterministic output
-        run: cmp artifacts/*.zip artifacts-second/*.zip
+        run: |
+          cmp artifacts/*.zip artifacts-second/*.zip
+          cmp artifacts/humalike.update.json artifacts-second/humalike.update.json
       - name: Verify packaged Lua syntax
         run: |
           mkdir release-check

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import io
 import json
@@ -88,6 +89,10 @@ def load_lock(path: Path) -> dict[str, Any]:
             raise ReleaseError(f"{name} must live at resources/{name}")
         if not SEMVER_PATTERN.fullmatch(str(resource.get("version", ""))):
             raise ReleaseError(f"{name} has an invalid version")
+        if resource["version"] != product["version"]:
+            raise ReleaseError(
+                f"{name} version {resource['version']} must equal product version {product['version']}"
+            )
         if not isinstance(includes, list) or not includes:
             raise ReleaseError(f"{name} has no include paths")
         for include in includes:
@@ -277,6 +282,39 @@ def _write_deterministic_zip(source: Path, destination: Path) -> None:
             bundle.writestr(info, path.read_bytes(), compresslevel=9)
 
 
+def _write_update_bundle(
+    resource_root: Path,
+    destination: Path,
+    lock: dict[str, Any],
+    resource: dict[str, Any],
+    revision: str,
+) -> None:
+    """Write the bundle the in-game updater installs once it is signed."""
+    files = []
+    for path in sorted(item for item in resource_root.rglob("*") if item.is_file()):
+        data = path.read_bytes()
+        files.append(
+            {
+                "path": path.relative_to(resource_root).as_posix(),
+                "size": len(data),
+                "sha256": hashlib.sha256(data).hexdigest(),
+                "data": base64.b64encode(data).decode("ascii"),
+            }
+        )
+    bundle = {
+        "schema": 1,
+        "product": lock["product"]["name"],
+        "resource": resource["name"],
+        "version": resource["version"],
+        "revision": revision,
+        "files": files,
+    }
+    destination.write_text(
+        json.dumps(bundle, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+
+
 def compose(lock_path: Path, output: Path, *, revision: str = "HEAD") -> Path:
     repository = _repository_root(lock_path.resolve().parent)
     resolved_revision = _resolve_revision(repository, revision)
@@ -292,10 +330,11 @@ def compose(lock_path: Path, output: Path, *, revision: str = "HEAD") -> Path:
         )
         lock = load_lock(committed_lock)
     resources = lock["resources"]
-    if len(resources) != 1:
-        raise ReleaseError("installable archive requires exactly one resource")
+    main = next((item for item in resources if item["name"] == "humalike"), None)
+    if main is None:
+        raise ReleaseError("installable archive requires the humalike resource")
     output.mkdir(parents=True, exist_ok=True)
-    archive_path = output / f"{resources[0]['name']}.zip"
+    archive_path = output / "humalike.zip"
 
     with tempfile.TemporaryDirectory(prefix="humalike-release-") as temporary:
         scratch = Path(temporary)
@@ -319,6 +358,13 @@ def compose(lock_path: Path, output: Path, *, revision: str = "HEAD") -> Path:
                 )
 
         _write_deterministic_zip(package_root, archive_path)
+        _write_update_bundle(
+            package_root / main["name"],
+            output / "humalike.update.json",
+            lock,
+            main,
+            resolved_revision,
+        )
 
     digest = hashlib.sha256(archive_path.read_bytes()).hexdigest()
     checksum_path = archive_path.with_suffix(".zip.sha256")
