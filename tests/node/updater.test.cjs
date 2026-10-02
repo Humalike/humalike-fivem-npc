@@ -311,3 +311,21 @@ test('the shipped trust list holds exactly one Ed25519 public key', () => {
     assert.equal(key.asymmetricKeyType, 'ed25519');
     assert.equal(key.type, 'public');
 });
+
+test('installing never calls mkdir on the resource root (FXServer refuses it)', () => {
+    const dir = resourceDir({ 'fxmanifest.lua': 'old\n' });
+    const original = fs.mkdirSync;
+    const roots = [];
+    fs.mkdirSync = function patched(target, ...rest) {
+        if (path.resolve(target) === path.resolve(dir)) roots.push(target);
+        return original.call(this, target, ...rest);
+    };
+    try {
+        const bytes = bundleFor('0.6.0', { 'fxmanifest.lua': 'new\n', 'server/new/deep.lua': 'x' });
+        updater.installBundle(dir, updater.openBundle(bytes, signed(bytes), '0.6.0', trusted), '0.5.1');
+    } finally {
+        fs.mkdirSync = original;
+    }
+    assert.deepEqual(roots, []);
+    assert.equal(read(dir, 'server/new/deep.lua'), 'x');
+});

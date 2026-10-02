@@ -188,6 +188,12 @@ function openBundle(bundleBytes, signatureText, expectedVersion, keys = TRUSTED_
     return { version: bundle.version, revision: bundle.revision, files };
 }
 
+// FXServer wraps Node's fs and refuses mkdir on a resource's own root (even a
+// no-op recursive one), so only create directories that are actually missing.
+function ensureDir(dir) {
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+}
+
 function readJson(file) {
     try {
         return JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -216,10 +222,10 @@ function installBundle(resourceDir, bundle, currentVersion) {
     const staging = path.join(stateDir, 'staging');
     const previous = path.join(stateDir, 'previous');
     fs.rmSync(staging, { recursive: true, force: true });
-    fs.mkdirSync(staging, { recursive: true });
+    ensureDir(staging);
     for (const file of bundle.files) {
         const target = path.join(staging, file.path);
-        fs.mkdirSync(path.dirname(target), { recursive: true });
+        ensureDir(path.dirname(target));
         fs.writeFileSync(target, file.content);
     }
 
@@ -239,10 +245,10 @@ function installBundle(resourceDir, bundle, currentVersion) {
             return false;
         }
     });
-    fs.mkdirSync(previous, { recursive: true });
+    ensureDir(previous);
     for (const relative of touched) {
         const backup = path.join(previous, relative);
-        fs.mkdirSync(path.dirname(backup), { recursive: true });
+        ensureDir(path.dirname(backup));
         fs.copyFileSync(path.join(resourceDir, relative), backup);
     }
     fs.writeFileSync(path.join(previous, '.version'), `${currentVersion}\n`);
@@ -251,7 +257,7 @@ function installBundle(resourceDir, bundle, currentVersion) {
     try {
         for (const file of bundle.files) {
             const target = path.join(resourceDir, file.path);
-            fs.mkdirSync(path.dirname(target), { recursive: true });
+            ensureDir(path.dirname(target));
             fs.renameSync(path.join(staging, file.path), target);
             moved.push(file.path);
         }
@@ -385,7 +391,7 @@ async function runUpdate(env, { force = false } = {}) {
     const signature = (await env.download(target.signature, 'update signature')).toString('utf8');
     const bundle = openBundle(bundleBytes, signature, target.version, env.trustedKeys || TRUSTED_KEYS);
     installBundle(env.resourceDir, bundle, current);
-    fs.mkdirSync(path.dirname(statePath), { recursive: true });
+    ensureDir(path.dirname(statePath));
     fs.writeFileSync(statePath, `${JSON.stringify({ attempted: target.version, from: current, at: new Date().toISOString() })}\n`);
 
     if (env.canRestart()) {
