@@ -49,5 +49,6 @@ export function isLabelTuple(value) {
     && value[0] >= 0 && value[0] <= 1
     && value[1] >= 0 && value[1] <= 1
     && (value[2] === false || typeof value[2] === "string")
-    && (value[3] === 0 || value[3] === 1);
+    && (value[3] === 0 || value[3] === 1)
+    && (value[4] === undefined || typeof value[4] === "string");
 }

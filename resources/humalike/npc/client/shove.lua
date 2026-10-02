@@ -69,30 +69,35 @@ local function settle(now)
     return reported
 end
 
--- Only registry peds can carry a HumaLike mind; the pool is never scanned.
-local function eachOwnPed(callback)
-    for npcId, ped in pairs(AmbientPeds or {}) do callback(npcId, ped) end
-    for npcId, ped in pairs(LoadedPeds or {}) do
-        if not (AmbientPeds and AmbientPeds[npcId] == ped) then callback(npcId, ped) end
+-- Only registered peds can carry a HumaLike mind, and only the ones the
+-- tracker puts within reach can be touched; the pool is never scanned.
+local function eachNearPed(maxDistance, callback)
+    local max2 = maxDistance * maxDistance
+    for npcId, track in pairs(HumalikeWorldTrack.tracks) do
+        if track.exists and track.dist2 <= max2 then callback(npcId, track) end
     end
 end
 
 function HumalikeNpcShove.Tick(now)
     forgetStale(now)
-    local playerPed = PlayerPedId()
-    if playerPed == 0 or not DoesEntityExist(playerPed) then return 0 end
     local reported = settle(now)
     local cfg = config()
-    if IsPedInAnyVehicle(playerPed, false) or IsEntityDead(playerPed) or IsPedRagdoll(playerPed)
-        or IsPedInMeleeCombat(playerPed) or GetEntitySpeed(playerPed) < cfg.MinSpeed then
+    -- Nobody within reach: the player's own state is not worth asking for.
+    if not HumalikeWorldTrack.AnyWithin(cfg.MaxDistance) then return reported end
+    local playerPed = PlayerPedId()
+    if playerPed == 0 or not DoesEntityExist(playerPed) then return reported end
+    -- A still player shoves nobody: the speed is asked before anything else.
+    if GetEntitySpeed(playerPed) < cfg.MinSpeed or IsPedInAnyVehicle(playerPed, false)
+        or IsEntityDead(playerPed) or IsPedRagdoll(playerPed) or IsPedInMeleeCombat(playerPed) then
         return reported
     end
     local origin = GetEntityCoords(playerPed)
     local velocity = GetEntityVelocity(playerPed)
-    eachOwnPed(function(npcId, ped)
+    eachNearPed(cfg.MaxDistance, function(npcId, track)
+        local ped = track.ped
         if not pending[ped] and due(ped, now) and not excluded(ped, npcId, now)
             and IsEntityTouchingEntity(playerPed, ped)
-            and towards(velocity, origin, GetEntityCoords(ped)) then
+            and towards(velocity, origin, track) then
             pending[ped] = { since = now, npc_id = npcId, ragdolled = IsPedRagdoll(ped) }
         end
     end)

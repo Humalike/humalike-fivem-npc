@@ -54,41 +54,45 @@ local function followTarget(ped, localServerId)
         and type(params) == 'table' and tonumber(params.player_id) == localServerId
 end
 
+local function alive(track)
+    return track.exists and not IsEntityDead(track.ped)
+end
+
+-- Positions come from the shared tracker; the game is asked only about the
+-- player, the camera and the few NPCs that qualify.
 local function calculate(listener)
     local playerPed = PlayerPedId()
-    local playerVehicle = GetVehiclePedIsIn(playerPed, false)
     local localServerId = GetPlayerServerId(PlayerId())
     local playerCoords = GetEntityCoords(playerPed)
-    local camera = GetGameplayCamCoord()
+    local player = HumalikeWorldCollector and HumalikeWorldCollector.latest or nil
+    local playerVehicleNet = player and player.vehicle and player.vehicle.networkId or nil
     local forward = listener and listener.forward or nil
+    local camera = forward and GetGameplayCamCoord() or nil
     local followers, vehiclePeers = {}, {}
-    local gazeId, gazeDistance = nil, GAZE_DISTANCE + 1.0
+    local gaze, gazeDistance = nil, GAZE_DISTANCE + 1.0
     local nearby = false
 
-    for npcId, entry in pairs(HumalikeWorldRegistry.entries) do
-        local ped = entry.entity
+    for npcId, track in pairs(HumalikeWorldTrack.tracks) do
         local voiceUnavailable = HumalikeNpcRuntimeControl
             and HumalikeNpcRuntimeControl.IsVoiceUnavailable(npcId)
-        if not voiceUnavailable and ped and ped > 0
-            and DoesEntityExist(ped) and not IsEntityDead(ped) then
-            if followTarget(ped, localServerId) then followers[#followers + 1] = npcId end
-            if playerVehicle ~= 0 and GetVehiclePedIsIn(ped, false) == playerVehicle then
+        if not voiceUnavailable and track.exists then
+            if followTarget(track.ped, localServerId) and alive(track) then
+                followers[#followers + 1] = npcId
+            end
+            if playerVehicleNet and track.vehicleState
+                and track.vehicleState.network_id == playerVehicleNet and alive(track) then
                 vehiclePeers[#vehiclePeers + 1] = npcId
             end
-            local coords = GetEntityCoords(ped)
-            local px, py, pz = coords.x - playerCoords.x, coords.y - playerCoords.y, coords.z - playerCoords.z
+            local px, py, pz = track.x - playerCoords.x, track.y - playerCoords.y, track.z - playerCoords.z
             local playerDistance = math.sqrt(px * px + py * py + pz * pz)
             if playerDistance <= IDLE_DISTANCE then nearby = true end
-            if forward then
-                if playerDistance > 0.01 and playerDistance <= GAZE_DISTANCE then
-                    local dx, dy, dz = coords.x - camera.x, coords.y - camera.y, coords.z - camera.z
-                    local cameraDistance = math.sqrt(dx * dx + dy * dy + dz * dz)
-                    local dot = cameraDistance > 0.01
-                        and (dx * forward.x + dy * forward.y + dz * forward.z) / cameraDistance or -1.0
-                    if dot >= GAZE_MIN_DOT and playerDistance < gazeDistance then
-                        gazeId, gazeDistance = npcId, playerDistance
-                    end
-                end
+            if forward and playerDistance > 0.01 and playerDistance <= GAZE_DISTANCE
+                and playerDistance < gazeDistance then
+                local dx, dy, dz = track.x - camera.x, track.y - camera.y, track.z - camera.z
+                local cameraDistance = math.sqrt(dx * dx + dy * dy + dz * dz)
+                local dot = cameraDistance > 0.01
+                    and (dx * forward.x + dy * forward.y + dz * forward.z) / cameraDistance or -1.0
+                if dot >= GAZE_MIN_DOT then gaze, gazeDistance = track, playerDistance end
             end
         end
     end
@@ -96,9 +100,9 @@ local function calculate(listener)
     local result, seen = {}, {}
     addGroup(result, seen, followers)
     addGroup(result, seen, vehiclePeers)
-    if gazeId and not seen[gazeId] and #result < MAX_TARGETS then
-        local gazePed = HumalikeWorldRegistry.entries[gazeId].entity
-        if HasEntityClearLosToEntity(playerPed, gazePed, 17) then result[#result + 1] = gazeId end
+    if gaze and not seen[gaze.npcId] and #result < MAX_TARGETS and alive(gaze)
+        and HasEntityClearLosToEntity(playerPed, gaze.ped, 17) then
+        result[#result + 1] = gaze.npcId
     end
     return result, nearby or #result > 0
 end

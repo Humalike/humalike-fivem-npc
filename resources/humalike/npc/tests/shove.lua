@@ -37,6 +37,17 @@ function IsPedRagdoll(ped) return ragdoll[ped] == true end
 function IsEntityTouchingEntity(_, ped) return touching[ped] == true end
 function HumalikeDebug() end
 
+-- The tracker knows which registered peds stand within reach; ped 12 is
+-- in no registry and never tracked.
+local function near(npcId, ped)
+    return { npcId = npcId, ped = ped, exists = true, dist2 = 4.0, x = 2, y = 0, z = 0 }
+end
+HumalikeWorldTrack = {
+    tracks = { ['ambient-1'] = near('ambient-1', 10), ['static-1'] = near('static-1', 11),
+        ['ambient-2'] = near('ambient-2', 13) },
+    AnyWithin = function() return true end,
+}
+
 dofile('client/shove.lua')
 assert(#threads == 1)
 coords[1] = { x = 0, y = 0, z = 0 }
@@ -45,6 +56,13 @@ pool = { [10] = true, [11] = true, [12] = true, [13] = true }
 AmbientPeds = { ['ambient-1'] = 10, ['ambient-2'] = 13 }
 LoadedPeds = { ['static-1'] = 11 }
 touching = { [10] = true, [11] = true, [12] = true, [13] = true }
+
+local playerReads = 0
+local speedOf = GetEntitySpeed
+function GetEntitySpeed() playerReads = playerReads + 1 return speedOf() end
+HumalikeWorldTrack.AnyWithin = function() return false end
+assert(HumalikeNpcShove.Tick(900) == 0 and playerReads == 0, 'with nobody in reach the player is not even looked at')
+HumalikeWorldTrack.AnyWithin = function() return true end
 
 assert(HumalikeNpcShove.Tick(1000) == 0 and #sent == 0, 'standing still touches nobody')
 speed = 1.2

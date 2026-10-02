@@ -3,6 +3,106 @@
   inset: 0;
   width: 100vw;
   height: 100vh;
+  overflow: hidden;
   pointer-events: none;
   z-index: 10;
+  --s: 1;
+  --t: 50ms;
+  font-family: Nunito, Arial, sans-serif;
 }
+
+/* The anchor is the ped's head; the label sits centred above it. */
+.hl-label {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: flex;
+  align-items: center;
+  gap: calc(8px * var(--s));
+  padding-bottom: calc(4px * var(--s));
+  will-change: transform;
+  transition: transform var(--t) linear;
+  translate: -50% -100%;
+}
+.hl-label.hl-enter { transition: none; }
+
+.hl-icon {
+  box-sizing: border-box;
+  display: grid;
+  place-items: center;
+  width: calc(30px * var(--s));
+  height: calc(30px * var(--s));
+  border-radius: calc(7px * var(--s));
+  background: linear-gradient(135deg, #67cbc1, #3e8e86);
+  border: calc(1.5px * var(--s)) solid #67cbc1;
+  box-shadow: 0 0 0 calc(2px * var(--s)) rgba(103, 203, 193, .14);
+}
+.hl-icon img {
+  width: calc(19px * var(--s));
+  height: calc(19px * var(--s));
+  display: block;
+}
+
+.hl-pill {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  height: calc(30px * var(--s));
+  padding: 0 calc(11px * var(--s));
+  border-radius: 0 calc(10px * var(--s)) 0 calc(10px * var(--s));
+  background: rgba(22, 25, 22, .68);
+  border: calc(.75px * var(--s)) solid rgba(103, 203, 193, .18);
+  box-shadow: 0 calc(2px * var(--s)) 0 rgba(0, 0, 0, .24);
+}
+
+.hl-ai {
+  color: #fff;
+  font-weight: 600;
+  font-size: calc(14px * var(--s));
+  line-height: 1;
+  text-shadow: 0 calc(1px * var(--s)) 0 rgba(0, 0, 0, .55);
+}
+
+.hl-flag {
+  box-sizing: border-box;
+  display: inline-block;
+  width: calc(19px * var(--s));
+  height: calc(12px * var(--s));
+  margin-left: calc(8px * var(--s));
+  border-radius: calc(2px * var(--s));
+  border: calc(.65px * var(--s)) solid rgba(255, 255, 255, .48);
+  background: rgba(8, 20, 18, .82);
+  overflow: hidden;
+}
+.hl-flag[hidden], .hl-mute[hidden] { display: none; }
+.hl-flag-pl { background: linear-gradient(#fff 50%, #dc143c 50%); }
+.hl-flag-de { background: linear-gradient(#171717 33.3%, #dd1f2d 33.3% 66.6%, #f4cc18 66.6%); }
+.hl-flag-es { background: linear-gradient(#aa151b 25%, #f1bf00 25% 75%, #aa151b 75%); }
+.hl-flag-fr { background: linear-gradient(90deg, #1a47b8 33.3%, #fff 33.3% 66.6%, #e8323c 66.6%); }
+.hl-flag-en {
+  background:
+    linear-gradient(#d5273e, #d5273e) center / 100% 18% no-repeat,
+    linear-gradient(#d5273e, #d5273e) center / 12% 100% no-repeat,
+    linear-gradient(#fff, #fff) center / 100% 32% no-repeat,
+    linear-gradient(#fff, #fff) center / 22% 100% no-repeat,
+    linear-gradient(to bottom right, transparent 44%, #fff 44% 56%, transparent 56%),
+    linear-gradient(to bottom left, transparent 44%, #fff 44% 56%, transparent 56%),
+    #173f90;
+}
+.hl-flag-code {
+  color: #eaf6f2;
+  font-weight: 800;
+  font-size: calc(7.5px * var(--s));
+  line-height: calc(12px * var(--s));
+  text-align: center;
+  font-family: Arial, sans-serif;
+}
+
+.hl-mute {
+  display: inline-block;
+  width: calc(14px * var(--s));
+  height: calc(14px * var(--s));
+  margin-left: calc(7px * var(--s));
+}
+.hl-mute svg { width: 100%; height: 100%; display: block; fill: #f2faf7; }
+.hl-mute .hl-mute-x { fill: none; stroke: #f2faf7; stroke-width: 1.5; stroke-linecap: round; }
