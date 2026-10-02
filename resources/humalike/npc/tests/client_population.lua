@@ -709,4 +709,32 @@ entityReads = 0
 for _ = 1, 60 do HumalikeNpcPopulationClient.PaceTick() end
 assert(entityReads == 0, 'the per-frame loop never touches a bag')
 
+-- A sliced pass spreads the pool over frames and swaps its lists in only at the end.
+pool[95], kinds[95], bodyKinds[95], owned[95] = true, 'population', 'persona', true
+local frames = 0
+function Wait(ms)
+    assert(ms == 0, 'a slice waits one frame')
+    frames = frames + 1
+    coroutine.yield()
+end
+local slicedPass = coroutine.create(function()
+    return HumalikeNpcPopulationClient.SlicedTick(500000, false, 3)
+end)
+assert(coroutine.resume(slicedPass))
+paceCalls = {}
+HumalikeNpcPopulationClient.PaceTick()
+assert(#paceCalls == 2, 'the previous lists stay in force while the pass runs')
+heldPeds[90] = true
+HumalikeNpcPopulationClient.RefreshPace(90)
+assert(coroutine.resume(slicedPass))
+assert(coroutine.resume(slicedPass))
+assert(coroutine.status(slicedPass) == 'dead' and frames == 2, 'six peds in three slices')
+paceCalls = {}
+HumalikeNpcPopulationClient.PaceTick()
+assert(#paceCalls == 2, 'the new walker joins once the pass completes')
+for _, call in ipairs(paceCalls) do
+    assert(call[1] == 91 or call[1] == 95, 'a hold announced mid-pass is not undone by the swap')
+end
+heldPeds[90] = nil
+
 print('client_population: ok')
