@@ -12,7 +12,6 @@ local copsDisabled = false
 local lastSweepAt = 0
 local DEFAULT_STAND_SCENARIO = 'WORLD_HUMAN_STAND_IMPATIENT'
 local FREE_PACE = 3.0 -- max move blend ratio, sprint
-local SCRIPT_POPULATION_TYPE = 7 -- POPTYPE_MISSION: every ped a script created, ours included
 local BODY_KEYS = {
     'humalike_npc_kind', 'humalike_npc_id', 'humalike_body_kind', 'humalike_body_id',
     'humalike_body_behaviour', 'humalike_body_scenario', 'humalike_walk_rate',
@@ -377,13 +376,10 @@ local function gtaLeftover(ped, populationType, players)
     return not nearAnyPlayer(GetEntityCoords(ped), players, cfg.SweepMinPlayerDistance)
 end
 
--- Our bodies are script peds. A street ped's bag is read on sweep ticks only,
--- two keys, so the sweep never deletes a body of ours GTA typed oddly.
-local function bodyState(ped, populationType, sweep)
-    if populationType == SCRIPT_POPULATION_TYPE or IsEntityAMissionEntity(ped) then
-        return snapshot(ped), false
-    end
-    if not sweep then return nil, false end
+-- Every controlled ped's kind is read each tick: a body of ours is never
+-- classified by GTA's population type, which differs between how a body was
+-- created and which client owns it. Only our own bodies get the full snapshot.
+local function bodyState(ped)
     local live = Entity(ped).state
     local kind = live.humalike_npc_kind
     if kind == 'population' then return snapshot(ped), false end
@@ -401,7 +397,7 @@ function HumalikeNpcPopulationClient.Tick(now, sweep)
     for _, ped in ipairs(GetGamePool('CPed')) do
         if DoesEntityExist(ped) and not IsPedAPlayer(ped) and NetworkHasControlOfEntity(ped) then
             local populationType = GetEntityPopulationType(ped)
-            local state, unclaimed = bodyState(ped, populationType, sweep)
+            local state, unclaimed = bodyState(ped)
             if state and state.humalike_npc_kind == 'population' and state.humalike_body_kind == nil then
                 seen[ped] = true -- kind not replicated yet; leave it alone this tick
             elseif state and state.humalike_npc_kind == 'population' then

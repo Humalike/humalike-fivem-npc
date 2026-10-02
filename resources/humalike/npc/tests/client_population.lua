@@ -682,7 +682,7 @@ function Entity(ped)
     return countedEntity(ped)
 end
 HumalikeNpcPopulationClient.Tick(400000, false)
-assert(entityReads == 3, 'one bag read per script ped; GTA pedestrians are never read')
+assert(entityReads == 7, 'one bag read per controlled ped, a second (the snapshot) for our bodies')
 local keyReads = 0
 local snapshotEntity = Entity
 function Entity(ped)
@@ -695,12 +695,12 @@ function Entity(ped)
     return entity
 end
 HumalikeNpcPopulationClient.Tick(400500, false)
-assert(keyReads == 27, 'nine keys per script ped, absent ones included, read once each')
+assert(keyReads == 26, 'two keys per other ped; kind plus the nine-key snapshot per body')
 Entity = snapshotEntity
 entityReads = 0
 HumalikeNpcPopulationClient.SetState(true, false)
 HumalikeNpcPopulationClient.Tick(401000, true)
-assert(entityReads == 5, 'a sweep reads every pedestrian once, to be sure it is not ours')
+assert(entityReads == 7, 'a sweep reads the same way: every controlled ped once, our bodies twice')
 HumalikeNpcPopulationClient.SetState(false, false)
 paceCalls = {}
 HumalikeNpcPopulationClient.PaceTick()
