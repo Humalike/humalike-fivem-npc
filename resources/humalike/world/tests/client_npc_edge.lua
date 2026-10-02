@@ -72,6 +72,47 @@ assert(velocityCalls[10] == 1 and velocityCalls[20] == 1,
     'sort/priority must use cached velocity')
 assert(frame.npcs[1].npc_id == 'npc-b', 'talking NPC must remain urgent')
 
+-- A sliced build takes the same samples, eight per game frame.
+for index = 1, 20 do
+    local npcId = ('npc-crowd-%02d'):format(index)
+    HumalikeWorldRegistry.entries[npcId] = {
+        npcId = npcId, entity = 1000 + index, entityId = 2000 + index, networkId = 1200 + index,
+        modelHash = 1, runtimeToken = npcId, activity = 'idle', kind = 'persistent',
+    }
+end
+local player = { position = vector3(0, 0, 0), effectiveVoiceDistance = 15 }
+HumalikeWorldNpcEdge.cursor = 1
+local whole = HumalikeWorldNpcEdge.BuildPositionsFrame(player, 1, 2)
+local yields = 0
+function Wait(ms)
+    assert(ms == 0)
+    yields = yields + 1
+    coroutine.yield()
+end
+HumalikeWorldNpcEdge.cursor = 1
+local build = coroutine.create(function()
+    return HumalikeWorldNpcEdge.BuildPositionsFrame(player, 1, 2, true)
+end)
+local ok, sliced
+repeat ok, sliced = coroutine.resume(build) assert(ok, sliced) until coroutine.status(build) == 'dead'
+assert(yields == 2, '22 samples take three frames')
+assert(#sliced.npcs == #whole.npcs and #whole.npcs == 22)
+for index, sample in ipairs(whole.npcs) do
+    assert(sliced.npcs[index].npc_id == sample.npc_id, 'in the same order')
+end
+
+local gone = {}
+function DoesEntityExist(entity) return not gone[entity] end
+yields = 0
+HumalikeWorldNpcEdge.cursor = 1
+build = coroutine.create(function()
+    return HumalikeWorldNpcEdge.BuildPositionsFrame(player, 1, 3, true)
+end)
+assert(coroutine.resume(build))
+gone[1020] = true
+repeat ok, sliced = coroutine.resume(build) assert(ok, sliced) until coroutine.status(build) == 'dead'
+assert(#sliced.npcs == 21, 'a ped deleted between slices is left out')
+
 HumalikeWorldNpcEdge.connected = true
 HumalikeWorldNpcEdge.ticketPending = true
 handlers['humalike:world:npcEdgeReconnect']()

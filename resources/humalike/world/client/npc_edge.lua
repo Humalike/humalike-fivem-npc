@@ -22,8 +22,13 @@ local function ambientIdentityMatches(entry, ped, networkId)
     return Entity(ped).state.humalike_npc_id == entry.npcId
 end
 
+-- A frame's samples are taken this many per game frame, so a crowd never
+-- lands its whole cost on one frame.
+local SAMPLES_PER_SLICE = 8
+
 local function npcSample(candidate)
     local entry, ped = candidate.entry, candidate.entry.entity
+    if not DoesEntityExist(ped) then return nil end -- gone since the scan, a frame or two ago
     local entityId = tonumber(entry.entityId)
     local networkId = tonumber(entry.networkId) or NetworkGetNetworkIdFromEntity(ped)
     if not entityId or entityId <= 0 or not networkId or networkId <= 0 then return nil end
@@ -52,7 +57,7 @@ local function priority(entry, distanceSquared, speedSquared)
     return entry.activity == 'nearby' and 2 or 1
 end
 
-local function collect(playerPosition)
+local function collect(playerPosition, sliced)
     local urgent, regular = {}, {}
     local reportRadiusSquared = WorldConfig.npcEdge.reportRadius
         * WorldConfig.npcEdge.reportRadius
@@ -85,8 +90,14 @@ local function collect(playerPosition)
     table.sort(regular, sorter)
     if #urgent == 0 and #regular == 0 then return {} end
     local samples = {}
+    local taken = 0
+    local function sampleOf(candidate)
+        if sliced and taken > 0 and taken % SAMPLES_PER_SLICE == 0 then Wait(0) end
+        taken = taken + 1
+        return npcSample(candidate)
+    end
     for index = 1, math.min(#urgent, WorldConfig.npcEdge.maxNpcsPerFrame) do
-        local sample = npcSample(urgent[index])
+        local sample = sampleOf(urgent[index])
         if sample then samples[#samples + 1] = sample end
     end
     local remaining = WorldConfig.npcEdge.maxNpcsPerFrame - #samples
@@ -94,7 +105,7 @@ local function collect(playerPosition)
         if HumalikeWorldNpcEdge.cursor > #regular then HumalikeWorldNpcEdge.cursor = 1 end
         for offset = 0, math.min(remaining, #regular) - 1 do
             local index = ((HumalikeWorldNpcEdge.cursor + offset - 1) % #regular) + 1
-            local sample = npcSample(regular[index])
+            local sample = sampleOf(regular[index])
             if sample then samples[#samples + 1] = sample end
         end
         HumalikeWorldNpcEdge.cursor = ((HumalikeWorldNpcEdge.cursor + remaining - 1) % #regular) + 1
@@ -156,7 +167,8 @@ RegisterNUICallback('npcEdgeStats', function(body, callback)
     callback({ ok = true })
 end)
 
-function HumalikeWorldNpcEdge.BuildPositionsFrame(player, playerPed, sequence)
+-- `sliced` spreads the per-NPC sampling over a few frames (the caller is a thread).
+function HumalikeWorldNpcEdge.BuildPositionsFrame(player, playerPed, sequence, sliced)
     return {
         type = 'positions',
         sequence = sequence,
@@ -165,7 +177,7 @@ function HumalikeWorldNpcEdge.BuildPositionsFrame(player, playerPed, sequence)
             effective_voice_distance = player.effectiveVoiceDistance,
             vehicle = HumalikeWorldVehicle.StreamState(playerPed),
         },
-        npcs = collect(vector3(player.position.x, player.position.y, player.position.z)),
+        npcs = collect(vector3(player.position.x, player.position.y, player.position.z), sliced),
     }
 end
 
@@ -174,18 +186,20 @@ function HumalikeWorldNpcEdge.Start()
     CreateThread(function()
         Wait(1000)
         HumalikeWorldNpcEdge.RequestTicket()
+        local startedAt = GetGameTimer()
         while true do
-            Wait(WorldConfig.npcEdge.frameIntervalMs)
+            Wait(math.max(0, WorldConfig.npcEdge.frameIntervalMs - (GetGameTimer() - startedAt)))
+            startedAt = GetGameTimer()
             local player = HumalikeWorldCollector.latest
             if HumalikeWorldNpcEdge.connected and player then
                 HumalikeWorldNpcEdge.sequence = HumalikeWorldNpcEdge.sequence + 1
-                SendNUIMessage({
-                    type = 'npc_edge_frame',
-                    frame = HumalikeWorldNpcEdge.BuildPositionsFrame(
-                        player, PlayerPedId(), HumalikeWorldNpcEdge.sequence
-                    ),
-                })
-                HumalikeWorldNpcEdge.sentFrames = HumalikeWorldNpcEdge.sentFrames + 1
+                local frame = HumalikeWorldNpcEdge.BuildPositionsFrame(
+                    player, PlayerPedId(), HumalikeWorldNpcEdge.sequence, true
+                )
+                if HumalikeWorldNpcEdge.connected then
+                    SendNUIMessage({ type = 'npc_edge_frame', frame = frame })
+                    HumalikeWorldNpcEdge.sentFrames = HumalikeWorldNpcEdge.sentFrames + 1
+                end
             end
         end
     end)
