@@ -134,6 +134,9 @@ end
 -- frame is repeated at this interval instead of every render tick.
 local FRAME_HEARTBEAT_MS = 150
 local FRAME_EPSILON = 0.0005 -- normalised screen units, under a pixel
+-- With no NPC within MaxDistance + CandidateMargin the thread rechecks this often;
+-- the margin covers the walk in between, so a label shows up at most this late.
+local IDLE_RECHECK_MS = 250
 
 local function sameFrame(frame, last)
     if not last or #frame ~= #last then return false end
@@ -170,8 +173,16 @@ CreateThread(function()
             end
 
             local renderFps = math.max(1, tonumber(labels.RenderFps) or 60)
-            if now < nextFrameAt then
-                Wait(0)
+            if #candidates == 0 then
+                if hadVisibleLabels then
+                    SendNUIMessage({ type = 'labels:clear' })
+                    hadVisibleLabels = false
+                    lastFrame = nil
+                end
+                candidatesAt = -1000000 -- rescan on wake
+                Wait(IDLE_RECHECK_MS)
+            elseif now < nextFrameAt then
+                Wait(nextFrameAt - now)
             else
                 local frameInterval = math.max(1, math.floor(1000 / renderFps))
                 nextFrameAt = math.max(now, nextFrameAt + frameInterval)
@@ -194,7 +205,7 @@ CreateThread(function()
                         hadVisibleLabels = false
                         lastFrame = nil
                     end
-                    Wait(hasNearbyNpc and 50 or 250)
+                    Wait(hasNearbyNpc and 50 or IDLE_RECHECK_MS)
                 end
             end
         end

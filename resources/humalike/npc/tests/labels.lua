@@ -76,7 +76,8 @@ function GetEntityCoords(ped)
     return coordsOf(ped)
 end
 function GetGameTimer() return now end
-function Wait() coroutine.yield() end
+local waits = {}
+function Wait(ms) waits[#waits + 1] = ms coroutine.yield() end
 function SendNUIMessage(message) sent[#sent + 1] = message.type end
 local loop = coroutine.create(thread)
 local function tick(at)
@@ -92,3 +93,14 @@ tick(96 + 150 + 16)
 assert(#sent == 3, 'a label that moved is sent at once')
 tick(96 + 150 + 32)
 assert(#sent == 3, 'and not again while it stays put')
+
+-- Nobody within range: the scene is cleared once, then the thread only rechecks every 250 ms.
+LoadedPeds, AmbientPeds = {}, {}
+function World3dToScreen2d() error('nothing to project without a nearby NPC') end
+tick(2000)
+assert(sent[#sent] == 'labels:clear' and waits[#waits] == 250, 'labels go away and the thread sleeps')
+local cleared = #sent
+tick(2250)
+tick(2500)
+assert(#sent == cleared and waits[#waits] == 250, 'an empty street costs one candidate scan per 250 ms')
+print('labels: ok')
