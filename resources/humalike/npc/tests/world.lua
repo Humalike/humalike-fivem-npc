@@ -16,6 +16,7 @@ AmbientNpcEntries = {
     },
 }
 AmbientPeds = { ambient = 20 }
+AmbientPedNpcIds = { [20] = 'ambient' }
 
 function ResolveNpcPed(npcId) return LoadedPeds[npcId] or AmbientPeds[npcId] end
 function DoesEntityExist(entity) return entities[entity] == true end
@@ -76,6 +77,7 @@ AmbientNpcEntries['ambient-2'] = {
 AmbientPeds['ambient-2'] = 20
 AmbientNpcEntries.ambient = nil
 ambientTag = 'ambient-2'
+AmbientPedNpcIds[20] = 'ambient-2'
 registerCalls = 0
 handlers['humalike:npc:ambientPedAssigned'](
     'ambient-2', 20, AmbientNpcEntries['ambient-2'])

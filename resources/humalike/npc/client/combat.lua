@@ -73,13 +73,19 @@ CreateThread(function()
     end
 end)
 
+-- The aim target is read only while the player aims; otherwise one native
+-- every 100 ms says there is nothing to read.
 CreateThread(function()
     local aimingAt
     while true do
-        Wait(50)
-        local found, entity = GetEntityPlayerIsFreeAimingAt(PlayerId())
-        local npcId = found and IsEntityAPed(entity)
-            and Entity(entity).state.humalike_npc_id or nil
+        Wait(aimingAt and 50 or 100)
+        local playerId = PlayerId()
+        local npcId = nil
+        if IsPlayerFreeAiming(playerId) then
+            local found, entity = GetEntityPlayerIsFreeAimingAt(playerId)
+            npcId = found and IsEntityAPed(entity)
+                and Entity(entity).state.humalike_npc_id or nil
+        end
         if npcId ~= aimingAt then
             aimingAt = npcId
             local entry = npcId and AmbientNpcEntries and AmbientNpcEntries[npcId] or nil

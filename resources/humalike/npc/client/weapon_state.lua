@@ -55,7 +55,7 @@ CreateThread(function()
     local previousWeapon
 
     while true do
-        Wait(100)
+        Wait(250)
         local ped = PlayerPedId()
 
         if not ped or ped == 0 or not DoesEntityExist(ped) then

@@ -98,7 +98,7 @@ CreateThread(function()
                 end
             end
         end
-        Wait(unresolved and 500 or 2000)
+        Wait(unresolved and 1000 or 2000)
     end
 end)
 

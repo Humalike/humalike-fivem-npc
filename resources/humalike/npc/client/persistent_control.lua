@@ -16,7 +16,7 @@ end
 
 CreateThread(function()
     while true do
-        Wait(500)
+        Wait(1000)
         local activePeds = {}
 
         for npcId, ped in pairs(LoadedPeds or {}) do
@@ -24,10 +24,12 @@ CreateThread(function()
                 activePeds[ped] = true
                 local entry = KnownNpcs and KnownNpcs[npcId] or nil
                 if entry and entry.type == 'static' then
-                    local signature = ('%s:%s'):format(
-                        NetworkGetNetworkIdFromEntity(ped),
-                        tostring(Entity(ped).state.humalike_runtime_token))
+                    -- Only the owner configures; the signature (two natives
+                    -- and a string) is built for owned peds alone.
                     if NetworkHasControlOfEntity(ped) then
+                        local signature = ('%s:%s'):format(
+                            NetworkGetNetworkIdFromEntity(ped),
+                            tostring(Entity(ped).state.humalike_runtime_token))
                         if configuredPeds[ped] ~= signature then
                             configurePersistentPed(ped, entry)
                             configuredPeds[ped] = signature
