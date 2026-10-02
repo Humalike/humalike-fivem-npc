@@ -424,10 +424,10 @@ function fivemEnvironment() {
         fetchRelease: (suffix) => fetchRelease(source, suffix),
         download,
         canRestart: () => RESTART_COMMANDS.every((command) => IsPrincipalAceAllowed(principal, `command.${command}`)),
-        restart: () => {
-            ExecuteCommand('refresh');
-            ExecuteCommand(`ensure ${resourceName}`);
-        },
+        // Never ExecuteCommand the restart from here: stopping the resource
+        // from its own JavaScript kills the FXServer process. restart.lua
+        // does it from the main thread.
+        restart: () => emit('humalike:update:restart'),
     };
 }
 
