@@ -69,7 +69,9 @@ Never combine files from different versions.
 
 ## Rollback
 
-Set `humalike_version` to the previous version and restart the server, or keep
-the previous verified archive, replace the complete resource with that
-version, run `refresh`, and restart `humalike`. Credentials remain in
+Set `humalike_version` to the previous version, for example
+`set humalike_version "0.5.1"`, and restart the server. HumaLike installs that
+version and stays on it until you remove the setting. Replacing the folder by
+hand is undone on the next start while automatic updates are on, so pin the
+version (or set `humalike_auto_update off`) first. Credentials remain in
 `server.cfg` and are not part of release archives.

@@ -89,6 +89,13 @@ def load_lock(path: Path) -> dict[str, Any]:
             raise ReleaseError(f"{name} must live at resources/{name}")
         if not SEMVER_PATTERN.fullmatch(str(resource.get("version", ""))):
             raise ReleaseError(f"{name} has an invalid version")
+        # Servers check the signed bundle's version against the release tag,
+        # which is the product version: a resource on another version would
+        # publish a release no server can install.
+        if resource["version"] != product["version"]:
+            raise ReleaseError(
+                f"{name} version {resource['version']} must equal product version {product['version']}"
+            )
         if not isinstance(includes, list) or not includes:
             raise ReleaseError(f"{name} has no include paths")
         for include in includes:

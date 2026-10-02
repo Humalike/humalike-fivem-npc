@@ -15,6 +15,9 @@ concurrency:
 jobs:
   release:
     runs-on: ubuntu-latest
+    # Servers install signed releases automatically, so publishing waits for a
+    # reviewer and the signing key exists only in this protected environment.
+    environment: release
     steps:
       - uses: actions/checkout@v4
         with:
@@ -35,6 +38,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y lua5.4
           python -m pip install ruff==0.12.11
+      - name: Release only from main
+        run: |
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "${GITHUB_SHA}" origin/main
       - name: Validate release tag
         run: |
           version="$(python -c 'import json; print(json.load(open("release.lock.json"))["product"]["version"])')"

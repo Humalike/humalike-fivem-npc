@@ -86,7 +86,7 @@ class ComposeReleaseTest(unittest.TestCase):
             "schema_version": 2,
             "product": {
                 "name": "humalike-fivem",
-                "version": "0.1.0-test.1",
+                "version": "0.1.0",
                 "protocols": {"world_state": 1, "voice_control": 1},
             },
             "resources": [
@@ -172,6 +172,14 @@ class ComposeReleaseTest(unittest.TestCase):
         _git(self.root, "commit", "--quiet", "-m", "break NUI reference")
         with self.assertRaisesRegex(ReleaseError, "NUI references missing asset"):
             compose(lock, self.root / "out")
+
+    def test_resource_version_must_match_product_version(self) -> None:
+        lock, _ = self._commit_fixture()
+        data = json.loads(lock.read_text())
+        data["product"]["version"] = "0.2.0"
+        lock.write_text(json.dumps(data), encoding="utf-8")
+        with self.assertRaisesRegex(ReleaseError, "must equal product version"):
+            load_lock(lock)
 
     def test_lock_requires_current_schema(self) -> None:
         lock, _ = self._commit_fixture()
