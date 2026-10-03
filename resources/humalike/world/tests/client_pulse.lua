@@ -181,6 +181,15 @@ scopes = {}
 now = 24100
 HumalikePulse.Run(now)
 assert(#scopes == 0, 'and nothing is paid for without a recording')
+recording = 1 -- some builds answer 1 instead of true
+now = 25100
+HumalikePulse.Run(now)
+assert(#scopes > 3, 'a recording is a recording however the native says so')
+recording = 0
+scopes = {}
+now = 26100
+HumalikePulse.Run(now)
+assert(#scopes == 0)
 
 -- A game timer that went backwards does not park the jobs.
 local fastRuns = #ran

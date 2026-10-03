@@ -146,8 +146,10 @@ end
 local function profilerRecording(now)
     if now - profilingAt >= PROFILER_CHECK_MS or now < profilingAt then
         profilingAt = now
-        profiling = GetConvarInt ~= nil and GetConvarInt('humalike_profile_jobs', 0) == 1
-            and ProfilerIsRecording ~= nil and ProfilerIsRecording() == true
+        local recording = GetConvarInt ~= nil and GetConvarInt('humalike_profile_jobs', 0) == 1
+            and ProfilerIsRecording ~= nil and ProfilerIsRecording()
+        -- The native answers false, and true or 1 depending on the build.
+        profiling = recording == true or (type(recording) == 'number' and recording ~= 0)
     end
     return profiling
 end
