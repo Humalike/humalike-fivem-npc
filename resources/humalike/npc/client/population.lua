@@ -185,7 +185,7 @@ local function incapacitated(ped, state)
 end
 
 local function wanderIdle(ped, now)
-    if incapacitated(ped) or IsPedUsingAnyScenario(ped) or not IsPedStopped(ped) then
+    if not IsPedStopped(ped) or IsPedUsingAnyScenario(ped) or incapacitated(ped) then
         stoppedSince[ped] = nil
         return false
     end
@@ -194,7 +194,7 @@ local function wanderIdle(ped, now)
 end
 
 local function scenarioIdle(ped, now)
-    if incapacitated(ped) or IsPedUsingAnyScenario(ped) or not IsPedStopped(ped) then
+    if not IsPedStopped(ped) or IsPedUsingAnyScenario(ped) or incapacitated(ped) then
         scenarioIdleSince[ped] = nil
         return false
     end
@@ -316,8 +316,14 @@ function HumalikeNpcPopulationClient.OwnsReactions(ped)
     return state.humalike_npc_kind == 'population' and hasMind(state)
 end
 
+-- A release or a migration may have handed the reactions back to GTA; the
+-- flag is put back this often (and at once when ownership returns).
+local REACTIONS_REASSERT_MS = 10000
+local reactionsAt = {}
+
 local function configure(ped, state, now, isManaged)
     configured[ped] = state.humalike_body_id or true
+    reactionsAt[ped] = now
     ownReactions(ped, state, not isManaged)
     if isManaged then
         HumalikeNpcPopulationClient.OwnPace(ped)
@@ -328,8 +334,10 @@ local function configure(ped, state, now, isManaged)
 end
 
 local function refresh(ped, state, now, isManaged)
-    -- A release or a migration may have handed the reactions back to GTA.
-    ownReactions(ped, state, false)
+    if (reactionsAt[ped] or 0) + REACTIONS_REASSERT_MS <= now then
+        reactionsAt[ped] = now
+        ownReactions(ped, state, false)
+    end
     if isManaged then
         if paced[ped] then HumalikeNpcPopulationClient.OwnPace(ped) end
         return
@@ -552,6 +560,7 @@ local function finishPass(pass)
     forgetUnseen(configured, seen)
     forgetUnseen(dressed, seen)
     forgetUnseen(paced, seen)
+    forgetUnseen(reactionsAt, seen)
     if HumalikeNpcDriving then HumalikeNpcDriving.Forget(seen) end
     ownedBodies = pass.walkers
     paceSet = pass.pacing
@@ -678,6 +687,7 @@ end)
 AddEventHandler('onResourceStop', function(resourceName)
     if resourceName ~= GetCurrentResourceName() then return end
     stoppedSince, scenarioIdleSince, configured, dressed, paced = {}, {}, {}, {}, {}
+    reactionsAt = {}
     bodies, ownedBodies = {}, {}
     paceSet = {}
     currentPass = nil

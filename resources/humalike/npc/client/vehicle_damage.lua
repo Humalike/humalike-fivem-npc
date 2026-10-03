@@ -25,7 +25,7 @@ end
 
 CreateThread(function()
     while true do
-        Wait(Config.VehicleDamage.PollIntervalMs)
+        Wait(tracked and Config.VehicleDamage.PollIntervalMs or 500) -- on foot: half as often
         local ped = PlayerPedId()
         local vehicle = ped and ped ~= 0 and DoesEntityExist(ped)
             and GetVehiclePedIsIn(ped, false) or 0

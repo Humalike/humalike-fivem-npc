@@ -29,6 +29,7 @@ function IsPedArmed() return armed end
 function GetGameTimer() return ticks * 250 end
 function PlayerId() return 7 end
 function GetEntityPlayerIsFreeAimingAt() return false, 0 end
+function IsPlayerFreeAiming() return false end
 function IsEntityAPed() return false end
 function Entity() return { state = { humalike_npc_id = stateNpcId } } end
 function DoesEntityExist() return true end
@@ -48,7 +49,7 @@ function TriggerServerEvent(...)
 end
 
 dofile('client/combat.lua')
-assert(#threads == 3)
+assert(#threads == 2, 'the health loop and one gun watcher (shots and aim)')
 pcall(threads[1])
 ticks = 0
 waitLimit = 6

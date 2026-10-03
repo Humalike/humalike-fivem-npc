@@ -15,7 +15,9 @@ local bodyHealth, engineHealth, timer = 1000.0, 1000.0, 0
 
 function CreateThread(fn) threads[#threads + 1] = coroutine.create(fn) end
 function Wait(delay)
-    assert(delay == 250)
+    -- 250 ms while a networked vehicle is tracked, 500 ms on foot
+    local tracking = pedVehicle ~= 0 and networked
+    assert(delay == (tracking and 250 or 500), ('wait %s'):format(tostring(delay)))
     coroutine.yield()
 end
 function PlayerPedId() return ped end

@@ -310,11 +310,7 @@ assert(blendCalls[3][1] == 22 and blendCalls[3][3] == 3.0 and blendCalls[4][1] =
 assert(blendCalls[7][1] == 26 and blendCalls[7][3] == 1.0, 'walk_rate defaults to 1.0')
 HumalikeNpcPopulationClient.Tick(3000, false)
 assert(#wanderCalls == 2 and #blendCalls == 7, 'a stopped ped is not re-tasked before the idle window')
-flags, tasks = blockingCounts(8)
-assert(#blockingCalls == 12 and next(tasks) == nil, 'the flag is re-asserted on every owned tick')
-for _, ped in ipairs({ 20, 22, 23, 24, 26 }) do
-    assert(flags[ped] == 1, 'never the task again')
-end
+assert(#blockingCalls == 7, 'the reactions flag is not re-asserted on every tick')
 HumalikeNpcPopulationClient.Tick(6000, false)
 assert(#wanderCalls == 4 and wanderCalls[3] == 20 and wanderCalls[4] == 26,
     'only owned, idle, unmanaged population peds wander again')
@@ -322,6 +318,11 @@ HumalikeNpcPopulationClient.Tick(7000, false)
 assert(#wanderCalls == 4, 'a freshly tasked ped waits for another idle window')
 HumalikeNpcPopulationClient.Tick(11000, false)
 assert(#wanderCalls == 6)
+flags, tasks = blockingCounts(8)
+assert(#blockingCalls == 12 and next(tasks) == nil, 'the flag is re-asserted every ten seconds')
+for _, ped in ipairs({ 20, 22, 23, 24, 26 }) do
+    assert(flags[ped] == 1, 'never the task again')
+end
 
 stopped[20] = false
 HumalikeNpcPopulationClient.Tick(16000, false)
@@ -386,7 +387,7 @@ announce(33)
 blockedBefore = #blockingCalls
 local wanderBefore = #wanderCalls
 HumalikeNpcPopulationClient.Tick(54000, false)
-assert(#blockingCalls == blockedBefore + 1 and blockingCalls[#blockingCalls][1] == 32
+assert(#blockingCalls == blockedBefore
     and #wanderCalls == wanderBefore, 'a body whose kind has not replicated is not ready: skipped')
 assert(HumalikeNpcPopulationClient.OwnsReactions(33) == false)
 bodyKinds[33] = 'persona'

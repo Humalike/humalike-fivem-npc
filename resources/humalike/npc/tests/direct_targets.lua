@@ -104,9 +104,17 @@ HumalikeWorldTrack.tracks.gaze.x, HumalikeWorldTrack.tracks.gaze.y = 4, 0
 _, waited = coroutine.resume(loop)
 assert(waited == 100, 'and the fast refresh is back once an NPC is near')
 
--- A dead gaze target is not a target.
+-- A dead gaze target is not a target; life is asked again after half a second.
 HumalikeWorldTrack.tracks.gaze.x, HumalikeWorldTrack.tracks.gaze.y = 2, 0
 function IsEntityDead(ped) return ped == 3 end
 HumalikeNpcDirectTargets.Refresh(forward)
+assert(#HumalikeNpcDirectTargets.Get() == 1, 'the cached answer holds for half a second')
+timer = timer + 600
+HumalikeNpcDirectTargets.Refresh(forward)
 assert(#HumalikeNpcDirectTargets.Get() == 0)
+natives = {}
+timer = timer + 100
+HumalikeNpcDirectTargets.Refresh(forward)
+assert(natives.GetGameplayCamCoord == 1 and natives.HasEntityClearLosToEntity == nil,
+    'with the gaze target dead no line of sight is traced; the camera is read for the candidate')
 print('direct_targets: ok')

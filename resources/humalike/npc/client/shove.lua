@@ -104,9 +104,13 @@ function HumalikeNpcShove.Tick(now)
     return reported
 end
 
+-- With nobody in reach and no contact pending the detector sleeps longer.
+local IDLE_TICK_MS = 500
+
 CreateThread(function()
     while true do
-        Wait(config().TickMs)
+        local busy = next(pending) ~= nil or HumalikeWorldTrack.AnyWithin(config().MaxDistance)
+        Wait(busy and config().TickMs or IDLE_TICK_MS)
         HumalikeNpcShove.Tick(GetGameTimer())
     end
 end)

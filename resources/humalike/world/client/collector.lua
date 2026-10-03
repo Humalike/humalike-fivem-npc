@@ -65,6 +65,20 @@ local function voiceDistance()
     return math.min(WorldConfig.collector.maxVoiceDistance, math.max(0.0, distance))
 end
 
+-- The zone is looked up again once the player walked this far from where it
+-- was last read; zones are hundreds of metres across.
+local ZONE_REFRESH_M = 50.0
+local zoneName, zoneX, zoneY = nil, 0.0, 0.0
+
+local function zoneOf(position)
+    local dx, dy = position.x - zoneX, position.y - zoneY
+    if zoneName == nil or dx * dx + dy * dy > ZONE_REFRESH_M * ZONE_REFRESH_M then
+        zoneName = GetNameOfZone(position.x, position.y, position.z) or ''
+        zoneX, zoneY = position.x, position.y
+    end
+    return zoneName
+end
+
 function HumalikeWorldCollector.Sample(ped, now, position, velocity)
     position = position or GetEntityCoords(ped)
     velocity = velocity or GetEntityVelocity(ped)
@@ -81,7 +95,7 @@ function HumalikeWorldCollector.Sample(ped, now, position, velocity)
         vehicle = HumalikeWorldVehicle.StreamState(ped, now),
         effectiveVoiceDistance = voiceDistance(),
         voiceMode = HumalikeWorldCollector.voiceMode,
-        zone = GetNameOfZone(position.x, position.y, position.z),
+        zone = zoneOf(position),
         flags = {
             dead = IsEntityDead(ped),
             paused = IsPauseMenuActive(),
@@ -142,15 +156,19 @@ function HumalikeWorldCollector.Start()
         end
     end)
 
+    -- A still player is polled a quarter as often; the first step shows up
+    -- within that poll.
+    local IDLE_POLL_MS = 250
     CreateThread(function()
         local lastMotionAt, lastPosition = 0, nil
         local pollMs = math.max(50, math.min(100,
             tonumber(WorldConfig.collector.movingIntervalMs) or 100))
+        local moving = false
         while true do
             local now, ped = GetGameTimer(), PlayerPedId()
             if ped and ped > 0 then
                 local position, velocity = GetEntityCoords(ped), GetEntityVelocity(ped)
-                local moving = #velocity > WorldConfig.collector.movementThreshold
+                moving = #velocity > WorldConfig.collector.movementThreshold
                 local interval = moving and WorldConfig.collector.movingIntervalMs
                     or WorldConfig.collector.idleIntervalMs
                 local changed = not lastPosition
@@ -161,7 +179,7 @@ function HumalikeWorldCollector.Start()
                     HumalikeWorldCollector.Sample(ped, now, position, velocity)
                 end
             end
-            Wait(pollMs)
+            Wait(moving and pollMs or IDLE_POLL_MS)
         end
     end)
 end

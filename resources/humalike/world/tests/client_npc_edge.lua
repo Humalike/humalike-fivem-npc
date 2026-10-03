@@ -29,7 +29,8 @@ local function track(npcId, fields)
         zone = fields.zone, vehicleState = fields.vehicleState, ownVehicle = fields.ownVehicle,
     }
 end
-HumalikeWorldTrack = { tracks = {} }
+HumalikeWorldTrack = { tracks = {}, changeRevision = 0 }
+local function changed() HumalikeWorldTrack.changeRevision = HumalikeWorldTrack.changeRevision + 1 end
 
 function GetEntityModel() error('the frame never asks the game about an NPC') end
 function GetEntityCoords() error('the frame never asks the game about an NPC') end
@@ -84,6 +85,9 @@ assert(message and message:find('"sequence":2,', 1, true) and message:find('"npc
 HumalikeWorldTrack.tracks['npc-a'].x = 6.0
 HumalikeWorldTrack.tracks['npc-a'].version = 2
 message = HumalikeWorldNpcEdge.Frame(player, 2200)
+assert(message == nil, 'a version bump the tracker did not announce is not seen: no walk over the tracks')
+changed()
+message = HumalikeWorldNpcEdge.Frame(player, 2200)
 assert(message and message:find('"npc_id":"npc-a"', 1, true) and not message:find('"npc_id":"npc-b"', 1, true),
     'only the NPC that changed is in the delta')
 assert(HumalikeWorldNpcEdge.Frame(player, 2400) == nil, 'and not again while it stays put')
@@ -113,6 +117,7 @@ for index = 1, 5 do
     HumalikeWorldTrack.tracks[npcId] = track(npcId, { entity = 1000 + index, entityId = 2000 + index,
         networkId = 1200 + index, x = 50, dist2 = 50 * 50 })
 end
+changed()
 HumalikeWorldNpcEdge.cursor = 1
 local selected = HumalikeWorldNpcEdge.Select(true)
 assert(#selected == 3 and selected[1].npcId == 'npc-b', 'the talking NPC leads a capped keyframe')

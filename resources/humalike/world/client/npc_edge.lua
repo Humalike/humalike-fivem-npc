@@ -21,6 +21,7 @@ local KEYFRAME_MS = 2000
 local PLAYER_MOVE_EPSILON = 0.1 -- metres
 
 local sent = {} -- npcId -> track version last reported
+local selectedRevision = nil -- HumalikeWorldTrack.changeRevision the last selection saw
 
 -- Frames are encoded by hand: the generic JSON encoder spent a millisecond or
 -- two on a 32-NPC frame, five times a second.
@@ -170,6 +171,7 @@ end
 
 local function resetReports()
     sent = {}
+    selectedRevision = nil
     HumalikeWorldNpcEdge.lastKeyframeAt = nil
 end
 
@@ -231,10 +233,19 @@ local function playerChanged(player)
 end
 
 -- One frame decision; returns the encoded message or nil when nothing is due.
+local EMPTY = {}
+
 function HumalikeWorldNpcEdge.Frame(player, now)
     local lastKeyframeAt = HumalikeWorldNpcEdge.lastKeyframeAt
     local keyframe = lastKeyframeAt == nil or now - lastKeyframeAt >= KEYFRAME_MS
-    local selected = HumalikeWorldNpcEdge.Select(keyframe)
+    local revision = HumalikeWorldTrack.changeRevision
+    -- With no track changed since the last pass, a delta would be empty: the
+    -- selection (a walk over every track) is skipped.
+    local selected = EMPTY
+    if keyframe or revision ~= selectedRevision then
+        selected = HumalikeWorldNpcEdge.Select(keyframe)
+        selectedRevision = revision
+    end
     if #selected == 0 and not keyframe and not playerChanged(player)
         and now - HumalikeWorldNpcEdge.lastSentAt < KEEPALIVE_MS then
         return nil

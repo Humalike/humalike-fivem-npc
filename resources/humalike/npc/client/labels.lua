@@ -153,12 +153,13 @@ end
 -- An unchanged frame is repeated at this interval; the NUI drops labels it
 -- has not heard about for three seconds.
 local FRAME_HEARTBEAT_MS = 1000
-local FRAME_EPSILON = 0.0005 -- normalised screen units, under a pixel
+local FRAME_EPSILON = 0.001 -- normalised screen units, about a pixel
 -- With no NPC within MaxDistance + CandidateMargin the thread rechecks this often;
 -- the margin covers the walk in between, so a label shows up at most this late.
 local IDLE_RECHECK_MS = 250
-local CAMERA_MOVE_EPSILON = 0.005 -- metres
-local CAMERA_TURN_EPSILON = 0.02  -- degrees
+-- The idle camera breathes; below these the scene counts as still.
+local CAMERA_MOVE_EPSILON = 0.02 -- metres
+local CAMERA_TURN_EPSILON = 0.1  -- degrees
 
 local function sameFrame(frame, last)
     if not last or #frame ~= #last then return false end
@@ -168,6 +169,38 @@ local function sameFrame(frame, last)
             or math.abs(a[2] - b[2]) > FRAME_EPSILON then return false end
     end
     return true
+end
+
+-- A frame goes to the NUI as `{"type":"labels:frame","scale":s,"labels":[[x,y,lang,muted,"id"],...]}`,
+-- written by hand: the generic encoder cost more than the rest of a render.
+local function jsonString(value)
+    value = tostring(value)
+    if value:find('[%c"\\]') then
+        value = value:gsub('[%c"\\]', function(char)
+            if char == '"' then return '\\"' end
+            if char == '\\' then return '\\\\' end
+            return ('\\u%04x'):format(char:byte())
+        end)
+    end
+    return '"' .. value .. '"'
+end
+
+local function encodeFrame(frame, scale)
+    local parts = {}
+    for index, label in ipairs(frame) do
+        parts[index] = ('[%.4f,%.4f,%s,%d,%s]'):format(label[1], label[2],
+            label[3] and jsonString(label[3]) or 'false', label[4], jsonString(label[5]))
+    end
+    return ('{"type":"labels:frame","scale":%.3f,"labels":[%s]}'):format(scale, table.concat(parts, ','))
+end
+HumaLikeNpcLabels.EncodeFrame = encodeFrame
+
+local function anyMoving(candidates)
+    for _, candidate in ipairs(candidates) do
+        local track = candidate.track
+        if not track or track.speed > 0.0 then return true end
+    end
+    return false
 end
 
 local function cameraMovedSince(camera, rotation, last)
@@ -223,37 +256,36 @@ CreateThread(function()
                 candidatesAt = -1000000 -- rescan on wake
                 lastCamera = nil
                 Wait(IDLE_RECHECK_MS)
-            elseif now < nextFrameAt then
+            elseif nextFrameAt - now > 1 then
+                -- Woken a little early: sleep the rest out (a one-millisecond
+                -- remainder is treated as due so a render never costs two resumes).
                 Wait(nextFrameAt - now)
             else
                 local frameInterval = math.max(1, math.floor(1000 / renderFps))
-                nextFrameAt = math.max(now, nextFrameAt + frameInterval)
+                nextFrameAt = now + frameInterval
                 local camera, rotation = GetGameplayCamCoord(), GetGameplayCamRot(2)
                 local cameraMoved = cameraMovedSince(camera, rotation, lastCamera)
                 if cameraMoved then
                     lastCamera = { x = camera.x, y = camera.y, z = camera.z, pitch = rotation.x, yaw = rotation.z }
                 end
-                local frame, hasNearbyNpc = buildCandidateFrame(candidates, camera, cameraMoved,
-                    maxDistance, tonumber(labels.Height) or 0.98)
-                if #frame > 0 then
-                    if now - lastSentAt >= FRAME_HEARTBEAT_MS or not sameFrame(frame, lastFrame) then
-                        SendNUIMessage({
-                            type = 'labels:frame',
-                            scale = tonumber(labels.Scale) or 1.0,
-                            labels = frame,
-                        })
-                        lastFrame, lastSentAt = frame, now
-                    end
-                    hadVisibleLabels = true
-                    Wait(math.max(0, nextFrameAt - GetGameTimer()))
-                else
-                    if hadVisibleLabels then
+                -- A still camera over still peds: the last frame still holds.
+                if cameraMoved or lastFrame == nil or anyMoving(candidates)
+                    or now - lastSentAt >= FRAME_HEARTBEAT_MS then
+                    local frame = buildCandidateFrame(candidates, camera, cameraMoved,
+                        maxDistance, tonumber(labels.Height) or 0.98)
+                    if #frame > 0 then
+                        if now - lastSentAt >= FRAME_HEARTBEAT_MS or not sameFrame(frame, lastFrame) then
+                            SendNuiMessage(encodeFrame(frame, tonumber(labels.Scale) or 1.0))
+                            lastFrame, lastSentAt = frame, now
+                        end
+                        hadVisibleLabels = true
+                    elseif hadVisibleLabels then
                         SendNUIMessage({ type = 'labels:clear' })
                         hadVisibleLabels = false
                         lastFrame = nil
                     end
-                    Wait(hasNearbyNpc and 50 or IDLE_RECHECK_MS)
                 end
+                Wait(frameInterval)
             end
         end
     end

@@ -11,6 +11,7 @@ HumalikeWorldTrack = {
     playerX = 0.0, playerY = 0.0, playerZ = 0.0,
     nearest2 = math.huge, -- squared distance of the closest live track
     lastRegistryRevision = -1,
+    changeRevision = 0,   -- bumped whenever any track's reportable state changed
 }
 
 local TICK_MS = 100
@@ -34,6 +35,7 @@ end
 
 local function bump(track)
     track.version = track.version + 1
+    HumalikeWorldTrack.changeRevision = HumalikeWorldTrack.changeRevision + 1
 end
 
 vehicleInfo = function(vehicle) return HumalikeWorldVehicle.Info(vehicle) end
@@ -229,7 +231,10 @@ local function syncRegistry()
             changed = true
         end
     end
-    if changed then HumalikeWorldTrack.revision = HumalikeWorldTrack.revision + 1 end
+    if changed then
+        HumalikeWorldTrack.revision = HumalikeWorldTrack.revision + 1
+        HumalikeWorldTrack.changeRevision = HumalikeWorldTrack.changeRevision + 1
+    end
 end
 
 -- One pass: tracks that are due are sampled. Exposed for the tests and for a

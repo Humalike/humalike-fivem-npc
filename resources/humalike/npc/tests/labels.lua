@@ -90,6 +90,11 @@ function GetGameTimer() return now end
 local waits = {}
 function Wait(ms) waits[#waits + 1] = ms coroutine.yield() end
 function SendNUIMessage(message) sent[#sent + 1] = message end
+-- Frames arrive hand-encoded; the count of labels and their ids are read off the string.
+function SendNuiMessage(raw)
+    local _, count = raw:gsub('%[[%d%.]+,[%d%.]+,', '')
+    sent[#sent + 1] = { type = raw:match('"type":"([^"]+)"'), raw = raw, count = count }
+end
 local loop = coroutine.create(thread)
 local function tick(at)
     now = at
@@ -98,11 +103,17 @@ end
 natives = {}
 for index = 1, 6 do tick(index * 16) end -- six game frames at 60 fps
 assert(#sent == 1 and sent[1].type == 'labels:frame', 'a still scene is sent to the NUI once')
-assert(#sent[1].labels == 2 and #sent[1].labels[1] == 5)
+assert(sent[1].count == 2 and sent[1].raw:find(',"static"]', 1, true) and sent[1].raw:find(',"ambient"]', 1, true),
+    'both labels carry their npc id')
+assert(sent[1].raw == HumaLikeNpcLabels.EncodeFrame({ { 0.5, 0.4, 'en', 0, 'static' }, { 0.51, 0.4, false, 1, 'ambient' } }, 1.0)
+    or sent[1].raw == HumaLikeNpcLabels.EncodeFrame({ { 0.51, 0.4, false, 1, 'ambient' }, { 0.5, 0.4, 'en', 0, 'static' } }, 1.0),
+    'the frame is the hand-encoded tuple list')
+assert(HumaLikeNpcLabels.EncodeFrame({ { 0.5, 0.4, 'en', 1, 'a"b' } }, 1.0)
+    == '{"type":"labels:frame","scale":1.000,"labels":[[0.5000,0.4000,"en",1,"a\\"b"]]}')
 assert(natives.World3dToScreen2d == 2, 'a still camera over still NPCs projects each label once')
 assert(natives.GetGameplayCamRot == 3 and natives.GetGameplayCamCoord == 3,
     'the render loop runs at the configured 30 fps: three renders in six game frames')
-assert(waits[1] == 17 and waits[2] == 1, 'between renders the thread sleeps out the interval')
+assert(waits[1] == 33 and waits[2] == 17, 'one resume per render; an early wake sleeps the rest out')
 tick(96 + 1000)
 assert(#sent == 2, 'and repeated on the heartbeat so the NUI keeps it')
 natives = {}
@@ -138,6 +149,6 @@ positions[9] = { x = 0, y = 0, z = 0 }
 function World3dToScreen2d() return true, 0.5, 0.5 end
 natives = {}
 tick(4000)
-assert(natives.GetEntityCoords == 2 and sent[#sent].type == 'labels:frame' and sent[#sent].labels[1][5] == 'fresh',
+assert(natives.GetEntityCoords == 2 and sent[#sent].type == 'labels:frame' and sent[#sent].raw:find(',"fresh"]', 1, true),
     'an unregistered ped costs one coordinate read to find and one to project')
 print('labels: ok')

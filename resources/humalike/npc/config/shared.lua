@@ -29,7 +29,7 @@ Config.AmbientControl = {
     ReleaseDistance = 30.0,
     RequestCooldownMs = 750,
     StandTaskDurationMs = 2000,
-    StandTaskRefreshMs = 500,
+    StandTaskRefreshMs = 1000, -- the stand task lasts 2 s; it is renewed this often
     FaceToleranceDeg = 25.0,
 }
 Config.Population = {

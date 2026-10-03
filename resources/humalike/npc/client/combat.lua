@@ -50,13 +50,19 @@ CreateThread(function()
     end
 end)
 
+-- One thread watches the player's gun: shots while armed (every frame), and
+-- the aim target every 100 ms (50 ms while aiming at somebody), read only
+-- while the player is actually aiming.
 CreateThread(function()
     local burstOpen = false
     local lastShotAt = -1000
+    local aimingAt
+    local nextAimAt = 0
     while true do
         local ped = PlayerPedId()
-        if burstOpen or IsPedArmed(ped, 6) then
-            local now = GetGameTimer()
+        local now = GetGameTimer()
+        local armed = burstOpen or IsPedArmed(ped, 6)
+        if armed then
             if IsPedShooting(ped) then
                 lastShotAt = now
                 if not burstOpen then
@@ -66,31 +72,23 @@ CreateThread(function()
             elseif burstOpen and now - lastShotAt >= 500 then
                 burstOpen = false
             end
-            Wait(0)
-        else
-            Wait(100)
         end
-    end
-end)
-
--- The aim target is read only while the player aims; otherwise one native
--- every 100 ms says there is nothing to read.
-CreateThread(function()
-    local aimingAt
-    while true do
-        Wait(aimingAt and 50 or 100)
-        local playerId = PlayerId()
-        local npcId = nil
-        if IsPlayerFreeAiming(playerId) then
-            local found, entity = GetEntityPlayerIsFreeAimingAt(playerId)
-            npcId = found and IsEntityAPed(entity)
-                and Entity(entity).state.humalike_npc_id or nil
+        if now >= nextAimAt then
+            local playerId = PlayerId()
+            local npcId = nil
+            if IsPlayerFreeAiming(playerId) then
+                local found, entity = GetEntityPlayerIsFreeAimingAt(playerId)
+                npcId = found and IsEntityAPed(entity)
+                    and Entity(entity).state.humalike_npc_id or nil
+            end
+            if npcId ~= aimingAt then
+                aimingAt = npcId
+                local entry = npcId and AmbientNpcEntries and AmbientNpcEntries[npcId] or nil
+                TriggerServerEvent('humalike:npc:aimingCandidateChanged', npcId,
+                    entry and entry.entity_id or nil)
+            end
+            nextAimAt = now + (aimingAt and 50 or 100)
         end
-        if npcId ~= aimingAt then
-            aimingAt = npcId
-            local entry = npcId and AmbientNpcEntries and AmbientNpcEntries[npcId] or nil
-            TriggerServerEvent('humalike:npc:aimingCandidateChanged', npcId,
-                entry and entry.entity_id or nil)
-        end
+        Wait(armed and 0 or 100)
     end
 end)

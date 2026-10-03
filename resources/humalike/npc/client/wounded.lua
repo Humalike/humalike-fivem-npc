@@ -218,7 +218,7 @@ function HumalikeDownedState(npcId)
 end
 CreateThread(function()
     while true do
-        Wait(POSE_WATCH_TICK_MS)
+        Wait(next(downed) and POSE_WATCH_TICK_MS or 500)
         for npcId, entry in pairs(downed) do
             if not entry.entity or not DoesEntityExist(entry.entity) then
                 local lease = AmbientNpcEntries and AmbientNpcEntries[npcId] or nil

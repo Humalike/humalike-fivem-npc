@@ -54,20 +54,40 @@ local function followTarget(ped, localServerId)
         and type(params) == 'table' and tonumber(params.player_id) == localServerId
 end
 
-local function alive(track)
-    return track.exists and not IsEntityDead(track.ped)
+-- Life and line of sight are asked of the game this often per NPC at most.
+local ALIVE_CACHE_MS = 500
+local LOS_CACHE_MS = 300
+local aliveAt, aliveValue = {}, {}
+local losAt, losValue, losFor = 0, false, nil
+
+local function alive(track, now)
+    if not track.exists then return false end
+    local npcId = track.npcId
+    if aliveAt[npcId] == nil or now - aliveAt[npcId] >= ALIVE_CACHE_MS then
+        aliveAt[npcId], aliveValue[npcId] = now, not IsEntityDead(track.ped)
+    end
+    return aliveValue[npcId]
+end
+
+local function clearLineOfSight(playerPed, track, now)
+    if losFor ~= track.npcId or now - losAt >= LOS_CACHE_MS then
+        losFor, losAt = track.npcId, now
+        losValue = HasEntityClearLosToEntity(playerPed, track.ped, 17)
+    end
+    return losValue
 end
 
 -- Positions come from the shared tracker; the game is asked only about the
 -- player, the camera and the few NPCs that qualify.
 local function calculate(listener)
+    local now = GetGameTimer()
     local playerPed = PlayerPedId()
     local localServerId = GetPlayerServerId(PlayerId())
     local playerCoords = GetEntityCoords(playerPed)
     local player = HumalikeWorldCollector and HumalikeWorldCollector.latest or nil
     local playerVehicleNet = player and player.vehicle and player.vehicle.networkId or nil
     local forward = listener and listener.forward or nil
-    local camera = forward and GetGameplayCamCoord() or nil
+    local camera = nil -- read once, and only when somebody stands within gaze distance
     local followers, vehiclePeers = {}, {}
     local gaze, gazeDistance = nil, GAZE_DISTANCE + 1.0
     local nearby = false
@@ -76,11 +96,11 @@ local function calculate(listener)
         local voiceUnavailable = HumalikeNpcRuntimeControl
             and HumalikeNpcRuntimeControl.IsVoiceUnavailable(npcId)
         if not voiceUnavailable and track.exists then
-            if followTarget(track.ped, localServerId) and alive(track) then
+            if followTarget(track.ped, localServerId) and alive(track, now) then
                 followers[#followers + 1] = npcId
             end
             if playerVehicleNet and track.vehicleState
-                and track.vehicleState.network_id == playerVehicleNet and alive(track) then
+                and track.vehicleState.network_id == playerVehicleNet and alive(track, now) then
                 vehiclePeers[#vehiclePeers + 1] = npcId
             end
             local px, py, pz = track.x - playerCoords.x, track.y - playerCoords.y, track.z - playerCoords.z
@@ -88,6 +108,7 @@ local function calculate(listener)
             if playerDistance <= IDLE_DISTANCE then nearby = true end
             if forward and playerDistance > 0.01 and playerDistance <= GAZE_DISTANCE
                 and playerDistance < gazeDistance then
+                camera = camera or GetGameplayCamCoord()
                 local dx, dy, dz = track.x - camera.x, track.y - camera.y, track.z - camera.z
                 local cameraDistance = math.sqrt(dx * dx + dy * dy + dz * dz)
                 local dot = cameraDistance > 0.01
@@ -100,9 +121,12 @@ local function calculate(listener)
     local result, seen = {}, {}
     addGroup(result, seen, followers)
     addGroup(result, seen, vehiclePeers)
-    if gaze and not seen[gaze.npcId] and #result < MAX_TARGETS and alive(gaze)
-        and HasEntityClearLosToEntity(playerPed, gaze.ped, 17) then
+    if gaze and not seen[gaze.npcId] and #result < MAX_TARGETS and alive(gaze, now)
+        and clearLineOfSight(playerPed, gaze, now) then
         result[#result + 1] = gaze.npcId
+    end
+    for npcId in pairs(aliveAt) do
+        if not HumalikeWorldTrack.tracks[npcId] then aliveAt[npcId], aliveValue[npcId] = nil, nil end
     end
     return result, nearby or #result > 0
 end
