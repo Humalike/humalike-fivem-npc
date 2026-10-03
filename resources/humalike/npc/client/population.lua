@@ -139,6 +139,7 @@ function HumalikeNpcPopulationClient.SetState(active, allowCops)
     if active and not enabled then scanRequested = true end -- sweep the street at once
     enabled, copsAllowed = active, allowCops
     applyRandomCops()
+    if enabled then HumalikePulse.Frames() end
     return true
 end
 
@@ -476,9 +477,12 @@ local function beginPass(now, scan)
 end
 
 -- A body this client controls: configured on first sight, refreshed after.
+-- A network id that still matches is the ped that was discovered, which was
+-- no player; only a body without one is asked.
 local function visitBody(pass, ped, body)
-    if not DoesEntityExist(ped) or IsPedAPlayer(ped)
-        or (body.netId and NetworkGetNetworkIdFromEntity(ped) ~= body.netId) then
+    if not DoesEntityExist(ped)
+        or (body.netId and NetworkGetNetworkIdFromEntity(ped) ~= body.netId)
+        or (not body.netId and IsPedAPlayer(ped)) then
         forget(ped)
         return
     end
@@ -660,13 +664,19 @@ for _, key in ipairs(BODY_KEYS) do
     end
 end
 
-CreateThread(function()
-    while true do
-        local density = HumalikeNpcPopulationClient.DensityTick()
-        local pacing = HumalikeNpcPopulationClient.PaceTick()
-        Wait((density or pacing) and 0 or 250)
-    end
+-- The density multipliers and the move-rate override last one frame each.
+HumalikePulse.EveryFrame('street', function()
+    local density = HumalikeNpcPopulationClient.DensityTick()
+    local pacing = HumalikeNpcPopulationClient.PaceTick()
+    return density or pacing
 end)
+
+-- The frame thread ends when no job needs it; this brings it back within a
+-- quarter of a second of a walker to pace (switching the population on wakes
+-- it at once).
+HumalikePulse.Every('street frames', 250, function()
+    if enabled or (config().MoveRate ~= 1.0 and next(paceSet) ~= nil) then HumalikePulse.Frames() end
+end, 90)
 
 -- Frames one pass is spread over, so no frame pays for all of it; a pass that
 -- walks the whole ped pool takes twice as many.

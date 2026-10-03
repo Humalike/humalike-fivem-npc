@@ -32,17 +32,17 @@ HumalikeWorldTrack = { tracks = {
 HumalikeWorldCollector = { latest = { vehicle = { networkId = 50, seat = -1 } } }
 
 function AddEventHandler(name, callback) handlers[name] = callback end
-local thread
-function CreateThread(callback) thread = callback end
+function CreateThread() end
 function GetGameTimer() return timer end
 function PlayerId() return 0 end
 function PlayerPedId() count('PlayerPedId') return 100 end
-function GetPlayerServerId() return 7 end
+function GetPlayerServerId() count('GetPlayerServerId') return 7 end
 function GetGameplayCamCoord() count('GetGameplayCamCoord') return { x = -1, y = 0, z = 0 } end
 function GetEntityCoords(ped) count('GetEntityCoords') assert(ped == 100, 'only the player is read from the game') return positions[ped] end
 function IsEntityDead(ped) count('IsEntityDead') return false end
 function GetVehiclePedIsIn() error('seats come from the tracker and the collector') end
 function HasEntityClearLosToEntity(_, ped) count('HasEntityClearLosToEntity') return ped ~= 6 end
+dofile('../world/client/pulse.lua')
 dofile('client/direct_targets.lua')
 
 local notifications = 0
@@ -64,6 +64,7 @@ assert(natives.IsEntityDead == 3 and natives.HasEntityClearLosToEntity == 1,
 timer = timer + 100
 HumalikeNpcDirectTargets.Refresh({ forward = { x = 1, y = 0, z = 0 } })
 assert(notifications == 2, 'unchanged targets are not republished')
+assert(natives.GetPlayerServerId == 1, 'the session id is asked once')
 
 HumalikeNpcDirectTargets.SetAvailable(true)
 assert(HumalikeNpcDirectTargets.IsExclusive())
@@ -93,16 +94,17 @@ assert(HumalikeNpcDirectTargets.Refresh(forward) == false, 'an empty street is i
 ActionControlledPeds = { [1] = 'follow_player' }
 assert(HumalikeNpcDirectTargets.Refresh(forward) == true, 'a far follower is still a target')
 ActionControlledPeds = {}
+assert(HumalikeNpcDirectTargets.Refresh(forward) == false and #HumalikeNpcDirectTargets.Get() == 0)
 HumalikeWorldCollector.listener = forward
-function Wait(ms) coroutine.yield(ms) end
-local loop = coroutine.create(thread)
-local _, waited = coroutine.resume(loop)
-assert(waited == 100)
-_, waited = coroutine.resume(loop)
-assert(waited == 400, 'nothing nearby: the next refresh comes 400 ms later')
+timer = 10000
+assert(HumalikePulse.Run(timer) == 400, 'nothing nearby: the next refresh comes 400 ms later')
+natives = {}
+timer = 10200
+HumalikePulse.Run(timer)
+assert(natives.GetEntityCoords == nil, 'and nothing is read in between')
 HumalikeWorldTrack.tracks.gaze.x, HumalikeWorldTrack.tracks.gaze.y = 4, 0
-_, waited = coroutine.resume(loop)
-assert(waited == 100, 'and the fast refresh is back once an NPC is near')
+timer = 10400
+assert(HumalikePulse.Run(timer) == 100, 'and the fast refresh is back once an NPC is near')
 
 -- A dead gaze target is not a target; life is asked again after half a second.
 HumalikeWorldTrack.tracks.gaze.x, HumalikeWorldTrack.tracks.gaze.y = 2, 0

@@ -47,6 +47,7 @@ HumalikeNpcDirectTargets = {
     Unlock = function() end,
 }
 
+dofile('../world/client/pulse.lua')
 dofile('client/busy.lua')
 assert(loadfile('client/main.lua'))()
 assert(type(nuiCallbacks.ready) == 'function')
@@ -115,17 +116,28 @@ function IsControlPressed() return controlDown end
 function IsDisabledControlPressed() return false end
 function PlayerPedId() return 0 end
 function DoesEntityExist() return false end
-function Wait(ms) coroutine.yield(ms) end
-local poll = coroutine.create(threads[1])
-local _, waited = coroutine.resume(poll)
-assert(waited == 50, 'a shared key is polled at 50 ms')
+local now = 1000
+function GetGameTimer() return now end
+assert(HumalikePulse.Run(now) == 50, 'a shared key is polled at 50 ms, on the shared pulse')
 controlDown = true
-_, waited = coroutine.resume(poll)
+now = 1050
+HumalikePulse.Run(now)
 assert(nuiMessages[#nuiMessages].type == 'voice:ptt' and nuiMessages[#nuiMessages].active == true,
     'a press on the shared key is picked up on the next poll')
 controlDown = false
 function GetControlInstructionalButton(_, control) return control == 249 and 't_V' or 't_PTT' end
 nuiCallbacks.ready({ bootId = 'boot-c' }, function(response) assert(response.ok) end)
-_, waited = coroutine.resume(poll)
-assert(waited == 100, 'a key of its own needs only the busy poll')
+now = 1100
+assert(HumalikePulse.Run(now) == 100, 'a key of its own needs only the busy poll')
+
+-- The samples of one pulse reach the NUI as one message.
+rawMessages = {}
+HumalikePulse.Every('samples', 100, function()
+    collectorSubscribers.listener({ position = { x = 2, y = 0, z = 0 }, forward = { x = 1, y = 0, z = 0 } })
+    collectorSubscribers.motion({ position = { x = 1, y = 2, z = 3 }, velocity = {}, flags = {} })
+end)
+now = 1200
+HumalikePulse.Run(now)
+assert(#rawMessages == 1 and rawMessages[1]:find('^{"type":"batch","messages":%[{"type":"game:listener"')
+    and rawMessages[1]:find(',{"type":"game:realtime"', 1, true), 'listener and motion in one cross-process call')
 print('session_ready: ok')

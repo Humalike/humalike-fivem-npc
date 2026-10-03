@@ -83,6 +83,7 @@ server_scripts {
 
 client_scripts {
     'npc/client/settings.lua',
+    'world/client/pulse.lua',
     'integration/client/interactions.lua',
     'integration/providers/esx/world_events_client.lua',
     'integration/providers/qbcore/world_events_client.lua',

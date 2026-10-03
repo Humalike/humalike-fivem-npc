@@ -99,6 +99,15 @@ dispatch systems, targeting UIs, HUDs, or event buses directly.
 - Avoid per-frame scans unless the feature genuinely needs frame accuracy.
   Reuse existing NPC registries, caches, spatial filters, and state-change
   events; emit network or NUI updates only when observable state changes.
+- Periodic client work is a job of the shared pulse (`HumalikePulse.Every` in
+  `world/client/pulse.lua`), not a thread of its own: a wake-up, a native and
+  above all a NUI message each cost real frame time on every player's PC. Read
+  the player through `HumalikePulse.Ped/Coords/Velocity/CamRot/CamCoord`, read
+  NPC positions from `HumalikeWorldTrack`, and send recurring NUI messages
+  pre-encoded through `HumalikePulse.Send`. Count a job's cadences on its
+  `due` argument or on `HumalikePulse.Beat`, never on `now`: frames come late
+  by a different amount each time. Per-frame work is a job of
+  `HumalikePulse.EveryFrame` that returns false as soon as it is not needed.
 - Keep hot-path diagnostics behind `humalike_debug`, rate-limit repeated
   failures, and never forward high-frequency client debug logs to the server.
 - Keep server-authoritative validation for gameplay effects. Client-side target

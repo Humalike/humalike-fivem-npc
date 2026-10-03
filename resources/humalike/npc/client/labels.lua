@@ -85,7 +85,7 @@ local function nearbyCandidates(maxDistance, margin)
     local function direct(npcId, ped, entry)
         if not ped or seen[ped] or not entry or (tracks and tracks[npcId]) or not DoesEntityExist(ped) then return end
         seen[ped] = #candidates + 1
-        camera = camera or GetGameplayCamCoord()
+        camera = camera or HumalikePulse.CamCoord()
         local coords = GetEntityCoords(ped)
         local dx, dy, dz = camera.x - coords.x, camera.y - coords.y, camera.z - coords.z
         if dx * dx + dy * dy + dz * dz <= radius * radius then
@@ -106,7 +106,9 @@ local function project(candidate, camera, cameraMoved, maxDistanceSquared, heigh
     if track and track.speed <= 0.0 then
         x, y, z = track.x, track.y, track.z
     else
-        if not DoesEntityExist(ped) then return false end
+        -- A tracked ped that vanished since its last sample reads as the origin,
+        -- which the distance below rejects; an untracked one is asked for.
+        if not track and not DoesEntityExist(ped) then return false end
         local coords = GetEntityCoords(ped)
         x, y, z = coords.x, coords.y, coords.z
     end
@@ -127,7 +129,10 @@ local function buildCandidateFrame(candidates, camera, cameraMoved, maxDistance,
     for _, candidate in ipairs(candidates) do
         if project(candidate, camera, cameraMoved, maxDistance * maxDistance, height) then
             hasNearbyNpc = true
-            if candidate.visible then
+            -- A projection that is not a number is left out: one bad number
+            -- would void the JSON of the whole pulse.
+            if candidate.visible and candidate.screenX == candidate.screenX
+                and candidate.screenY == candidate.screenY then
                 frame[#frame + 1] = {
                     candidate.screenX,
                     candidate.screenY,
@@ -146,20 +151,21 @@ function HumaLikeNpcLabels.BuildFrame()
     local labels = labelConfig()
     local maxDistance = tonumber(labels.MaxDistance) or 14.0
     local candidates = nearbyCandidates(maxDistance, 0.0)
-    return buildCandidateFrame(candidates, GetGameplayCamCoord(), true, maxDistance,
+    return buildCandidateFrame(candidates, HumalikePulse.CamCoord(), true, maxDistance,
         tonumber(labels.Height) or 0.98)
 end
 
--- An unchanged frame is repeated at this interval; the NUI drops labels it
--- has not heard about for three seconds.
+-- An unchanged frame is repeated on every heartbeat of the pulse; the NUI
+-- drops labels it has not heard about for three seconds.
 local FRAME_HEARTBEAT_MS = 1000
 local FRAME_EPSILON = 0.001 -- normalised screen units, about a pixel
--- With no NPC within MaxDistance + CandidateMargin the thread rechecks this often;
+-- With no NPC within MaxDistance + CandidateMargin the job rechecks this often;
 -- the margin covers the walk in between, so a label shows up at most this late.
 local IDLE_RECHECK_MS = 250
 -- The idle camera breathes; below these the scene counts as still.
 local CAMERA_MOVE_EPSILON = 0.02 -- metres
 local CAMERA_TURN_EPSILON = 0.1  -- degrees
+local CAMERA_ZOOM_EPSILON = 0.05 -- degrees of field of view
 
 local function sameFrame(frame, last)
     if not last or #frame ~= #last then return false end
@@ -203,93 +209,92 @@ local function anyMoving(candidates)
     return false
 end
 
-local function cameraMovedSince(camera, rotation, last)
+-- A zoom (a scope, an aim) moves every label without moving the camera.
+local function cameraMovedSince(camera, rotation, fov, last)
     if not last then return true end
     return math.abs(camera.x - last.x) > CAMERA_MOVE_EPSILON
         or math.abs(camera.y - last.y) > CAMERA_MOVE_EPSILON
         or math.abs(camera.z - last.z) > CAMERA_MOVE_EPSILON
         or math.abs(rotation.x - last.pitch) > CAMERA_TURN_EPSILON
         or math.abs(rotation.z - last.yaw) > CAMERA_TURN_EPSILON
+        or math.abs(fov - last.fov) > CAMERA_ZOOM_EPSILON
 end
 
-CreateThread(function()
-    local hadVisibleLabels = false
-    local candidates = {}
-    local candidatesAt = -1000000
-    local nextFrameAt = 0
-    local lastFrame, lastSentAt = nil, 0
-    local lastCamera = nil
-    while true do
-        local labels = labelConfig()
-        if labels.Enabled == false then
-            if hadVisibleLabels then
-                SendNUIMessage({ type = 'labels:clear' })
-                hadVisibleLabels = false
-            end
-            Wait(1000)
-        else
-            local now = GetGameTimer()
-            local maxDistance = tonumber(labels.MaxDistance) or 14.0
-            local refreshMs = math.max(50, tonumber(labels.CandidateRefreshMs) or 200)
-            if now - candidatesAt >= refreshMs then
-                local previous = {}
-                for _, candidate in ipairs(candidates) do previous[candidate.npcId] = candidate end
-                candidates = nearbyCandidates(maxDistance,
-                    math.max(0.0, tonumber(labels.CandidateMargin) or 3.0))
-                for _, candidate in ipairs(candidates) do
-                    local old = previous[candidate.npcId]
-                    if old and old.ped == candidate.ped then
-                        candidate.lastX, candidate.lastY, candidate.lastZ = old.lastX, old.lastY, old.lastZ
-                        candidate.visible, candidate.screenX, candidate.screenY = old.visible, old.screenX, old.screenY
-                    end
-                end
-                candidatesAt = now
-            end
+local CLEAR = '{"type":"labels:clear"}'
+local hadVisibleLabels = false
+local candidates = {}
+local candidatesDue = -1000000
+local lastFrame, lastSentBeat = nil, nil
+local lastCamera = nil
 
-            local renderFps = math.max(1, tonumber(labels.RenderFps) or 30)
-            if #candidates == 0 then
-                if hadVisibleLabels then
-                    SendNUIMessage({ type = 'labels:clear' })
-                    hadVisibleLabels = false
-                    lastFrame = nil
-                end
-                candidatesAt = -1000000 -- rescan on wake
-                lastCamera = nil
-                Wait(IDLE_RECHECK_MS)
-            elseif nextFrameAt - now > 1 then
-                -- Woken a little early: sleep the rest out (a one-millisecond
-                -- remainder is treated as due so a render never costs two resumes).
-                Wait(nextFrameAt - now)
-            else
-                local frameInterval = math.max(1, math.floor(1000 / renderFps))
-                nextFrameAt = now + frameInterval
-                local camera, rotation = GetGameplayCamCoord(), GetGameplayCamRot(2)
-                local cameraMoved = cameraMovedSince(camera, rotation, lastCamera)
-                if cameraMoved then
-                    lastCamera = { x = camera.x, y = camera.y, z = camera.z, pitch = rotation.x, yaw = rotation.z }
-                end
-                -- A still camera over still peds: the last frame still holds.
-                if cameraMoved or lastFrame == nil or anyMoving(candidates)
-                    or now - lastSentAt >= FRAME_HEARTBEAT_MS then
-                    local frame = buildCandidateFrame(candidates, camera, cameraMoved,
-                        maxDistance, tonumber(labels.Height) or 0.98)
-                    if #frame > 0 then
-                        if now - lastSentAt >= FRAME_HEARTBEAT_MS or not sameFrame(frame, lastFrame) then
-                            SendNuiMessage(encodeFrame(frame, tonumber(labels.Scale) or 1.0))
-                            lastFrame, lastSentAt = frame, now
-                        end
-                        hadVisibleLabels = true
-                    elseif hadVisibleLabels then
-                        SendNUIMessage({ type = 'labels:clear' })
-                        hadVisibleLabels = false
-                        lastFrame = nil
-                    end
-                end
-                Wait(frameInterval)
+local function clear()
+    if not hadVisibleLabels then return end
+    HumalikePulse.Send(CLEAR)
+    hadVisibleLabels = false
+    lastFrame = nil
+end
+
+-- One pass of the label loop; returns the milliseconds until the next one.
+-- `due` is the pulse's schedule time: the candidate refresh is counted on it.
+function HumaLikeNpcLabels.Render(_, due)
+    local labels = labelConfig()
+    if labels.Enabled == false then
+        clear()
+        return 1000
+    end
+    local maxDistance = tonumber(labels.MaxDistance) or 14.0
+    local refreshMs = math.max(50, tonumber(labels.CandidateRefreshMs) or 200)
+    if due - candidatesDue >= refreshMs then
+        local previous = {}
+        for _, candidate in ipairs(candidates) do previous[candidate.npcId] = candidate end
+        candidates = nearbyCandidates(maxDistance,
+            math.max(0.0, tonumber(labels.CandidateMargin) or 3.0))
+        for _, candidate in ipairs(candidates) do
+            local old = previous[candidate.npcId]
+            if old and old.ped == candidate.ped then
+                candidate.lastX, candidate.lastY, candidate.lastZ = old.lastX, old.lastY, old.lastZ
+                candidate.visible, candidate.screenX, candidate.screenY = old.visible, old.screenX, old.screenY
             end
         end
+        candidatesDue = due
     end
-end)
+
+    if #candidates == 0 then
+        clear()
+        candidatesDue = -1000000 -- rescan on the next pass
+        lastCamera = nil
+        return IDLE_RECHECK_MS
+    end
+
+    local renderFps = math.max(1, tonumber(labels.RenderFps) or 30)
+    local camera, rotation = HumalikePulse.CamCoord(), HumalikePulse.CamRot()
+    local fov = GetFinalRenderedCamFov()
+    local cameraMoved = cameraMovedSince(camera, rotation, fov, lastCamera)
+    if cameraMoved then
+        lastCamera = lastCamera or {}
+        lastCamera.x, lastCamera.y, lastCamera.z = camera.x, camera.y, camera.z
+        lastCamera.pitch, lastCamera.yaw, lastCamera.fov = rotation.x, rotation.z, fov
+    end
+    local beat = HumalikePulse.Beat(FRAME_HEARTBEAT_MS)
+    local heartbeat = beat ~= lastSentBeat
+    -- A still camera over still peds: the last frame still holds.
+    if cameraMoved or lastFrame == nil or heartbeat or anyMoving(candidates) then
+        local frame = buildCandidateFrame(candidates, camera, cameraMoved,
+            maxDistance, tonumber(labels.Height) or 0.98)
+        if #frame > 0 then
+            if heartbeat or not sameFrame(frame, lastFrame) then
+                HumalikePulse.Send(encodeFrame(frame, tonumber(labels.Scale) or 1.0))
+                lastFrame, lastSentBeat = frame, beat
+            end
+            hadVisibleLabels = true
+        else
+            clear()
+        end
+    end
+    return math.max(1, math.floor(1000 / renderFps))
+end
+
+HumalikePulse.Every('labels', IDLE_RECHECK_MS, HumaLikeNpcLabels.Render, 60)
 
 AddEventHandler('onClientResourceStop', function(resourceName)
     if resourceName == GetCurrentResourceName() then

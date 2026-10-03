@@ -141,9 +141,10 @@ HumalikeNpcRuntimeControl = {
     end,
 }
 
+dofile('../world/client/pulse.lua')
 dofile('client/reactions.lua')
 dofile('client/population.lua')
-assert(#threads == 2, 'one per-frame thread (density + pace) and one body tick')
+assert(#threads == 2, 'the shared pulse and the body tick: density and pace are frame jobs')
 assert(bagHandlers.humalike_npc_kind and bagHandlers.humalike_body_id and bagHandlers.humalike_walk_rate,
     'bodies announce themselves through their bags')
 Config.Population.MoveRate = 0.82 -- the ambling rate, to exercise the per-frame loop
@@ -471,6 +472,16 @@ assert(not HumalikeNpcPopulationClient.DensityTick())
 assert(not HumalikeNpcPopulationClient.DensityTick() and #copCalls == 0,
     'a disabled state leaves GTA pedestrians and cops alone')
 sendState(true, false)
+assert(#threads == 3, 'switching the population on starts the frame thread at once')
+do
+    local waited
+    function Wait(ms) waited = ms coroutine.yield() end
+    local frames = coroutine.create(threads[3])
+    assert(coroutine.resume(frames) and waited == 0 and #densityCalls == 2,
+        'the multipliers are set on every frame, by a job of the shared frame thread')
+    Wait = nil
+    densityCalls = {}
+end
 assert(HumalikeNpcPopulationClient.DensityTick())
 assert(densityCalls[1][1] == 'ped' and densityCalls[1][2] == 0.0)
 assert(densityCalls[2][1] == 'scenario' and densityCalls[2][2] == 0.0 and densityCalls[2][3] == 0.0)
@@ -736,6 +747,11 @@ assert(#wanderCalls == 1 and wanderCalls[1] == 96, 'the announced body is config
 pool[96], owned[96] = nil, nil
 HumalikeNpcPopulationClient.Tick(403000, false)
 assert(HumalikeNpcPopulationClient.Count() == 2, 'a deleted body is forgotten')
+local playerChecks, isPlayer = 0, IsPedAPlayer
+function IsPedAPlayer(ped) playerChecks = playerChecks + 1 return isPlayer(ped) end
+HumalikeNpcPopulationClient.Tick(405000, false)
+assert(playerChecks == 0, 'a known body is itself by its network id; nobody asks whether it is a player')
+IsPedAPlayer = isPlayer
 function GetGamePool()
     local peds = {}
     for ped in pairs(pool) do peds[#peds + 1] = ped end

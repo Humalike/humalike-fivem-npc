@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@humalike/labels-nui": "workspace:*",
+    "@humalike/nui-runtime": "workspace:*",
     "@humalike/voice-nui": "workspace:*"
   },
   "devDependencies": {

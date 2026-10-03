@@ -12,18 +12,31 @@ HumalikeWorldTrack = {
     nearest2 = math.huge, -- squared distance of the closest live track
     lastRegistryRevision = -1,
     changeRevision = 0,   -- bumped whenever any track's reportable state changed
+    enteredAt = nil,      -- game time an NPC last came within the edge's "walked up" range
 }
 
 local TICK_MS = 100
--- Sample cadences by distance; a moving track never waits longer than FAST_MOVING_MS.
+-- Sample cadences by distance; a moving track the edge frame may report never
+-- waits longer than FAST_MOVING_MS. Past the report radius (and this margin)
+-- nobody reads a track's position, so it keeps the far cadence, moving or not.
+-- The tracker runs in passes of TICK_MS and counts every cadence in passes (a
+-- frame that comes late must not turn "every 200 ms" into "every 300").
 local NEAR_M, MID_M = 20.0, 60.0
 local NEAR_MS, MID_MS, FAR_MS = 150, 400, 1000
 local FAST_MOVING_MS = 200
+local REPORT_MARGIN_M = 10.0
 local SLOW_MS = 1000                -- identity, heading, far vehicle checks
 local MOVE_EPSILON = 0.05           -- metres; below this a position is the same
 local MOVING_SPEED = 0.5            -- m/s; a track past this is sampled fast
 local ZONE_REFRESH_M = 30.0         -- the zone is looked up again after this walk
 local OWN_VEHICLE_MS = 500
+-- The edge counts a player as having walked up to an NPC inside ENTER_M and as
+-- gone beyond LEAVE_M; the moment a track crosses in is kept for the edge frame.
+local ENTER_M, LEAVE_M = 10.0, 12.0
+
+local function passes(ms) return (ms + TICK_MS - 1) // TICK_MS end
+local NEAR_PASSES, MID_PASSES, FAR_PASSES = passes(NEAR_MS), passes(MID_MS), passes(FAR_MS)
+local FAST_MOVING_PASSES, SLOW_PASSES, OWN_VEHICLE_PASSES = passes(FAST_MOVING_MS), passes(SLOW_MS), passes(OWN_VEHICLE_MS)
 
 local tracks = HumalikeWorldTrack.tracks
 local vehicleInfo, forgetVehicle, seatOf
@@ -31,6 +44,11 @@ local vehicleInfo, forgetVehicle, seatOf
 local function returnDistance()
     local vehicles = Config and Config.Vehicles
     return vehicles and vehicles.ReturnDistance or 60.0
+end
+
+local function reportReach()
+    local edge = WorldConfig and WorldConfig.npcEdge
+    return (edge and edge.reportRadius or 150.0) + REPORT_MARGIN_M
 end
 
 local function bump(track)
@@ -42,7 +60,7 @@ vehicleInfo = function(vehicle) return HumalikeWorldVehicle.Info(vehicle) end
 forgetVehicle = function(vehicle) HumalikeWorldVehicle.Forget(vehicle) end
 seatOf = function(vehicle, ped) return HumalikeWorldVehicle.SeatOf(vehicle, ped) end
 
-local function sampleVehicle(track, now)
+local function sampleVehicle(track, pass)
     local ped = track.ped
     local vehicle = GetVehiclePedIsIn(ped, false)
     if vehicle == 0 then
@@ -51,14 +69,14 @@ local function sampleVehicle(track, now)
             track.vehicle, track.vehicleState, track.seat = nil, nil, nil
             bump(track)
         end
-        track.vehicleAt = now
+        track.vehiclePass = pass
         return
     end
     local networkId, kind = vehicleInfo(vehicle)
     local seat = track.seat
-    if vehicle ~= track.vehicle or seat == nil or now - track.seatAt >= SLOW_MS then
+    if vehicle ~= track.vehicle or seat == nil or pass - track.seatPass >= SLOW_PASSES then
         seat = seatOf(vehicle, ped)
-        track.seatAt = now
+        track.seatPass = pass
     end
     local state = track.vehicleState
     if not networkId or not seat then
@@ -71,13 +89,13 @@ local function sampleVehicle(track, now)
     else
         track.vehicle, track.seat = vehicle, seat
     end
-    track.vehicleAt = now
+    track.vehiclePass = pass
 end
 
 -- A population driver's own car, from the bag it was spawned with. The bag is
 -- read once per track: it is written at spawn and never changes.
-local function sampleOwnVehicle(track, now)
-    track.ownAt = now
+local function sampleOwnVehicle(track, pass)
+    track.ownPass = pass
     local networkId = track.ownNet
     if networkId == nil then
         networkId = Entity(track.ped).state.humalike_vehicle_net
@@ -119,19 +137,20 @@ local function identityMatches(track)
     return AmbientPeds ~= nil and AmbientPeds[track.npcId] == ped
 end
 
-local function sample(track, now, px, py, pz)
+local function sample(track, now, pass, px, py, pz)
     local ped = track.ped
-    if not DoesEntityExist(ped) then
+    -- A ped that is gone reads as the origin: its existence is asked only then.
+    local at = GetEntityCoords(ped)
+    local x, y, z = at.x, at.y, at.z
+    if x == 0.0 and y == 0.0 and z == 0.0 and not DoesEntityExist(ped) then
         if track.exists then
             track.exists = false
             track.dist2 = math.huge
             bump(track)
         end
-        track.sampledAt, track.nextAt = now, now + SLOW_MS
+        track.sampledAt, track.nextPass = now, pass + SLOW_PASSES
         return
     end
-    local at = GetEntityCoords(ped)
-    local x, y, z = at.x, at.y, at.z
     local dx, dy, dz = x - track.x, y - track.y, z - track.z
     local moved2 = dx * dx + dy * dy + dz * dz
     local elapsed = (now - track.sampledAt) / 1000.0
@@ -150,8 +169,8 @@ local function sample(track, now, px, py, pz)
     track.sampledAt = now
 
     local near = track.dist2 <= NEAR_M * NEAR_M
-    if now - track.identityAt >= SLOW_MS or track.identityAt == 0 then
-        track.identityAt = now
+    if track.identityPass == nil or pass - track.identityPass >= SLOW_PASSES then
+        track.identityPass = pass
         local ok = identityMatches(track)
         if ok ~= track.identityOk then
             track.identityOk = ok
@@ -164,23 +183,33 @@ local function sample(track, now, px, py, pz)
         track.zone = GetNameOfZone(x, y, z) or false
         track.zoneX, track.zoneY = x, y
     end
-    if near or track.vehicle or track.ownNet or now - track.vehicleAt >= SLOW_MS then
-        sampleVehicle(track, now)
+    if near or track.vehicle or track.ownNet or pass - track.vehiclePass >= SLOW_PASSES then
+        sampleVehicle(track, pass)
     end
-    if track.ownNet ~= false and (track.ownNet == nil or now - track.ownAt >= OWN_VEHICLE_MS) then
-        sampleOwnVehicle(track, now)
+    if track.ownNet ~= false and (track.ownNet == nil or pass - track.ownPass >= OWN_VEHICLE_PASSES) then
+        sampleOwnVehicle(track, pass)
     end
 
     local interval
     if near then
-        interval = NEAR_MS
+        interval = NEAR_PASSES
     elseif track.dist2 <= MID_M * MID_M then
-        interval = MID_MS
+        interval = MID_PASSES
     else
-        interval = FAR_MS
+        interval = FAR_PASSES
     end
-    if track.speed > MOVING_SPEED and interval > FAST_MOVING_MS then interval = FAST_MOVING_MS end
-    track.nextAt = now + interval
+    if track.speed > MOVING_SPEED and interval > FAST_MOVING_PASSES then
+        local reach = reportReach()
+        if track.dist2 <= reach * reach then interval = FAST_MOVING_PASSES end
+    end
+    local wait = interval
+    if interval >= MID_PASSES then
+        -- Each track takes the slow cadences on its own pass of the interval, so
+        -- a street of far NPCs is never sampled in one frame.
+        wait = (track.slot - pass) % interval
+        if wait == 0 then wait = interval end
+    end
+    track.nextPass = pass + wait
 end
 
 local function newTrack(npcId, entry)
@@ -190,14 +219,16 @@ local function newTrack(npcId, entry)
         ped = entry.entity,
         generation = entry.generation,
         version = 0,
+        slot = (tonumber(entry.networkId) or 0) % FAR_PASSES,
         exists = false,
         x = 0.0, y = 0.0, z = 0.0, dist2 = math.huge, speed = 0.0,
-        sampledAt = 0, nextAt = 0,
-        identityOk = true, identityAt = 0,
+        sampledAt = 0, nextPass = -math.huge,
+        identityOk = true, identityPass = nil,
+        inRange = false,
         heading = 0.0,
         zone = nil, zoneX = 0.0, zoneY = 0.0,
-        vehicle = nil, vehicleState = nil, seat = nil, seatAt = 0, vehicleAt = 0,
-        ownNet = nil, ownVehicle = nil, ownAt = 0,
+        vehicle = nil, vehicleState = nil, seat = nil, seatPass = -math.huge, vehiclePass = -math.huge,
+        ownNet = nil, ownVehicle = nil, ownPass = -math.huge,
     }
 end
 
@@ -214,6 +245,7 @@ local function syncRegistry()
                 -- Same ped, new registration (token, activity): keep the samples.
                 fresh.exists, fresh.x, fresh.y, fresh.z = track.exists, track.x, track.y, track.z
                 fresh.dist2, fresh.sampledAt = track.dist2, track.sampledAt
+                fresh.inRange = track.inRange
                 fresh.zone, fresh.zoneX, fresh.zoneY = track.zone, track.zoneX, track.zoneY
                 fresh.ownNet = track.ownNet
                 fresh.version = track.version + 1
@@ -237,22 +269,30 @@ local function syncRegistry()
     end
 end
 
--- One pass: tracks that are due are sampled. Exposed for the tests and for a
--- consumer that needs the cache fresh right now.
-function HumalikeWorldTrack.Sample(now, px, py, pz)
+-- One pass: tracks that are due are sampled. `pass` is the number of this
+-- pass (the pulse counts them; without one it is taken from the time).
+function HumalikeWorldTrack.Sample(now, px, py, pz, pass)
+    pass = pass or now // TICK_MS
     syncRegistry()
     HumalikeWorldTrack.playerX, HumalikeWorldTrack.playerY, HumalikeWorldTrack.playerZ = px, py, pz
     local nearest2, sampled = math.huge, 0
     for _, track in pairs(tracks) do
-        if now >= track.nextAt then
-            sample(track, now, px, py, pz)
+        if pass >= track.nextPass then
+            sample(track, now, pass, px, py, pz)
             sampled = sampled + 1
         elseif track.exists then
             -- The player moved since this track was sampled; keep its distance current.
             local ex, ey, ez = track.x - px, track.y - py, track.z - pz
             track.dist2 = ex * ex + ey * ey + ez * ez
         end
-        if track.dist2 < nearest2 then nearest2 = track.dist2 end
+        local dist2 = track.dist2
+        if dist2 < nearest2 then nearest2 = dist2 end
+        if track.inRange then
+            if dist2 > LEAVE_M * LEAVE_M then track.inRange = false end
+        elseif dist2 <= ENTER_M * ENTER_M then
+            track.inRange = true
+            HumalikeWorldTrack.enteredAt = now
+        end
     end
     HumalikeWorldTrack.nearest2 = nearest2
     return sampled
@@ -268,14 +308,11 @@ function HumalikeWorldTrack.AnyWithin(radius)
 end
 
 function HumalikeWorldTrack.Start()
-    CreateThread(function()
-        while true do
-            Wait(TICK_MS)
-            local ped = PlayerPedId()
-            if ped and ped > 0 then
-                local at = GetEntityCoords(ped)
-                HumalikeWorldTrack.Sample(GetGameTimer(), at.x, at.y, at.z)
-            end
+    HumalikePulse.Every('tracker', TICK_MS, function(now)
+        local ped = HumalikePulse.Ped()
+        if ped and ped > 0 then
+            local at = HumalikePulse.Coords(ped)
+            HumalikeWorldTrack.Sample(now, at.x, at.y, at.z, HumalikePulse.Beat(TICK_MS))
         end
-    end)
+    end, 30)
 end

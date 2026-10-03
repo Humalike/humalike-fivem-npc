@@ -71,46 +71,44 @@ end
 
 -- Only registered peds can carry a HumaLike mind, and only the ones the
 -- tracker puts within reach can be touched; the pool is never scanned.
-local function eachNearPed(maxDistance, callback)
-    local max2 = maxDistance * maxDistance
-    for npcId, track in pairs(HumalikeWorldTrack.tracks) do
-        if track.exists and track.dist2 <= max2 then callback(npcId, track) end
-    end
-end
-
 function HumalikeNpcShove.Tick(now)
     forgetStale(now)
     local reported = settle(now)
     local cfg = config()
     -- Nobody within reach: the player's own state is not worth asking for.
     if not HumalikeWorldTrack.AnyWithin(cfg.MaxDistance) then return reported end
-    local playerPed = PlayerPedId()
-    if playerPed == 0 or not DoesEntityExist(playerPed) then return reported end
+    local playerPed = HumalikePulse.Ped()
+    if playerPed == 0 then return reported end
     -- A still player shoves nobody: the speed is asked before anything else.
-    if GetEntitySpeed(playerPed) < cfg.MinSpeed or IsPedInAnyVehicle(playerPed, false)
+    local velocity = HumalikePulse.Velocity(playerPed)
+    local speed = math.sqrt(velocity.x * velocity.x + velocity.y * velocity.y + velocity.z * velocity.z)
+    if speed < cfg.MinSpeed or IsPedInAnyVehicle(playerPed, false)
         or IsEntityDead(playerPed) or IsPedRagdoll(playerPed) or IsPedInMeleeCombat(playerPed) then
         return reported
     end
-    local origin = GetEntityCoords(playerPed)
-    local velocity = GetEntityVelocity(playerPed)
-    eachNearPed(cfg.MaxDistance, function(npcId, track)
-        local ped = track.ped
-        if not pending[ped] and due(ped, now) and not excluded(ped, npcId, now)
-            and IsEntityTouchingEntity(playerPed, ped)
-            and towards(velocity, origin, track) then
-            pending[ped] = { since = now, npc_id = npcId, ragdolled = IsPedRagdoll(ped) }
+    local origin = HumalikePulse.Coords(playerPed)
+    local max2 = cfg.MaxDistance * cfg.MaxDistance
+    for npcId, track in pairs(HumalikeWorldTrack.tracks) do
+        if track.exists and track.dist2 <= max2 then
+            local ped = track.ped
+            -- The free questions first: the game is asked about contact only for a
+            -- ped in the player's way, and about the rest only for one it touches.
+            if not pending[ped] and due(ped, now) and towards(velocity, origin, track)
+                and IsEntityTouchingEntity(playerPed, ped) and not excluded(ped, npcId, now) then
+                pending[ped] = { since = now, npc_id = npcId, ragdolled = IsPedRagdoll(ped) }
+            end
         end
-    end)
+    end
     return reported
 end
 
 -- With nobody in reach and no contact pending the detector sleeps longer.
 local IDLE_TICK_MS = 500
 
-CreateThread(function()
-    while true do
-        local busy = next(pending) ~= nil or HumalikeWorldTrack.AnyWithin(config().MaxDistance)
-        Wait(busy and config().TickMs or IDLE_TICK_MS)
-        HumalikeNpcShove.Tick(GetGameTimer())
-    end
+-- After the tracker of the same pulse, so reach is judged on fresh distances.
+-- The contact windows count on the schedule time, which a late frame does not stretch.
+HumalikePulse.Every('shove', IDLE_TICK_MS, function(_, due)
+    HumalikeNpcShove.Tick(due)
+    local busy = next(pending) ~= nil or HumalikeWorldTrack.AnyWithin(config().MaxDistance)
+    return busy and config().TickMs or IDLE_TICK_MS
 end)

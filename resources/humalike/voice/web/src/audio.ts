@@ -204,14 +204,25 @@ export class AudioEngine {
     this.#updateSpatialDemand();
   }
 
-  // The game samples the listener fast only while somebody is actually heard.
+  // The game samples the listener fast only while a source with a position is
+  // actually heard. The answer is taken once the current change has settled:
+  // a source that is replaced detaches and attaches in one go, and the game
+  // must not hear "nobody" in between (the two reports could arrive swapped).
   #spatialDemand = false;
+  #spatialDemandQueued = false;
   #updateSpatialDemand(): void {
-    let speaking = false;
-    for (const remote of this.#remotes.values()) if (remote.transmitting) { speaking = true; break; }
-    if (speaking === this.#spatialDemand) return;
-    this.#spatialDemand = speaking;
-    this.#onSpatialDemand(speaking);
+    if (this.#spatialDemandQueued) return;
+    this.#spatialDemandQueued = true;
+    queueMicrotask(() => {
+      this.#spatialDemandQueued = false;
+      let speaking = false;
+      for (const remote of this.#remotes.values()) {
+        if (remote.transmitting && remote.panner) { speaking = true; break; }
+      }
+      if (speaking === this.#spatialDemand) return;
+      this.#spatialDemand = speaking;
+      this.#onSpatialDemand(speaking);
+    });
   }
 
   async microphone(deviceId: string, gainValue: number): Promise<MicrophonePipeline> {

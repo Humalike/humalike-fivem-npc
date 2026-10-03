@@ -78,18 +78,21 @@ local function clearLineOfSight(playerPed, track, now)
 end
 
 -- Positions come from the shared tracker; the game is asked only about the
--- player, the camera and the few NPCs that qualify.
-local function calculate(listener)
-    local now = GetGameTimer()
-    local playerPed = PlayerPedId()
-    local localServerId = GetPlayerServerId(PlayerId())
-    local playerCoords = GetEntityCoords(playerPed)
+-- player, the camera and the few NPCs that qualify. With nobody to target the
+-- answer is the one shared empty list.
+local EMPTY = {}
+local localServerId = nil -- this session's own server id never changes
+
+local function calculate(listener, now)
+    local playerPed = HumalikePulse.Ped()
+    if not localServerId or localServerId <= 0 then localServerId = GetPlayerServerId(PlayerId()) end
+    local playerCoords = HumalikePulse.Coords(playerPed)
     local player = HumalikeWorldCollector and HumalikeWorldCollector.latest or nil
     local playerVehicleNet = player and player.vehicle and player.vehicle.networkId or nil
     local forward = listener and listener.forward or nil
     local camera = nil -- read once, and only when somebody stands within gaze distance
-    local followers, vehiclePeers = {}, {}
-    local gaze, gazeDistance = nil, GAZE_DISTANCE + 1.0
+    local followers, vehiclePeers = nil, nil
+    local gaze, gazeDistance2 = nil, (GAZE_DISTANCE + 1.0) * (GAZE_DISTANCE + 1.0)
     local nearby = false
 
     for npcId, track in pairs(HumalikeWorldTrack.tracks) do
@@ -97,36 +100,39 @@ local function calculate(listener)
             and HumalikeNpcRuntimeControl.IsVoiceUnavailable(npcId)
         if not voiceUnavailable and track.exists then
             if followTarget(track.ped, localServerId) and alive(track, now) then
+                followers = followers or {}
                 followers[#followers + 1] = npcId
             end
             if playerVehicleNet and track.vehicleState
                 and track.vehicleState.network_id == playerVehicleNet and alive(track, now) then
+                vehiclePeers = vehiclePeers or {}
                 vehiclePeers[#vehiclePeers + 1] = npcId
             end
             local px, py, pz = track.x - playerCoords.x, track.y - playerCoords.y, track.z - playerCoords.z
-            local playerDistance = math.sqrt(px * px + py * py + pz * pz)
-            if playerDistance <= IDLE_DISTANCE then nearby = true end
-            if forward and playerDistance > 0.01 and playerDistance <= GAZE_DISTANCE
-                and playerDistance < gazeDistance then
-                camera = camera or GetGameplayCamCoord()
+            local playerDistance2 = px * px + py * py + pz * pz
+            if playerDistance2 <= IDLE_DISTANCE * IDLE_DISTANCE then nearby = true end
+            if forward and playerDistance2 > 0.01 * 0.01 and playerDistance2 <= GAZE_DISTANCE * GAZE_DISTANCE
+                and playerDistance2 < gazeDistance2 then
+                camera = camera or HumalikePulse.CamCoord()
                 local dx, dy, dz = track.x - camera.x, track.y - camera.y, track.z - camera.z
                 local cameraDistance = math.sqrt(dx * dx + dy * dy + dz * dz)
                 local dot = cameraDistance > 0.01
                     and (dx * forward.x + dy * forward.y + dz * forward.z) / cameraDistance or -1.0
-                if dot >= GAZE_MIN_DOT then gaze, gazeDistance = track, playerDistance end
+                if dot >= GAZE_MIN_DOT then gaze, gazeDistance2 = track, playerDistance2 end
             end
         end
     end
 
+    for npcId in pairs(aliveAt) do
+        if not HumalikeWorldTrack.tracks[npcId] then aliveAt[npcId], aliveValue[npcId] = nil, nil end
+    end
+    if not followers and not vehiclePeers and not gaze then return EMPTY, nearby end
     local result, seen = {}, {}
-    addGroup(result, seen, followers)
-    addGroup(result, seen, vehiclePeers)
+    if followers then addGroup(result, seen, followers) end
+    if vehiclePeers then addGroup(result, seen, vehiclePeers) end
     if gaze and not seen[gaze.npcId] and #result < MAX_TARGETS and alive(gaze, now)
         and clearLineOfSight(playerPed, gaze, now) then
         result[#result + 1] = gaze.npcId
-    end
-    for npcId in pairs(aliveAt) do
-        if not HumalikeWorldTrack.tracks[npcId] then aliveAt[npcId], aliveValue[npcId] = nil, nil end
     end
     return result, nearby or #result > 0
 end
@@ -172,19 +178,19 @@ function HumalikeNpcDirectTargets.IsExclusive()
 end
 
 -- True while an NPC is close enough (or already a target) to keep the fast refresh.
-function HumalikeNpcDirectTargets.Refresh(listener)
+function HumalikeNpcDirectTargets.Refresh(listener, now)
     local nearby
-    observed, nearby = calculate(listener)
+    observed, nearby = calculate(listener, now or GetGameTimer())
     if not locked then publish(observed) end
     return nearby
 end
 
-CreateThread(function()
+-- After the collector and the tracker of the same pulse: the listener and the
+-- positions are the ones just read. The life and line-of-sight caches count
+-- on the schedule time, which a late frame does not stretch.
+HumalikePulse.Every('direct targets', REFRESH_MS, function(_, due)
+    local listener = HumalikeWorldCollector and HumalikeWorldCollector.listener or nil
     local nearby = true
-    while true do
-        Wait(nearby and REFRESH_MS or IDLE_REFRESH_MS)
-        local listener = HumalikeWorldCollector and HumalikeWorldCollector.listener or nil
-        nearby = true
-        if listener then nearby = HumalikeNpcDirectTargets.Refresh(listener) end
-    end
+    if listener then nearby = HumalikeNpcDirectTargets.Refresh(listener, due) end
+    return nearby and REFRESH_MS or IDLE_REFRESH_MS
 end)

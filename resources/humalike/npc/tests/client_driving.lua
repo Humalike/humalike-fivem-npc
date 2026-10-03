@@ -373,6 +373,7 @@ HumalikeNpcStyle = { ApplySeed = function() return true end }
 function AddStateBagChangeHandler() end
 function GetEntityFromStateBagName() return 0 end
 function NetworkGetNetworkIdFromEntity(ped) return ped + 1000 end
+dofile('../world/client/pulse.lua')
 dofile('client/reactions.lua')
 dofile('client/population.lua')
 Config.Population.MoveRate = 0.82 -- the ambling rate, to exercise the per-frame loop

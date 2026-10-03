@@ -50,45 +50,50 @@ CreateThread(function()
     end
 end)
 
--- One thread watches the player's gun: shots while armed (every frame), and
--- the aim target every 100 ms (50 ms while aiming at somebody), read only
--- while the player is actually aiming.
-CreateThread(function()
-    local burstOpen = false
-    local lastShotAt = -1000
-    local aimingAt
-    local nextAimAt = 0
-    while true do
-        local ped = PlayerPedId()
-        local now = GetGameTimer()
-        local armed = burstOpen or IsPedArmed(ped, 6)
-        if armed then
-            if IsPedShooting(ped) then
-                lastShotAt = now
-                if not burstOpen then
-                    burstOpen = true
-                    TriggerServerEvent('humalike:npc:gunshotFired')
-                end
-            elseif burstOpen and now - lastShotAt >= 500 then
-                burstOpen = false
-            end
+-- The player's gun. Every 100 ms (50 ms while aiming at somebody) a pulse job
+-- looks at the hand and the aim; only while a gun is out does a frame job
+-- watch for shots, one native a frame.
+local gunPed, armed = 0, false
+local burstOpen, lastShotAt = false, -1000
+local aimingAt = nil
+
+local function watchShots()
+    if not armed and not burstOpen then return false end
+    if IsPedShooting(gunPed) then
+        lastShotAt = GetGameTimer()
+        if not burstOpen then
+            burstOpen = true
+            TriggerServerEvent('humalike:npc:gunshotFired')
         end
-        if now >= nextAimAt then
-            local playerId = PlayerId()
-            local npcId = nil
-            if IsPlayerFreeAiming(playerId) then
-                local found, entity = GetEntityPlayerIsFreeAimingAt(playerId)
-                npcId = found and IsEntityAPed(entity)
-                    and Entity(entity).state.humalike_npc_id or nil
-            end
-            if npcId ~= aimingAt then
-                aimingAt = npcId
-                local entry = npcId and AmbientNpcEntries and AmbientNpcEntries[npcId] or nil
-                TriggerServerEvent('humalike:npc:aimingCandidateChanged', npcId,
-                    entry and entry.entity_id or nil)
-            end
-            nextAimAt = now + (aimingAt and 50 or 100)
-        end
-        Wait(armed and 0 or 100)
+    elseif burstOpen and GetGameTimer() - lastShotAt >= 500 then
+        burstOpen = false
     end
+    return true
+end
+
+HumalikePulse.EveryFrame('gunshots', watchShots)
+
+HumalikePulse.Every('gun', 100, function()
+    local wasArmed = armed
+    gunPed = HumalikePulse.Ped()
+    armed = IsPedArmed(gunPed, 6)
+    if armed then
+        -- The frame the gun is first seen counts too: the frame job starts on the next one.
+        if not wasArmed then watchShots() end
+        HumalikePulse.Frames()
+    end
+    local playerId = PlayerId()
+    local npcId = nil
+    if IsPlayerFreeAiming(playerId) then
+        local found, entity = GetEntityPlayerIsFreeAimingAt(playerId)
+        npcId = found and IsEntityAPed(entity)
+            and Entity(entity).state.humalike_npc_id or nil
+    end
+    if npcId ~= aimingAt then
+        aimingAt = npcId
+        local entry = npcId and AmbientNpcEntries and AmbientNpcEntries[npcId] or nil
+        TriggerServerEvent('humalike:npc:aimingCandidateChanged', npcId,
+            entry and entry.entity_id or nil)
+    end
+    return aimingAt and 50 or 100
 end)

@@ -214,8 +214,9 @@ RegisterNetEvent('humalike:world:cabinMembership', function(snapshot)
 end)
 
 -- The motion and listener samples are the two messages the NUI hears most
--- (up to ten and thirty a second); they are encoded by hand instead of
--- through the generic JSON encoder.
+-- (up to five and twenty a second); they are encoded by hand instead of
+-- through the generic JSON encoder, and leave with the other messages of
+-- their pulse.
 local function finite(value)
     value = tonumber(value) or 0.0
     if value ~= value or value == math.huge or value == -math.huge then return 0.0 end
@@ -254,15 +255,15 @@ function HumalikeVoiceListenerJson(listener)
 end
 
 HumalikeWorldCollector.Subscribe('motion', function(state)
-    SendNuiMessage(HumalikeVoiceRealtimeJson(state))
+    HumalikePulse.Send(HumalikeVoiceRealtimeJson(state))
 end)
 
 HumalikeWorldCollector.Subscribe('listener', function(listener)
-    SendNuiMessage(HumalikeVoiceListenerJson(listener))
+    HumalikePulse.Send(HumalikeVoiceListenerJson(listener))
 end)
 
--- The NUI reports whether any spatial voice source is attached; the ear is
--- sampled thirty times a second only then.
+-- The NUI reports whether an NPC is being heard; the ear is sampled twenty
+-- times a second only then.
 RegisterNUICallback('listenerDemand', function(data, callback)
     HumalikeWorldCollector.SetListenerDemand(type(data) == 'table' and data.active == true)
     callback({ ok = true })
@@ -325,12 +326,11 @@ RegisterCommand(PTT_RELEASE_COMMAND, function()
 end, false)
 RegisterKeyMapping(PTT_COMMAND, 'Humalike AI voice PTT', 'keyboard', 'N')
 
-CreateThread(function()
-    while true do
-        evaluatePtt()
-        Wait(pttSharesNativeBinding and PTT_SHARED_POLL_MS or PTT_POLL_MS)
-    end
-end)
+-- First in its pulse: a key press is acted on before anything is sampled.
+HumalikePulse.Every('ptt', PTT_POLL_MS, function()
+    evaluatePtt()
+    return pttSharesNativeBinding and PTT_SHARED_POLL_MS or PTT_POLL_MS
+end, 10)
 
 CreateThread(function()
     Wait(500)

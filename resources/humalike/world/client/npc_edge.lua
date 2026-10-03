@@ -7,18 +7,23 @@ HumalikeWorldNpcEdge = {
     sentFrames = 0,
     coalescedFrames = 0,
     lastError = nil,
-    lastSentAt = 0,
-    lastKeyframeAt = nil, -- nil: the next frame is a keyframe
+    lastSentBeat = nil,     -- the keep-alive beat of the last frame
+    lastKeyframeBeat = nil, -- the beat of the last keyframe; nil: the next frame is one
 }
 
 -- The edge keeps an NPC's last position until it is told otherwise, so a frame
--- carries only what changed. The whole scene goes out again every KEYFRAME_MS
--- (a frame can be lost when two land in one of the edge's 200 ms windows),
--- and a frame goes out at least every KEEPALIVE_MS: the edge forgets a player
--- it has not heard from for three seconds.
+-- carries only what changed. The whole scene goes out again every other
+-- keep-alive (a frame can be lost when two land in one of the edge's 200 ms
+-- windows), and a frame goes out at least every KEEPALIVE_MS: the edge forgets
+-- a player it has not heard from for three seconds. Both are counted in beats
+-- of the pulse's clock, so they leave with the other once-a-second messages.
 local KEEPALIVE_MS = 1000
-local KEYFRAME_MS = 2000
+local KEYFRAME_BEATS = 2 -- a keyframe every other keep-alive beat
 local PLAYER_MOVE_EPSILON = 0.1 -- metres
+-- The edge settles "someone walked up" two seconds after a player came within
+-- range of an NPC, counted on that player's own frames. For this long after a
+-- track came within range the player is reported on every frame, moving or not.
+local SETTLE_WINDOW_MS = 3000
 
 local sent = {} -- npcId -> track version last reported
 local selectedRevision = nil -- HumalikeWorldTrack.changeRevision the last selection saw
@@ -172,7 +177,7 @@ end
 local function resetReports()
     sent = {}
     selectedRevision = nil
-    HumalikeWorldNpcEdge.lastKeyframeAt = nil
+    HumalikeWorldNpcEdge.lastKeyframeBeat = nil
 end
 
 RegisterNetEvent('humalike:world:npcEdgeTicket', function(ticket, expectedBootId)
@@ -235,9 +240,12 @@ end
 -- One frame decision; returns the encoded message or nil when nothing is due.
 local EMPTY = {}
 
-function HumalikeWorldNpcEdge.Frame(player, now)
-    local lastKeyframeAt = HumalikeWorldNpcEdge.lastKeyframeAt
-    local keyframe = lastKeyframeAt == nil or now - lastKeyframeAt >= KEYFRAME_MS
+-- `beat` numbers the keep-alive interval this frame falls in (the pulse counts
+-- them; without one it is taken from the time).
+function HumalikeWorldNpcEdge.Frame(player, now, beat)
+    beat = beat or now // KEEPALIVE_MS
+    local lastKeyframeBeat = HumalikeWorldNpcEdge.lastKeyframeBeat
+    local keyframe = lastKeyframeBeat == nil or beat // KEYFRAME_BEATS ~= lastKeyframeBeat // KEYFRAME_BEATS
     local revision = HumalikeWorldTrack.changeRevision
     -- With no track changed since the last pass, a delta would be empty: the
     -- selection (a walk over every track) is skipped.
@@ -246,42 +254,45 @@ function HumalikeWorldNpcEdge.Frame(player, now)
         selected = HumalikeWorldNpcEdge.Select(keyframe)
         selectedRevision = revision
     end
-    if #selected == 0 and not keyframe and not playerChanged(player)
-        and now - HumalikeWorldNpcEdge.lastSentAt < KEEPALIVE_MS then
-        return nil
+    if #selected == 0 and not keyframe and not playerChanged(player) then
+        local enteredAt = HumalikeWorldTrack.enteredAt
+        local settling = enteredAt ~= nil and now - enteredAt < SETTLE_WINDOW_MS
+        if not settling and beat == HumalikeWorldNpcEdge.lastSentBeat then
+            return nil
+        end
     end
     HumalikeWorldNpcEdge.sequence = HumalikeWorldNpcEdge.sequence + 1
     local message = HumalikeWorldNpcEdge.Encode(player, HumalikeWorldNpcEdge.sequence, selected)
-    HumalikeWorldNpcEdge.lastSentAt = now
-    if keyframe then HumalikeWorldNpcEdge.lastKeyframeAt = now end
+    HumalikeWorldNpcEdge.lastSentBeat = beat
+    if keyframe then HumalikeWorldNpcEdge.lastKeyframeBeat = beat end
     local vehicle = player.vehicle
-    lastPlayer = {
-        x = player.position.x, y = player.position.y, z = player.position.z,
-        networkId = vehicle and vehicle.networkId or false, seat = vehicle and vehicle.seat or false,
-        voiceDistance = player.effectiveVoiceDistance,
-    }
+    local last = lastPlayer or {}
+    last.x, last.y, last.z = player.position.x, player.position.y, player.position.z
+    last.networkId, last.seat = vehicle and vehicle.networkId or false, vehicle and vehicle.seat or false
+    last.voiceDistance = player.effectiveVoiceDistance
+    lastPlayer = last
     return message
 end
 
 function HumalikeWorldNpcEdge.Start()
     if not WorldConfig.npcEdge.enabled then return end
-    CreateThread(function()
-        Wait(1000)
-        HumalikeWorldNpcEdge.RequestTicket()
-        local startedAt = GetGameTimer()
-        while true do
-            Wait(math.max(0, WorldConfig.npcEdge.frameIntervalMs - (GetGameTimer() - startedAt)))
-            startedAt = GetGameTimer()
-            local player = HumalikeWorldCollector.latest
-            if HumalikeWorldNpcEdge.connected and player then
-                local message = HumalikeWorldNpcEdge.Frame(player, startedAt)
-                if message and HumalikeWorldNpcEdge.connected then
-                    SendNuiMessage(message)
-                    HumalikeWorldNpcEdge.sentFrames = HumalikeWorldNpcEdge.sentFrames + 1
-                end
+    SetTimeout(1000, HumalikeWorldNpcEdge.RequestTicket)
+    -- After the collector and the tracker of the same pulse, so a frame carries
+    -- what they just read. The edge keeps one frame per 200 ms tick and a newer
+    -- one replaces it whole, so two frames must never be less than the interval
+    -- apart: the pulse's grid restarts at each frame sent.
+    HumalikePulse.Every('edge frame', WorldConfig.npcEdge.frameIntervalMs, function(now)
+        local player = HumalikeWorldCollector.latest
+        if HumalikeWorldNpcEdge.connected and player then
+            local message = HumalikeWorldNpcEdge.Frame(player, now, HumalikePulse.Beat(KEEPALIVE_MS))
+            if message and HumalikeWorldNpcEdge.connected then
+                HumalikePulse.Send(message)
+                HumalikePulse.Anchor()
+                HumalikeWorldNpcEdge.sentFrames = HumalikeWorldNpcEdge.sentFrames + 1
             end
         end
-    end)
+        return WorldConfig.npcEdge.frameIntervalMs
+    end, 80)
     CreateThread(function()
         while true do
             Wait(WorldConfig.npcEdge.ticketRetryMs)
