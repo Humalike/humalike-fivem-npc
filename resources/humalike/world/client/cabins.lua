@@ -10,7 +10,7 @@ local function report(sample, force)
     TriggerServerEvent('humalike:world:cabinState', vehicle)
 end
 
-AddEventHandler('humalike:world:playerMotion', function(sample)
+HumalikeWorldCollector.Subscribe('motion', function(sample)
     report(sample, false)
 end)
 

@@ -8,16 +8,17 @@ local function signature(entity, entityId, networkId, modelHash, token, kind)
     return table.concat({ entity, entityId, networkId, modelHash, token, kind }, ':')
 end
 
+-- The lease module indexes leased peds by npc id; one native confirms the
+-- handle still carries the lease's network id.
 local function ambientIdentityMatches(npcId, entry, ped, networkId)
-    if not NetworkGetEntityIsNetworked(ped) then return false end
-    if NetworkGetNetworkIdFromEntity(ped) ~= networkId
-        or not NetworkDoesEntityExistWithNetworkId(networkId)
-        or NetworkGetEntityFromNetworkId(networkId) ~= ped then return false end
-    return Entity(ped).state.humalike_npc_id == npcId
-        and tonumber(entry.network_id) == networkId
+    if not AmbientPedNpcIds or AmbientPedNpcIds[ped] ~= npcId then return false end
+    return tonumber(entry.network_id) == networkId
+        and NetworkGetNetworkIdFromEntity(ped) == networkId
 end
 
-local function registrationFor(npcId, entry, ped, token, kind)
+-- `previous` is the registration last made for this npc; a handle keeps its
+-- model, so the hash is read once per ped.
+local function registrationFor(npcId, entry, ped, token, kind, previous)
     if not ped or not DoesEntityExist(ped) or type(token) ~= 'string' or token == '' then return nil end
     local entityId = tonumber(entry.entity_id)
     local networkId = tonumber(entry.network_id) or NetworkGetNetworkIdFromEntity(ped)
@@ -25,7 +26,8 @@ local function registrationFor(npcId, entry, ped, token, kind)
     if kind == 'ambient' and not ambientIdentityMatches(npcId, entry, ped, networkId) then
         return nil
     end
-    local modelHash = unsignedHash(GetEntityModel(ped))
+    local modelHash = previous and previous.entity == ped and previous.modelHash
+        or unsignedHash(GetEntityModel(ped))
     return {
         npcId = npcId,
         entity = ped,
@@ -37,50 +39,66 @@ local function registrationFor(npcId, entry, ped, token, kind)
     }, signature(ped, entityId, networkId, modelHash, token, kind)
 end
 
-local function desiredRegistrations()
+-- The periodic pass yields every few NPCs so a crowd never lands on one frame.
+local SLICE = 8
+
+local function previousOf(npcId)
+    local current = registrations[npcId]
+    return current and current.value or nil
+end
+
+local function desiredRegistrations(sliced)
     local desired = {}
+    local visited = 0
+    local function step()
+        visited = visited + 1
+        if sliced and visited % SLICE == 0 then Wait(0) end
+    end
     for npcId, entry in pairs(KnownNpcs or {}) do
         local ped = ResolveNpcPed(npcId)
         local token = ped and DoesEntityExist(ped)
             and (Entity(ped).state.humalike_runtime_token or entry.runtime_token) or nil
-        local value, valueSignature = registrationFor(npcId, entry, ped, token, 'persistent')
+        local value, valueSignature = registrationFor(npcId, entry, ped, token, 'persistent', previousOf(npcId))
         if value then desired[npcId] = { value = value, signature = valueSignature } end
+        step()
     end
     for npcId, entry in pairs(AmbientNpcEntries or {}) do
         local ped = AmbientPeds and AmbientPeds[npcId] or nil
         local value, valueSignature = registrationFor(
-            npcId, entry, ped, entry.lease_token, 'ambient')
+            npcId, entry, ped, entry.lease_token, 'ambient', previousOf(npcId))
         if value then desired[npcId] = { value = value, signature = valueSignature } end
+        step()
     end
     return desired
 end
 
-local function reconcile(force)
-    local desired = desiredRegistrations()
+local function reconcile(force, sliced)
+    local desired = desiredRegistrations(sliced)
     for npcId, current in pairs(registrations) do
         if not desired[npcId] then
             exports['humalike']:UnregisterNpc(npcId)
             registrations[npcId] = nil
-        elseif force or desired[npcId].signature ~= current then
+        elseif force or desired[npcId].signature ~= current.signature then
             local ok = exports['humalike']:RegisterNpc(desired[npcId].value)
-            if ok then registrations[npcId] = desired[npcId].signature end
+            if ok then registrations[npcId] = desired[npcId] end
         end
     end
     for npcId, candidate in pairs(desired) do
         if not registrations[npcId] then
             local ok = exports['humalike']:RegisterNpc(candidate.value)
-            if ok then registrations[npcId] = candidate.signature end
+            if ok then registrations[npcId] = candidate end
         end
     end
 end
 
 local function registerOne(npcId, entry, ped, token, kind)
     if type(npcId) ~= 'string' or type(entry) ~= 'table' then return false end
-    local value, valueSignature = registrationFor(npcId, entry, ped, token, kind)
+    local value, valueSignature = registrationFor(npcId, entry, ped, token, kind, previousOf(npcId))
     if not value then return false end
-    if registrations[npcId] == valueSignature then return true end
+    local current = registrations[npcId]
+    if current and current.signature == valueSignature then return true end
     local ok = exports['humalike']:RegisterNpc(value)
-    if ok then registrations[npcId] = valueSignature end
+    if ok then registrations[npcId] = { value = value, signature = valueSignature } end
     return ok == true
 end
 
@@ -122,7 +140,7 @@ end)
 
 CreateThread(function()
     while true do
-        reconcile(false)
-        Wait(3000)
+        reconcile(false, true)
+        Wait(5000)
     end
 end)

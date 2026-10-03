@@ -5,7 +5,8 @@
   "type": "module",
   "exports": "./src/index.ts",
   "scripts": {
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "test:unit": "node --test test/*.test.mjs"
   },
   "devDependencies": {
     "typescript": "7.0.2"

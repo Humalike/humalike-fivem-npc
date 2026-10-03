@@ -11,6 +11,10 @@ local nuiReady = false
 local nuiBootId = nil
 local sessionRetryGeneration = 0
 local PTT_RELEASE_TAIL_MS = 200
+local PTT_POLL_MS = 100
+-- A key shared with the game's own PTT is read off the control natives; a
+-- held key shows up within this many ms.
+local PTT_SHARED_POLL_MS = 50
 local PTT_COMMAND = '+humalike_voice_ptt'
 local PTT_RELEASE_COMMAND = '-' .. PTT_COMMAND:sub(2)
 local PTT_CONTROL = GetHashKey(PTT_COMMAND) | 0x80000000
@@ -109,6 +113,7 @@ RegisterNUICallback('ready', function(data, callback)
     callback({ ok = true })
     if bootChanged then
         HumalikeNpcDirectTargets.SetAvailable(false)
+        HumalikeWorldCollector.SetListenerDemand(false)
         syncNuiState()
         requestSession()
     end
@@ -208,16 +213,60 @@ RegisterNetEvent('humalike:world:cabinMembership', function(snapshot)
         membership = cabinMembership, epoch = cabinEpoch, revision = cabinRevision })
 end)
 
-AddEventHandler('humalike:world:playerMotion', function(state)
-    SendNUIMessage({ type = 'game:realtime', state = state })
+-- The motion and listener samples are the two messages the NUI hears most
+-- (up to five and twenty a second); they are encoded by hand instead of
+-- through the generic JSON encoder, and leave with the other messages of
+-- their pulse.
+local function finite(value)
+    value = tonumber(value) or 0.0
+    if value ~= value or value == math.huge or value == -math.huge then return 0.0 end
+    return value
+end
+
+local function jsonString(value)
+    value = tostring(value or '')
+    if value:find('[%c"\\]') then
+        value = value:gsub('[%c"\\]', function(char)
+            if char == '"' then return '\\"' end
+            if char == '\\' then return '\\\\' end
+            return ('\\u%04x'):format(char:byte())
+        end)
+    end
+    return '"' .. value .. '"'
+end
+
+function HumalikeVoiceRealtimeJson(state)
+    local p, v, flags = state.position, state.velocity, state.flags or {}
+    local vehicle = state.vehicle
+    local vehiclePart = vehicle and vehicle.networkId and vehicle.seat
+        and (',"vehicle":{"networkId":%d,"seat":%d}'):format(vehicle.networkId, vehicle.seat) or ''
+    return ('{"type":"game:realtime","state":{"v":%d,"type":"player_motion","bootId":%s,"sequence":%d,"clientTimeMs":%d,"position":{"x":%.3f,"y":%.3f,"z":%.3f},"velocity":{"x":%.3f,"y":%.3f,"z":%.3f},"heading":%.2f%s,"effectiveVoiceDistance":%.2f,"voiceMode":%d,"zone":%s,"flags":{"dead":%s,"paused":%s}}}'):format(
+        tonumber(state.v) or 1, jsonString(state.bootId), tonumber(state.sequence) or 0,
+        tonumber(state.clientTimeMs) or 0, finite(p.x), finite(p.y), finite(p.z),
+        finite(v.x), finite(v.y), finite(v.z), finite(state.heading), vehiclePart,
+        finite(state.effectiveVoiceDistance), tonumber(state.voiceMode) or 2,
+        jsonString(state.zone), flags.dead and 'true' or 'false', flags.paused and 'true' or 'false')
+end
+
+function HumalikeVoiceListenerJson(listener)
+    local p, f = listener.position, listener.forward
+    return ('{"type":"game:listener","position":{"x":%.3f,"y":%.3f,"z":%.3f},"forward":{"x":%.4f,"y":%.4f,"z":%.4f}}'):format(
+        finite(p.x), finite(p.y), finite(p.z), finite(f.x), finite(f.y), finite(f.z))
+end
+
+HumalikeWorldCollector.Subscribe('motion', function(state)
+    HumalikePulse.Send(HumalikeVoiceRealtimeJson(state))
 end)
 
-AddEventHandler('humalike:world:listener', function(listener)
-    SendNUIMessage({
-        type = 'game:listener',
-        position = listener.position,
-        forward = listener.forward,
-    })
+HumalikeWorldCollector.Subscribe('listener', function(listener)
+    HumalikePulse.Send(HumalikeVoiceListenerJson(listener))
+end)
+
+-- The NUI reports whether an NPC is being heard; the ear is sampled twenty
+-- times a second only then.
+RegisterNUICallback('listenerDemand', function(data, callback)
+    HumalikeWorldCollector.SetListenerDemand(type(data) == 'table' and data.active == true)
+    callback({ ok = true })
 end)
 
 AddEventHandler('humalike:settings:applied', sendLocale)
@@ -239,39 +288,49 @@ end)
 
 local keyPttActive = false
 
-RegisterCommand(PTT_COMMAND, function() keyPttActive = true end, false)
-RegisterCommand(PTT_RELEASE_COMMAND, function() keyPttActive = false end, false)
+local function nativePttPressed()
+    if not pttSharesNativeBinding then return false, false, false, false end
+    return IsControlPressed(0, 249), IsDisabledControlPressed(0, 249),
+        IsControlPressed(2, 249), IsDisabledControlPressed(2, 249)
+end
+
+local function evaluatePtt()
+    local controlPressed = HumalikeVoicePtt.InputPressed(
+        keyPttActive, pttSharesNativeBinding, nativePttPressed())
+    local pressed = HumalikeVoicePtt.Allowed(controlPressed, HumalikeVoiceBusy.Active())
+    if pressed and not pttPressed then
+        pttPressed = true
+        pttReleaseGeneration = pttReleaseGeneration + 1
+        HumalikeNpcDirectTargets.Lock()
+        setTransmitting(true)
+    elseif not pressed and pttPressed then
+        pttPressed = false
+        pttReleaseGeneration = pttReleaseGeneration + 1
+        local generation = pttReleaseGeneration
+        SetTimeout(PTT_RELEASE_TAIL_MS, function()
+            if not pttPressed and generation == pttReleaseGeneration then
+                setTransmitting(false)
+                HumalikeNpcDirectTargets.Unlock()
+            end
+        end)
+    end
+end
+
+RegisterCommand(PTT_COMMAND, function()
+    keyPttActive = true
+    evaluatePtt()
+end, false)
+RegisterCommand(PTT_RELEASE_COMMAND, function()
+    keyPttActive = false
+    evaluatePtt()
+end, false)
 RegisterKeyMapping(PTT_COMMAND, 'Humalike AI voice PTT', 'keyboard', 'N')
 
-CreateThread(function()
-    while true do
-        local controlPressed = HumalikeVoicePtt.InputPressed(
-            keyPttActive,
-            pttSharesNativeBinding,
-            IsControlPressed(0, 249),
-            IsDisabledControlPressed(0, 249),
-            IsControlPressed(2, 249),
-            IsDisabledControlPressed(2, 249))
-        local pressed = HumalikeVoicePtt.Allowed(controlPressed, HumalikeVoiceBusy.Active())
-        if pressed and not pttPressed then
-            pttPressed = true
-            pttReleaseGeneration = pttReleaseGeneration + 1
-            HumalikeNpcDirectTargets.Lock()
-            setTransmitting(true)
-        elseif not pressed and pttPressed then
-            pttPressed = false
-            pttReleaseGeneration = pttReleaseGeneration + 1
-            local generation = pttReleaseGeneration
-            SetTimeout(PTT_RELEASE_TAIL_MS, function()
-                if not pttPressed and generation == pttReleaseGeneration then
-                    setTransmitting(false)
-                    HumalikeNpcDirectTargets.Unlock()
-                end
-            end)
-        end
-        Wait(0)
-    end
-end)
+-- First in its pulse: a key press is acted on before anything is sampled.
+HumalikePulse.Every('ptt', PTT_POLL_MS, function()
+    evaluatePtt()
+    return pttSharesNativeBinding and PTT_SHARED_POLL_MS or PTT_POLL_MS
+end, 10)
 
 CreateThread(function()
     Wait(500)
@@ -279,9 +338,13 @@ CreateThread(function()
     if nuiReady then syncNuiState() end
 end)
 
+-- GetControlInstructionalButton costs a good fraction of a millisecond; a
+-- rebinding shows up within this many seconds (at once when the panel opens).
+local PTT_BINDING_REFRESH_MS = 15000
+
 CreateThread(function()
     while not stopping do
-        Wait(2000)
+        Wait(PTT_BINDING_REFRESH_MS)
         refreshPttBindings()
     end
 end)

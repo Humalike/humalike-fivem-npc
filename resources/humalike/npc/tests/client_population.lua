@@ -43,6 +43,12 @@ local nowMs = 0
 
 function RegisterNetEvent() end
 function AddEventHandler(name, handler) handlers[name] = handler end
+local bagHandlers = {}
+function AddStateBagChangeHandler(key, _, handler) bagHandlers[key] = handler end
+function GetEntityFromStateBagName(name) return tonumber(name:match('^entity:(%d+)$')) - 1000 end
+function NetworkGetNetworkIdFromEntity(ped) return ped + 1000 end
+-- A body streaming in: its kind bag reaches the client.
+local function announce(ped) bagHandlers.humalike_npc_kind(('entity:%d'):format(ped + 1000), 'humalike_npc_kind', 'population') end
 function CreateThread(callback) threads[#threads + 1] = callback end
 function TriggerServerEvent(...) sent = { ... } end
 function PlayerPedId() return 1 end
@@ -135,9 +141,13 @@ HumalikeNpcRuntimeControl = {
     end,
 }
 
+dofile('../world/client/pulse.lua')
 dofile('client/reactions.lua')
 dofile('client/population.lua')
-assert(#threads == 3, 'density, per-frame pace and one pool walk')
+assert(#threads == 2, 'the shared pulse and the body tick: density and pace are frame jobs')
+assert(bagHandlers.humalike_npc_kind and bagHandlers.humalike_body_id and bagHandlers.humalike_walk_rate,
+    'bodies announce themselves through their bags')
+Config.Population.MoveRate = 0.82 -- the ambling rate, to exercise the per-frame loop
 
 local candidates = {
     { x = 100, y = 0, z = 10, heading = 90 },
@@ -244,18 +254,29 @@ end
 paceCalls = {}
 heldPeds[20] = true
 HumalikeNpcPopulationClient.PaceTick()
+assert(#paceCalls == 2, 'the per-frame loop does no lookups of its own; a hold is announced')
+paceCalls = {}
+HumalikeNpcPopulationClient.RefreshPace(20)
+HumalikeNpcPopulationClient.PaceTick()
 assert(#paceCalls == 1 and paceCalls[1][1] == 26, 'a hold that began after the last tick stops the override')
 heldPeds[20] = nil
 npcIds[26] = 'npc-26'
+AmbientPedNpcIds = { [26] = 'npc-26' } -- the lease module indexes npc ids by ped
 controlled['npc-26'] = { movement = true }
+paceCalls = {}
+HumalikeNpcPopulationClient.RebuildPace()
 HumalikeNpcPopulationClient.PaceTick()
-assert(#paceCalls == 2 and paceCalls[2][1] == 20, 'so does a runtime-control movement lease')
+assert(#paceCalls == 1 and paceCalls[1][1] == 20, 'so does a runtime-control movement lease')
 controlled['npc-26'] = nil
 npcIds[26] = nil
+AmbientPedNpcIds = {}
 owned[26] = false
+paceCalls = {}
+HumalikeNpcPopulationClient.RefreshPace(26)
 HumalikeNpcPopulationClient.PaceTick()
-assert(#paceCalls == 3 and paceCalls[3][1] == 20, 'and a body no longer under this client\'s control')
+assert(#paceCalls == 1 and paceCalls[1][1] == 20, 'and a body no longer under this client\'s control')
 owned[26] = true
+HumalikeNpcPopulationClient.RebuildPace()
 paceCalls = {}
 assert(#wanderCalls == 2 and wanderCalls[1] == 20 and wanderCalls[2] == 26,
     'first ownership sends unmanaged wander bodies wandering at once')
@@ -290,11 +311,7 @@ assert(blendCalls[3][1] == 22 and blendCalls[3][3] == 3.0 and blendCalls[4][1] =
 assert(blendCalls[7][1] == 26 and blendCalls[7][3] == 1.0, 'walk_rate defaults to 1.0')
 HumalikeNpcPopulationClient.Tick(3000, false)
 assert(#wanderCalls == 2 and #blendCalls == 7, 'a stopped ped is not re-tasked before the idle window')
-flags, tasks = blockingCounts(8)
-assert(#blockingCalls == 12 and next(tasks) == nil, 'the flag is re-asserted on every owned tick')
-for _, ped in ipairs({ 20, 22, 23, 24, 26 }) do
-    assert(flags[ped] == 1, 'never the task again')
-end
+assert(#blockingCalls == 7, 'the reactions flag is not re-asserted on every tick')
 HumalikeNpcPopulationClient.Tick(6000, false)
 assert(#wanderCalls == 4 and wanderCalls[3] == 20 and wanderCalls[4] == 26,
     'only owned, idle, unmanaged population peds wander again')
@@ -302,6 +319,11 @@ HumalikeNpcPopulationClient.Tick(7000, false)
 assert(#wanderCalls == 4, 'a freshly tasked ped waits for another idle window')
 HumalikeNpcPopulationClient.Tick(11000, false)
 assert(#wanderCalls == 6)
+flags, tasks = blockingCounts(8)
+assert(#blockingCalls == 12 and next(tasks) == nil, 'the flag is re-asserted every ten seconds')
+for _, ped in ipairs({ 20, 22, 23, 24, 26 }) do
+    assert(flags[ped] == 1, 'never the task again')
+end
 
 stopped[20] = false
 HumalikeNpcPopulationClient.Tick(16000, false)
@@ -362,13 +384,15 @@ assert(applied[6][1] == 31)
 pool[33] = true
 kinds[33] = 'population'
 owned[33] = true
+announce(33)
 blockedBefore = #blockingCalls
 local wanderBefore = #wanderCalls
 HumalikeNpcPopulationClient.Tick(54000, false)
-assert(#blockingCalls == blockedBefore + 1 and blockingCalls[#blockingCalls][1] == 32
+assert(#blockingCalls == blockedBefore
     and #wanderCalls == wanderBefore, 'a body whose kind has not replicated is not ready: skipped')
 assert(HumalikeNpcPopulationClient.OwnsReactions(33) == false)
 bodyKinds[33] = 'persona'
+bagHandlers.humalike_body_kind('entity:1033', 'humalike_body_kind', 'persona')
 HumalikeNpcPopulationClient.Tick(55000, false)
 assert(#wanderCalls == wanderBefore + 1 and wanderCalls[#wanderCalls] == 33,
     'and configured as soon as the bag says persona')
@@ -448,6 +472,16 @@ assert(not HumalikeNpcPopulationClient.DensityTick())
 assert(not HumalikeNpcPopulationClient.DensityTick() and #copCalls == 0,
     'a disabled state leaves GTA pedestrians and cops alone')
 sendState(true, false)
+assert(#threads == 3, 'switching the population on starts the frame thread at once')
+do
+    local waited
+    function Wait(ms) waited = ms coroutine.yield() end
+    local frames = coroutine.create(threads[3])
+    assert(coroutine.resume(frames) and waited == 0 and #densityCalls == 2,
+        'the multipliers are set on every frame, by a job of the shared frame thread')
+    Wait = nil
+    densityCalls = {}
+end
 assert(HumalikeNpcPopulationClient.DensityTick())
 assert(densityCalls[1][1] == 'ped' and densityCalls[1][2] == 0.0)
 assert(densityCalls[2][1] == 'scenario' and densityCalls[2][2] == 0.0 and densityCalls[2][3] == 0.0)
@@ -586,6 +620,7 @@ HumalikeNpcPopulationClient.RestorePace(999)
 assert(#blendCalls == 9, 'a missing entity is ignored')
 
 walkRates[72] = 0.7
+bagHandlers.humalike_walk_rate('entity:1072', 'humalike_walk_rate', 0.7)
 blendCalls = {}
 HumalikeNpcPopulationClient.Tick(205000, false)
 assert(#blendCalls == 2 and blendCalls[2][1] == 72 and blendCalls[2][3] == 0.7,
@@ -617,10 +652,12 @@ fleeing[72] = nil
 HumalikeNpcPopulationClient.Tick(204000, false)
 assert(#clearCalls == 1, 'only while it flees')
 bodyKinds[72] = 'extra'
+bagHandlers.humalike_body_kind('entity:1072', 'humalike_body_kind', 'extra')
 fleeing[72] = true
 HumalikeNpcPopulationClient.Tick(205000, false)
 assert(#clearCalls == 1, 'an extra keeps GTA brain, its flee is its own')
 bodyKinds[72] = 'persona'
+bagHandlers.humalike_body_kind('entity:1072', 'humalike_body_kind', 'persona')
 fleeing[72] = nil
 clearCalls = {}
 
@@ -657,7 +694,97 @@ HumalikeNpcPopulationClient.Tick(300000, false)
 HumalikeNpcPopulationClient.Tick(301000, false)
 assert(#blendCalls == 2 and #applied == 1, 'a known handle is configured and dressed once')
 bodyIdOf[80] = 'body-b'
+bagHandlers.humalike_body_id('entity:1080', 'humalike_body_id', 'body-b')
 HumalikeNpcPopulationClient.Tick(302000, false)
 assert(#blendCalls == 4 and #applied == 2, 'a new body behind the same handle is configured again')
+
+pool = { [90] = true, [91] = true, [92] = true, [93] = true, [94] = true }
+kinds = { [90] = 'population', [91] = 'population' }
+bodyKinds = { [90] = 'persona', [91] = 'extra' }
+owned = { [90] = true, [91] = true, [92] = true, [93] = true, [94] = true }
+populationTypes = { [92] = 4, [93] = 5, [94] = 7 }
+bodyIdOf, stopped, seeds = {}, {}, {}
+local entityReads = 0
+local countedEntity = Entity
+function Entity(ped)
+    entityReads = entityReads + 1
+    return countedEntity(ped)
+end
+HumalikeNpcPopulationClient.Tick(400000, true)
+assert(entityReads == 7, 'a pool pass reads one bag per ped, a second (the snapshot) for our bodies')
+assert(HumalikeNpcPopulationClient.Count() == 2, 'and remembers the two bodies it found')
+entityReads = 0
+HumalikeNpcPopulationClient.Tick(400500, false)
+assert(entityReads == 0, 'a body tick reads no bag at all: the snapshot is kept per body')
+HumalikeNpcPopulationClient.Tick(405000, false)
+assert(entityReads == 0, 'a pool pass is not due for another ten seconds')
+entityReads = 0
+HumalikeNpcPopulationClient.SetState(true, false)
+HumalikeNpcPopulationClient.Tick(401000, true)
+assert(entityReads == 3, 'a sweep reads every ped it does not know; known bodies cost nothing')
+HumalikeNpcPopulationClient.SetState(false, false)
+paceCalls = {}
+HumalikeNpcPopulationClient.PaceTick()
+assert(#paceCalls == 2, 'both walkers amble')
+entityReads = 0
+for _ = 1, 60 do HumalikeNpcPopulationClient.PaceTick() end
+assert(entityReads == 0, 'the per-frame loop never touches a bag')
+Config.Population.MoveRate = 1.0
+paceCalls = {}
+assert(HumalikeNpcPopulationClient.PaceTick() == false and #paceCalls == 0,
+    'at the game\'s own rate the per-frame loop does nothing')
+Config.Population.MoveRate = 0.82
+
+-- A body announced by its bag joins the next tick without a pool pass.
+pool[96], kinds[96], bodyKinds[96], owned[96] = true, 'population', 'persona', true
+entityReads = 0
+announce(96)
+assert(entityReads == 1 and HumalikeNpcPopulationClient.Count() == 3, 'one snapshot read on announcement')
+function GetGamePool() error('no pool pass between sweeps') end
+wanderCalls = {}
+HumalikeNpcPopulationClient.Tick(402000, false)
+assert(#wanderCalls == 1 and wanderCalls[1] == 96, 'the announced body is configured on the next tick')
+pool[96], owned[96] = nil, nil
+HumalikeNpcPopulationClient.Tick(403000, false)
+assert(HumalikeNpcPopulationClient.Count() == 2, 'a deleted body is forgotten')
+local playerChecks, isPlayer = 0, IsPedAPlayer
+function IsPedAPlayer(ped) playerChecks = playerChecks + 1 return isPlayer(ped) end
+HumalikeNpcPopulationClient.Tick(405000, false)
+assert(playerChecks == 0, 'a known body is itself by its network id; nobody asks whether it is a player')
+IsPedAPlayer = isPlayer
+function GetGamePool()
+    local peds = {}
+    for ped in pairs(pool) do peds[#peds + 1] = ped end
+    table.sort(peds)
+    return peds
+end
+
+-- A sliced pass spreads the pool over frames and swaps its lists in only at the end.
+pool[95], kinds[95], bodyKinds[95], owned[95] = true, 'population', 'persona', true
+local frames = 0
+function Wait(ms)
+    assert(ms == 0, 'a slice waits one frame')
+    frames = frames + 1
+    coroutine.yield()
+end
+local slicedPass = coroutine.create(function()
+    return HumalikeNpcPopulationClient.SlicedTick(500000, true, 3)
+end)
+assert(coroutine.resume(slicedPass))
+paceCalls = {}
+HumalikeNpcPopulationClient.PaceTick()
+assert(#paceCalls == 2, 'the previous lists stay in force while the pass runs')
+heldPeds[90] = true
+HumalikeNpcPopulationClient.RefreshPace(90)
+assert(coroutine.resume(slicedPass))
+assert(coroutine.resume(slicedPass))
+assert(coroutine.status(slicedPass) == 'dead' and frames == 2, 'two known bodies and six pool peds in three slices')
+paceCalls = {}
+HumalikeNpcPopulationClient.PaceTick()
+assert(#paceCalls == 2, 'the new walker joins once the pass completes')
+for _, call in ipairs(paceCalls) do
+    assert(call[1] == 91 or call[1] == 95, 'a hold announced mid-pass is not undone by the swap')
+end
+heldPeds[90] = nil
 
 print('client_population: ok')

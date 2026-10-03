@@ -81,8 +81,14 @@ AddStateBagChangeHandler('humalike_action', nil, function(bagName, _key, value)
         end
     end
 end)
-function DownedNpcOf(ped)
-    local npcId = DoesEntityExist(ped) and Entity(ped).state.humalike_npc_id or nil
+function DownedNpcOf(ped, npcId)
+    if npcId == nil then
+        if HumalikeNpcIdOfPed then
+            npcId = HumalikeNpcIdOfPed(ped)
+        else
+            npcId = DoesEntityExist(ped) and Entity(ped).state.humalike_npc_id or nil
+        end
+    end
     if not npcId then return nil end
     return HumalikeDownedState(npcId)
 end

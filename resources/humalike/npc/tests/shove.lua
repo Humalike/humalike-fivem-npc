@@ -18,7 +18,7 @@ local coords = {}
 local speed = 0
 local inVehicle = false
 local playerDead = false
-local velocity = { x = 1, y = 0, z = 0 }
+local velocity = { x = 1, y = 0, z = 0 } -- the direction; the speed above scales it
 
 function CreateThread(callback) threads[#threads + 1] = callback end
 function TriggerServerEvent(...) sent[#sent + 1] = { ... } end
@@ -26,8 +26,8 @@ function PlayerPedId() return 1 end
 function DoesEntityExist(entity) return entity == 1 or pool[entity] ~= nil end
 function IsPedAPlayer(ped) return ped == 1 end
 function IsPedInAnyVehicle(ped) return ped == 1 and inVehicle end
-function GetEntitySpeed() return speed end
-function GetEntityVelocity() return velocity end
+function GetEntitySpeed() error('the speed is the length of the velocity the pulse already read') end
+function GetEntityVelocity() return { x = velocity.x * speed, y = velocity.y * speed, z = velocity.z * speed } end
 function GetEntityCoords(entity) return coords[entity] or { x = 2, y = 0, z = 0 } end
 function GetGamePool() error('the shove detector never scans the ped pool') end
 function IsEntityDead(ped) return ped == 1 and playerDead or dead[ped] == true end
@@ -37,8 +37,20 @@ function IsPedRagdoll(ped) return ragdoll[ped] == true end
 function IsEntityTouchingEntity(_, ped) return touching[ped] == true end
 function HumalikeDebug() end
 
+-- The tracker knows which registered peds stand within reach; ped 12 is
+-- in no registry and never tracked.
+local function near(npcId, ped)
+    return { npcId = npcId, ped = ped, exists = true, dist2 = 4.0, x = 2, y = 0, z = 0 }
+end
+HumalikeWorldTrack = {
+    tracks = { ['ambient-1'] = near('ambient-1', 10), ['static-1'] = near('static-1', 11),
+        ['ambient-2'] = near('ambient-2', 13) },
+    AnyWithin = function() return true end,
+}
+
+dofile('../world/client/pulse.lua')
 dofile('client/shove.lua')
-assert(#threads == 1)
+assert(#threads == 1, 'the shared pulse is the only thread')
 coords[1] = { x = 0, y = 0, z = 0 }
 
 pool = { [10] = true, [11] = true, [12] = true, [13] = true }
@@ -46,7 +58,31 @@ AmbientPeds = { ['ambient-1'] = 10, ['ambient-2'] = 13 }
 LoadedPeds = { ['static-1'] = 11 }
 touching = { [10] = true, [11] = true, [12] = true, [13] = true }
 
-assert(HumalikeNpcShove.Tick(1000) == 0 and #sent == 0, 'standing still touches nobody')
+local playerReads, contactReads, exclusionReads = 0, 0, 0
+local velocityOf, touchingOf, meleeOf = GetEntityVelocity, IsEntityTouchingEntity, IsPedInMeleeCombat
+function GetEntityVelocity() playerReads = playerReads + 1 return velocityOf() end
+function IsEntityTouchingEntity(a, b) contactReads = contactReads + 1 return touchingOf(a, b) end
+function IsPedInMeleeCombat(ped)
+    if ped ~= 1 then exclusionReads = exclusionReads + 1 end
+    return meleeOf(ped)
+end
+HumalikeWorldTrack.AnyWithin = function() return false end
+assert(HumalikeNpcShove.Tick(900) == 0 and playerReads == 0, 'with nobody in reach the player is not even looked at')
+HumalikeWorldTrack.AnyWithin = function() return true end
+
+assert(HumalikeNpcShove.Tick(1000) == 0 and #sent == 0 and contactReads == 0, 'standing still touches nobody')
+-- A ped behind the player is never asked about; one in the way but not
+-- touched is asked about contact only.
+speed = 1.2
+local were = touching
+touching = {}
+velocity = { x = -1, y = 0, z = 0 }
+assert(HumalikeNpcShove.Tick(1010) == 0 and contactReads == 0, 'nobody in the direction of travel: no native per ped')
+velocity = { x = 1, y = 0, z = 0 }
+assert(HumalikeNpcShove.Tick(1020) == 0 and contactReads == 3 and exclusionReads == 0,
+    'three peds ahead, none touched: one contact question each and nothing else')
+touching = were
+speed = 0
 speed = 1.2
 inVehicle = true
 assert(HumalikeNpcShove.Tick(1100) == 0, 'a vehicle hit is not a shove')

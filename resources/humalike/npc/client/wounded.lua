@@ -95,6 +95,9 @@ local function applyDowned(ped)
     SetEntityHealth(ped, GetEntityMaxHealth(ped))
     holdDownedFlags(ped)
     playDownedPose(ped)
+    if HumalikeNpcPopulationClient and HumalikeNpcPopulationClient.RefreshPace then
+        HumalikeNpcPopulationClient.RefreshPace(ped)
+    end
 end
 local function releaseBody(ped)
     if not DoesEntityExist(ped) or not NetworkHasControlOfEntity(ped) then return end
@@ -113,6 +116,9 @@ local function clearDowned(ped)
     SetPedCanRagdoll(ped, true)
     ClearPedTasksImmediately(ped)
     SetEntityHealth(ped, GetEntityMaxHealth(ped))
+    if HumalikeNpcPopulationClient and HumalikeNpcPopulationClient.RefreshPace then
+        HumalikeNpcPopulationClient.RefreshPace(ped)
+    end
 end
 local function holdStanding(npcId, ped)
     if downed[npcId] then return end
@@ -212,7 +218,7 @@ function HumalikeDownedState(npcId)
 end
 CreateThread(function()
     while true do
-        Wait(POSE_WATCH_TICK_MS)
+        Wait(next(downed) and POSE_WATCH_TICK_MS or 500)
         for npcId, entry in pairs(downed) do
             if not entry.entity or not DoesEntityExist(entry.entity) then
                 local lease = AmbientNpcEntries and AmbientNpcEntries[npcId] or nil

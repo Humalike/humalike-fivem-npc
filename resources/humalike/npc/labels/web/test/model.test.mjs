@@ -17,6 +17,8 @@ test("keeps badge size nearly fixed across resolutions", () => {
 
 test("accepts only compact normalized label tuples", () => {
   assert.equal(isLabelTuple([0.5, 0.4, "en", 1]), true);
+  assert.equal(isLabelTuple([0.5, 0.4, "en", 1, "npc-1"]), true);
+  assert.equal(isLabelTuple([0.5, 0.4, "en", 1, 7]), false);
   assert.equal(isLabelTuple([1.2, 0.4, "en", 0]), false);
   assert.equal(isLabelTuple({ x: 0.5 }), false);
 });
