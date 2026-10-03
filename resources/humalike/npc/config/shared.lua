@@ -170,7 +170,7 @@ HumalikeDefineConfig(function()
         CandidateRefreshMs = 200,
         CandidateMargin = 3.0,
         RenderFps = math.max(10, math.min(60,
-            tonumber(HumalikeConvar('humalike_npc_labels_fps', '30')) or 30)),
+            tonumber(HumalikeConvar('humalike_npc_labels_fps', '20')) or 20)),
         DefaultLanguage = HumalikeConvar('humalike_npc_labels_default_language', 'en'),
         ShowDefaultLanguage = HumalikeConvar('humalike_npc_labels_show_default_language', 'false') == 'true',
         LanguageLabels = { pl = 'pl', en = 'en', de = 'de', es = 'es', fr = 'fr' },

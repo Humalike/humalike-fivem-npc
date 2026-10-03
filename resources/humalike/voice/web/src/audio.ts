@@ -113,7 +113,6 @@ export class AudioEngine {
       velocity: route.velocity ?? { x: 0, y: 0, z: 0 }, receivedAt: performance.now(),
       route, transmitting: false, releaseTimer: 0,
     });
-    if (this.#remotes.size === 1) this.#onSpatialDemand(true);
     this.updateRoute(route);
   }
 
@@ -166,7 +165,7 @@ export class AudioEngine {
     remote.source.disconnect(); remote.audible.disconnect();
     remote.distance.disconnect(); remote.panner?.disconnect(); this.#remotes.delete(identity);
     this.#activeRemotes.delete(identity); this.#stopRenderLoopIfIdle();
-    if (this.#remotes.size === 0) this.#onSpatialDemand(false);
+    this.#updateSpatialDemand();
   }
 
   #ensureRenderLoop(): void {
@@ -202,6 +201,17 @@ export class AudioEngine {
     remote.audible.gain.setTargetAtTime(active ? 1 : 0, this.context.currentTime, active ? 0.015 : 0.025);
     this.#onNPCSpeaking(identity.slice(4), active);
     this.#reconcileActive(identity, remote);
+    this.#updateSpatialDemand();
+  }
+
+  // The game samples the listener fast only while somebody is actually heard.
+  #spatialDemand = false;
+  #updateSpatialDemand(): void {
+    let speaking = false;
+    for (const remote of this.#remotes.values()) if (remote.transmitting) { speaking = true; break; }
+    if (speaking === this.#spatialDemand) return;
+    this.#spatialDemand = speaking;
+    this.#onSpatialDemand(speaking);
   }
 
   async microphone(deviceId: string, gainValue: number): Promise<MicrophonePipeline> {

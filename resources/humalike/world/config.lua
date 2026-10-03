@@ -5,7 +5,7 @@ HumalikeDefineConfig(function()
 
         collector = {
             tickMs = HumalikeConvarInt('humalike_world_tick_ms', 20),
-            movingIntervalMs = HumalikeConvarInt('humalike_world_moving_interval_ms', 100),
+            movingIntervalMs = HumalikeConvarInt('humalike_world_moving_interval_ms', 200),
             idleIntervalMs = HumalikeConvarInt('humalike_world_idle_interval_ms', 1000),
             listenerIntervalMs = HumalikeConvarInt('humalike_world_listener_interval_ms', 50),
             movementThreshold = 0.08,
