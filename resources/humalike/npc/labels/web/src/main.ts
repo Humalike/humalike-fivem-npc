@@ -13,6 +13,9 @@ interface LabelNode {
   language: string | null;
   muted: boolean;
   seen: number;
+  x: number;
+  y: number;
+  at: number;
 }
 
 // Labels missing from the game for this long are dropped (the game sends an
@@ -20,6 +23,11 @@ interface LabelNode {
 const STALE_MS = 3000;
 const MIN_TRANSITION_MS = 16;
 const MAX_TRANSITION_MS = 120;
+// A label glides to each new position over one frame interval, so it would
+// trail the head by that much. The glide is aimed one interval ahead along
+// the label's own motion instead; the step is capped so a stop never overshoots far.
+const PREDICT_FACTOR = 1.0;
+const MAX_PREDICT_PX = 40;
 
 const container = document.createElement("div");
 container.id = "humalike-labels";
@@ -65,7 +73,22 @@ function applyFrame(labels: LabelTuple[], configuredScale: number): void {
     const key = typeof id === "string" && id.length > 0 ? id : `#${index}`;
     const node = nodes.get(key) ?? createNode(key);
     node.seen = generation;
-    node.root.style.transform = `translate3d(${(x * width).toFixed(1)}px, ${(y * height).toFixed(1)}px, 0)`;
+    let px = x * width;
+    let py = y * height;
+    const dt = now - node.at;
+    if (node.at > 0 && dt > 0 && dt < STALE_MS) {
+      // Velocity from the last two frames, projected one glide ahead.
+      let dx = (px - node.x) / dt * transitionMs * PREDICT_FACTOR;
+      let dy = (py - node.y) / dt * transitionMs * PREDICT_FACTOR;
+      const step = Math.hypot(dx, dy);
+      if (step > MAX_PREDICT_PX) { dx *= MAX_PREDICT_PX / step; dy *= MAX_PREDICT_PX / step; }
+      node.x = px; node.y = py;
+      px += dx; py += dy;
+    } else {
+      node.x = px; node.y = py;
+    }
+    node.at = now;
+    node.root.style.transform = `translate3d(${px.toFixed(1)}px, ${py.toFixed(1)}px, 0)`;
     const language = rawLanguage === false ? null : normalizeLanguage(rawLanguage);
     if (language !== node.language) setLanguage(node, language);
     if ((muted === 1) !== node.muted) setMuted(node, muted === 1);
@@ -102,7 +125,7 @@ function createNode(key: string): LabelNode {
   container.append(root);
   // The first frame lands without a slide from the corner.
   requestAnimationFrame(() => root.classList.remove("hl-enter"));
-  const node: LabelNode = { root, flag, mute, language: null, muted: false, seen: 0 };
+  const node: LabelNode = { root, flag, mute, language: null, muted: false, seen: 0, x: 0, y: 0, at: 0 };
   nodes.set(key, node);
   return node;
 }
