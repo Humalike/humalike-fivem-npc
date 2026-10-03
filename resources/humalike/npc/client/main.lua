@@ -2,6 +2,18 @@
 KnownNpcs = {}  -- npc_id (string) -> NpcRosterEntry-shaped table
 LoadedPeds = {} -- npc_id (string) -> ped handle
 
+-- The npc id a ped carries. The lease index and the roster binding know it for
+-- nothing; the ped's state bag (a dozen microseconds a read) is asked only
+-- about a ped neither of them holds.
+function HumalikeNpcIdOfPed(ped)
+    local npcId = AmbientPedNpcIds and AmbientPedNpcIds[ped]
+    if npcId ~= nil then return npcId end
+    for id, loaded in pairs(LoadedPeds) do
+        if loaded == ped then return id end
+    end
+    return DoesEntityExist(ped) and Entity(ped).state.humalike_npc_id or nil
+end
+
 function ResolveNpcPed(npcId)
     local staticPed = LoadedPeds[npcId]
     if staticPed and DoesEntityExist(staticPed) then return staticPed end

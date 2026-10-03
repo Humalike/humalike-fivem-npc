@@ -49,7 +49,11 @@ end
 
 function HumalikeAmbientControlHeldPed(ped, npcId)
     if npcId == nil then
-        npcId = DoesEntityExist(ped) and Entity(ped).state.humalike_npc_id or nil
+        if HumalikeNpcIdOfPed then
+            npcId = HumalikeNpcIdOfPed(ped)
+        else
+            npcId = DoesEntityExist(ped) and Entity(ped).state.humalike_npc_id or nil
+        end
     end
     local entry = npcId and AmbientNpcEntries and AmbientNpcEntries[npcId] or nil
     local control = entry and controls[controlKey(entry)] or nil

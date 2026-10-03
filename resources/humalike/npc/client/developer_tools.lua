@@ -20,13 +20,17 @@ AddEventHandler('onClientResourceStart', function(resourceName)
     if resourceName == 'chat' then addCommandSuggestion() end
 end)
 
-AddEventHandler('humalike:npc:ambientPedAssigned', function(_, ped)
+-- A ped spawned by the developer tools carries its spawn id in a bag. Only
+-- such a ped is watched (until this client owns it) and set wandering, once.
+-- A state-bag read costs a dozen microseconds, so a leased ped is asked for
+-- the bag a single time; a bag that arrives later announces itself.
+local function settle(ped, spawnId)
+    if type(spawnId) ~= 'string' or initialized[ped] == spawnId then return end
     CreateThread(function()
         local deadline = GetGameTimer() + 5000
         while DoesEntityExist(ped) and GetGameTimer() < deadline do
-            local spawnId = Entity(ped).state.humalike_debug_spawn_id
-            if type(spawnId) == 'string' and initialized[ped] ~= spawnId
-                and NetworkHasControlOfEntity(ped) then
+            if initialized[ped] == spawnId then return end
+            if NetworkHasControlOfEntity(ped) then
                 initialized[ped] = spawnId
                 SetPedKeepTask(ped, true)
                 TaskWanderStandard(ped, 10.0, 10)
@@ -35,6 +39,17 @@ AddEventHandler('humalike:npc:ambientPedAssigned', function(_, ped)
             Wait(100)
         end
     end)
+end
+
+AddEventHandler('humalike:npc:ambientPedAssigned', function(_, ped)
+    if not ped or not DoesEntityExist(ped) then return end
+    settle(ped, Entity(ped).state.humalike_debug_spawn_id)
+end)
+
+AddStateBagChangeHandler('humalike_debug_spawn_id', nil, function(bagName, _, value)
+    local ped = GetEntityFromStateBagName(bagName)
+    if not ped or ped <= 0 or not (AmbientPedNpcIds and AmbientPedNpcIds[ped]) then return end
+    settle(ped, value)
 end)
 
 AddEventHandler('humalike:npc:ambientPedRemoved', function(_, ped)
