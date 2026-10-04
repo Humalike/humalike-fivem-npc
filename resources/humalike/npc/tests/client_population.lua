@@ -524,7 +524,15 @@ assert(#deleted == 5 and #missionMarks == 5)
 assert(deleted[1] == 50 and deleted[2] == 58 and deleted[3] == 59 and deleted[4] == 60
     and deleted[5] == 61, 'mission, near, in-vehicle, humalike and unowned peds survive')
 assert(missionMarks[1] == 50, 'a leftover becomes a mission entity before deletion')
-assert(HumalikeNpcPopulationClient.Tick(nowMs, true) == 1 and deleted[6] == 62)
+-- A sweep that hit its cap goes on at the next pass; it does not wait out the
+-- ten seconds between pool walks.
+assert(HumalikeNpcPopulationClient.Tick(nowMs + 2000, false) == 1 and deleted[6] == 62,
+    'the leftovers beyond the cap are removed two seconds later')
+local poolWalks, walkPool = 0, GetGamePool
+function GetGamePool(...) poolWalks = poolWalks + 1 return walkPool(...) end
+assert(HumalikeNpcPopulationClient.Tick(nowMs + 4000, false) == 0 and poolWalks == 0,
+    'and once a sweep stays under its cap the pool is left alone until the next walk is due')
+GetGamePool = walkPool
 assert(HumalikeNpcPopulationClient.Tick(nowMs, true) == 0)
 assert(pool[51] and pool[52] and pool[53] and pool[54] and pool[55] and pool[56] and pool[57])
 pool[63] = true
@@ -786,5 +794,63 @@ for _, call in ipairs(paceCalls) do
     assert(call[1] == 91 or call[1] == 95, 'a hold announced mid-pass is not undone by the swap')
 end
 heldPeds[90] = nil
+
+-- The change handler runs BEFORE the bag holds the value: a body whose ped is
+-- already there must be taken on the handler's word, not on a read of the bag.
+pool[97], bodyKinds[97], owned[97] = true, 'persona', true
+assert(kinds[97] == nil)
+local before = HumalikeNpcPopulationClient.Count()
+announce(97)
+kinds[97] = 'population' -- the bag is written once the handlers returned
+assert(HumalikeNpcPopulationClient.Count() == before + 1, 'a body is announced by the value its handler was handed')
+function GetGamePool() error('no pool pass for an announced body') end
+wanderCalls = {}
+HumalikeNpcPopulationClient.Tick(502000, false)
+local tasked = false
+for _, ped in ipairs(wanderCalls) do tasked = tasked or ped == 97 end
+assert(tasked, 'and it is tasked on the next pass, without waiting for the pool walk')
+
+-- A bag that arrives before its ped: the ped is looked for at every pass.
+local existing = { [1098] = false }
+function GetEntityFromStateBagName(name)
+    local netId = tonumber(name:match('^entity:(%d+)$'))
+    if existing[netId] == false then return 0 end
+    return netId - 1000
+end
+function NetworkDoesEntityExistWithNetworkId(netId) return existing[netId] ~= false end
+function NetworkGetEntityFromNetworkId(netId) return netId - 1000 end
+nowMs = 503000
+function GetGameTimer() return nowMs end
+local spawned = #threads
+announce(98)
+assert(#threads == spawned + 1, 'the ped is looked for at once')
+before = HumalikeNpcPopulationClient.Count()
+HumalikeNpcPopulationClient.Tick(504000, false)
+assert(HumalikeNpcPopulationClient.Count() == before, 'no body while its ped does not exist')
+pool[98], kinds[98], bodyKinds[98], owned[98] = true, 'population', 'persona', true
+existing[1098] = true
+wanderCalls = {}
+HumalikeNpcPopulationClient.Tick(506000, false)
+tasked = false
+for _, ped in ipairs(wanderCalls) do tasked = tasked or ped == 98 end
+assert(HumalikeNpcPopulationClient.Count() == before + 1 and tasked,
+    'a ped created seconds after its bag is taken up by the next pass, not by the pool walk')
+existing[1099] = false
+nowMs = 506000
+announce(99)
+function GetGamePool()
+    local peds = {}
+    for ped in pairs(pool) do peds[#peds + 1] = ped end
+    table.sort(peds)
+    return peds
+end
+HumalikeNpcPopulationClient.Tick(537000, false)
+existing[1099] = true
+pool[99], kinds[99], bodyKinds[99], owned[99] = true, 'population', 'persona', true
+before = HumalikeNpcPopulationClient.Count()
+function GetGamePool() error('no pool pass two seconds after one') end
+HumalikeNpcPopulationClient.Tick(539000, false)
+assert(HumalikeNpcPopulationClient.Count() == before, 'a body awaited for half a minute is left to the pool walk')
+pool[99], kinds[99], bodyKinds[99], owned[99] = nil, nil, nil, nil
 
 print('client_population: ok')

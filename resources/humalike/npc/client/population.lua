@@ -253,7 +253,7 @@ local function stateOf(ped)
 end
 
 -- Whether the per-frame move-rate override applies to this body right now.
--- Called when a hold, wound, action or lease starts or ends; the tick redoes it every second.
+-- Called when a hold, wound, action or lease starts or ends; every body pass redoes it.
 function HumalikeNpcPopulationClient.RefreshPace(ped)
     local walking = ownedBodies[ped] or (currentPass and currentPass.walkers[ped])
     if not walking or not DoesEntityExist(ped) or not NetworkHasControlOfEntity(ped) then
@@ -568,6 +568,9 @@ local function finishPass(pass)
     if HumalikeNpcDriving then HumalikeNpcDriving.Forget(seen) end
     ownedBodies = pass.walkers
     paceSet = pass.pacing
+    -- More leftovers than one pass may delete: the next pass walks the pool
+    -- again instead of waiting out the sweep interval.
+    if pass.sweep and pass.removed >= config().SweepMaxPerTick then scanRequested = true end
     return pass.removed
 end
 
@@ -577,10 +580,13 @@ local function scanDue(now, forced)
     return forced == true or scanRequested or now - lastScanAt >= config().SweepTickMs
 end
 
+local resolveAwaited -- defined with the bag handlers below
+
 -- `scan` forces a walk of the ped pool too, finding bodies a bag never
 -- announced and (while enabled) sweeping GTA's leftovers; otherwise the pool
 -- is walked only when due, and only the known bodies are visited.
 function HumalikeNpcPopulationClient.Tick(now, scan)
+    resolveAwaited(now)
     scan = scanDue(now, scan)
     if scan then lastScanAt, scanRequested = now, false end
     local pass = beginPass(now, scan)
@@ -590,6 +596,7 @@ end
 
 -- The same pass as Tick, spread over `slices` frames.
 function HumalikeNpcPopulationClient.SlicedTick(now, scan, slices)
+    resolveAwaited(now)
     scan = scanDue(now, scan)
     if scan then lastScanAt, scanRequested = now, false end
     local pass = beginPass(now, scan)
@@ -623,30 +630,53 @@ local function entityOfBag(bagName)
     return nil, netId
 end
 
-local function announce(ped, netId)
+-- `kind` is the value a change handler was handed. The handler runs before
+-- the bag holds that value, so a read of the bag there still gives the old one.
+local function announce(ped, netId, kind)
     if IsPedAPlayer(ped) then return end
     local state = snapshot(ped)
+    if kind ~= nil then rawset(state, 'humalike_npc_kind', kind) end
     if state.humalike_npc_kind ~= 'population' then return end
     discover(ped, state, netId)
 end
 
+-- A body whose bag arrived before its ped. The ped of a far body can take
+-- seconds to be created: it is looked for on every frame-twentieth for a
+-- second, then once per pass until it shows up or this long has gone by.
+local AWAIT_MS = 30000
+local awaited = {} -- network id -> the game time it is given up at
+
+resolveAwaited = function(now)
+    for netId, deadline in pairs(awaited) do
+        if NetworkDoesEntityExistWithNetworkId(netId) then
+            awaited[netId] = nil
+            local ped = NetworkGetEntityFromNetworkId(netId)
+            if ped and ped > 0 then announce(ped, netId) end
+        elseif now >= deadline then
+            awaited[netId] = nil
+        end
+    end
+end
+
 AddStateBagChangeHandler('humalike_npc_kind', nil, function(bagName, _, value)
+    local ped, netId = entityOfBag(bagName)
     if value ~= 'population' then
-        local ped = entityOfBag(bagName)
+        if netId then awaited[netId] = nil end
         if ped and bodies[ped] then forget(ped) end
         return
     end
-    local ped, netId = entityOfBag(bagName)
     if ped then
-        announce(ped, netId)
+        announce(ped, netId, value)
     elseif netId then
+        awaited[netId] = GetGameTimer() + AWAIT_MS
         CreateThread(function()
             local deadline = GetGameTimer() + 1000
-            while GetGameTimer() < deadline do
+            while awaited[netId] and GetGameTimer() < deadline do
                 Wait(50)
                 local found = GetEntityFromStateBagName(bagName)
                 if found and found > 0 then
-                    announce(found, netId)
+                    awaited[netId] = nil
+                    announce(found, netId, value)
                     return
                 end
             end
