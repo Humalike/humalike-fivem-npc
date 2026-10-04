@@ -43,6 +43,9 @@ end
 function CreateThread() end
 function Wait() end
 function PlayerPedId() return 1 end
+local bagHandlers = {}
+function AddStateBagChangeHandler(key, _, handler) bagHandlers[key] = handler end
+function GetEntityFromStateBagName(name) return tonumber(name:match('^entity:(%d+)$')) or 0 end
 dofile('client/pulse.lua')
 function GetGameTimer() return now end
 Config = { Vehicles = { ReturnDistance = 60.0 } }
@@ -248,4 +251,58 @@ positions[1], exists[1] = { x = 9.5, y = 0.0, z = 0.0 }, true
 jobs.tracker.run(40016, 40000)
 assert(HumalikeWorldTrack.playerX == 9.5, 'the pass runs from the player position of this pulse')
 assert(far1.nextPass > 400 and far1.nextPass <= 410, 'and the tracks are scheduled in passes of the pulse')
+
+-- Speed is the way made between two samples. A ped that shifted a few
+-- centimetres once (less than a position counts as changed) stands still.
+positions[61], exists[61], netIds[61] = { x = 6.0, y = 0.0, z = 0.0 }, true, 261
+HumalikeWorldRegistry.entries = { ['npc-still'] = { npcId = 'npc-still', entity = 61, entityId = 161, networkId = 261,
+    modelHash = 1, runtimeToken = 's', kind = 'persistent', activity = 'idle', generation = 1 } }
+HumalikeWorldRegistry.revision = HumalikeWorldRegistry.revision + 1
+now = 50000
+HumalikeWorldTrack.Sample(now, 0, 0, 0, 500)
+local still = HumalikeWorldTrack.Get('npc-still')
+positions[61] = { x = 6.04, y = 0.0, z = 0.0 }
+for pass = 502, 510, 2 do
+    now = 50000 + (pass - 500) * 100
+    HumalikeWorldTrack.Sample(now, 0, 0, 0, pass)
+end
+assert(still.x == 6.0, 'a shift below the epsilon is not a new position')
+assert(still.speed == 0.0, ('a ped that stands still has no speed (%.3f)'):format(still.speed))
+
+-- A track replaced for another ped goes on counting versions, so a reader that
+-- remembers the version it last saw takes the new ped as changed.
+local seenVersion = still.version
+positions[62], exists[62], netIds[62] = { x = 6.04, y = 0.0, z = 0.0 }, true, 262
+HumalikeWorldRegistry.entries['npc-still'] = { npcId = 'npc-still', entity = 62, entityId = 162, networkId = 262,
+    modelHash = 1, runtimeToken = 's', kind = 'persistent', activity = 'idle', generation = 2 }
+HumalikeWorldRegistry.revision = HumalikeWorldRegistry.revision + 1
+now = 51200
+HumalikeWorldTrack.Sample(now, 0, 0, 0, 512)
+local rebound = HumalikeWorldTrack.Get('npc-still')
+assert(rebound ~= still and rebound.ped == 62 and rebound.version > seenVersion,
+    'the new ped of an npc never carries a version its old ped already had')
+
+-- A registration without a network id is tracked under the ped's own.
+positions[63], exists[63], netIds[63] = { x = 7.0, y = 0.0, z = 0.0 }, true, 263
+HumalikeWorldRegistry.entries['npc-bare'] = { npcId = 'npc-bare', entity = 63, entityId = 163,
+    modelHash = 1, runtimeToken = 'n', kind = 'persistent', activity = 'idle', generation = 1 }
+HumalikeWorldRegistry.revision = HumalikeWorldRegistry.revision + 1
+now = 51400
+HumalikeWorldTrack.Sample(now, 0, 0, 0, 514)
+local bare = HumalikeWorldTrack.Get('npc-bare')
+assert(bare.networkId == 263 and bare.identityOk, 'the ped\'s network id stands in for a missing one')
+
+-- The own-vehicle bag of a track that was sampled before the bag arrived: the
+-- change handler hands the value over (it runs before the bag holds it).
+assert(bare.ownNet == false and bare.ownVehicle == nil, 'no car while the bag is not there')
+bagHandlers.humalike_vehicle_net('entity:63', 'humalike_vehicle_net', 900)
+positions[500] = { x = 8.0, y = 0.0, z = 0.0 }
+now = 51600
+HumalikeWorldTrack.Sample(now, 0, 0, 0, 516)
+assert(bare.ownNet == 900 and bare.ownVehicle and bare.ownVehicle.network_id == 900,
+    'a bag that arrives after the first sample is not missed for good')
+bagHandlers.humalike_vehicle_net('entity:63', 'humalike_vehicle_net', nil)
+now = 51800
+HumalikeWorldTrack.Sample(now, 0, 0, 0, 518)
+assert(bare.ownNet == false and bare.ownVehicle == nil, 'and one that is cleared is gone at the next sample')
 print('client_track: ok')

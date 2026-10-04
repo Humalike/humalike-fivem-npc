@@ -21,7 +21,7 @@ local function track(npcId, fields)
         activity = fields.activity or 'idle', generation = 1,
     }
     return {
-        npcId = npcId, entry = entry, ped = entry.entity, generation = 1,
+        npcId = npcId, entry = entry, ped = entry.entity, generation = 1, networkId = entry.networkId,
         version = fields.version or 1, exists = fields.exists ~= false,
         x = fields.x or 0.0, y = fields.y or 0.0, z = fields.z or 0.0,
         dist2 = fields.dist2 or 1.0, speed = fields.speed or 0.0,
@@ -124,7 +124,8 @@ assert(HumalikeWorldNpcEdge.Frame(player, 7400) == nil, 'and once a second again
 assert(HumalikeWorldNpcEdge.Frame(player, 7800) == nil)
 assert(HumalikeWorldNpcEdge.Frame(player, 8000), 'the keep-alive (and here the keyframe) still goes out')
 
--- More NPCs than the cap rotate through the regular ones; urgent ones always go.
+-- More NPCs than a frame holds: the urgent ones lead and the rest follows in
+-- the next frames, each exactly once. Nobody waits for the next keyframe.
 WorldConfig.npcEdge.maxNpcsPerFrame = 3
 for index = 1, 5 do
     local npcId = ('npc-crowd-%d'):format(index)
@@ -132,16 +133,47 @@ for index = 1, 5 do
         networkId = 1200 + index, x = 50, dist2 = 50 * 50 })
 end
 changed()
-HumalikeWorldNpcEdge.cursor = 1
-local selected = HumalikeWorldNpcEdge.Select(true)
-assert(#selected == 3 and selected[1].npcId == 'npc-b', 'the talking NPC leads a capped keyframe')
-local seen = {}
-for _ = 1, 6 do
-    for _, item in ipairs(HumalikeWorldNpcEdge.Select(true)) do seen[item.npcId] = true end
+local function namesIn(frame)
+    local names = {}
+    for npcId in (frame or ''):gmatch('"npc_id":"([^"]+)"') do names[#names + 1] = npcId end
+    return names
+end
+HumalikeWorldNpcEdge.lastKeyframeBeat = nil
+local times, first = {}, namesIn(HumalikeWorldNpcEdge.Frame(player, 9000))
+assert(#first == 3 and first[1] == 'npc-b', 'the talking NPC leads a capped keyframe')
+for _, npcId in ipairs(first) do times[npcId] = (times[npcId] or 0) + 1 end
+for _, at in ipairs({ 9200, 9400 }) do
+    for _, npcId in ipairs(namesIn(HumalikeWorldNpcEdge.Frame(player, at))) do times[npcId] = (times[npcId] or 0) + 1 end
 end
 local names = 0
-for _ in pairs(seen) do names = names + 1 end
-assert(names == 7, 'every reportable NPC is reached over a few frames')
+for _, count in pairs(times) do
+    names = names + 1
+    assert(count == 1, 'no NPC goes out twice while others wait')
+end
+assert(names == 7, 'the keyframe reaches every reportable NPC over consecutive frames')
+assert(HumalikeWorldNpcEdge.Frame(player, 9600) == nil, 'and then nothing is left to send')
+
+-- A crowd that keeps changing: with more urgent NPCs than a frame holds they
+-- take turns, the one that waited longest first.
+for index = 1, 5 do HumalikeWorldTrack.tracks[('npc-crowd-%d'):format(index)].speed = 2.0 end
+local function crowdMoves()
+    for index = 1, 5 do
+        local moving = HumalikeWorldTrack.tracks[('npc-crowd-%d'):format(index)]
+        moving.version = moving.version + 1
+    end
+    changed()
+end
+local reached = {}
+for _, at in ipairs({ 9800, 10000 }) do
+    crowdMoves()
+    for _, npcId in ipairs(namesIn(HumalikeWorldNpcEdge.Frame(player, at))) do reached[npcId] = true end
+end
+for index = 1, 5 do
+    assert(reached[('npc-crowd-%d'):format(index)], 'every moving NPC is sent within two frames of a five-strong crowd')
+end
+for index = 1, 5 do HumalikeWorldTrack.tracks[('npc-crowd-%d'):format(index)] = nil end
+changed()
+WorldConfig.npcEdge.maxNpcsPerFrame = 32
 
 HumalikeWorldNpcEdge.connected = true
 HumalikeWorldNpcEdge.ticketPending = true

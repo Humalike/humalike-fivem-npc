@@ -16,7 +16,9 @@ HumalikeDefineConfig(function()
 
         npcEdge = {
             enabled = HumalikeConvarInt('humalike_world_npc_edge_enabled', 1) == 1,
-            frameIntervalMs = HumalikeConvarInt('humalike_world_npc_edge_interval_ms', 200),
+            -- Never below the edge's own tick: it keeps one frame per 200 ms and a
+            -- newer one replaces it whole, so deltas sent faster would be dropped.
+            frameIntervalMs = math.max(200, HumalikeConvarInt('humalike_world_npc_edge_interval_ms', 200)),
             ticketRetryMs = HumalikeConvarInt('humalike_world_npc_edge_ticket_retry_ms', 3000),
             ticketRefreshMs = HumalikeConvarInt('humalike_world_npc_edge_ticket_refresh_ms', 12000),
             reportRadius = HumalikeConvarInt('humalike_world_npc_report_radius', 150) + 0.0,

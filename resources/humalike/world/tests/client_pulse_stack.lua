@@ -35,6 +35,7 @@ end
 function GetEntityVelocity() return velocity end
 function GetEntityHeading() return 90.0 end
 function GetEntityModel() return 123 end
+function AddStateBagChangeHandler() end
 function GetGameplayCamRot() return vec(0, 0, 0) end
 function GetNameOfZone() return 'DOWNT' end
 function GetVehiclePedIsIn() return 0 end

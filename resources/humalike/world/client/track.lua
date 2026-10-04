@@ -92,14 +92,19 @@ local function sampleVehicle(track, pass)
     track.vehiclePass = pass
 end
 
+local function ownNetOf(value)
+    if type(value) ~= 'number' or value <= 0 then return false end
+    return value
+end
+
 -- A population driver's own car, from the bag it was spawned with. The bag is
--- read once per track: it is written at spawn and never changes.
+-- read at a track's first sample; one that arrives later is handed over by its
+-- change handler (below), so a track is never left believing it has no car.
 local function sampleOwnVehicle(track, pass)
     track.ownPass = pass
     local networkId = track.ownNet
     if networkId == nil then
-        networkId = Entity(track.ped).state.humalike_vehicle_net
-        if type(networkId) ~= 'number' or networkId <= 0 then networkId = false end
+        networkId = ownNetOf(Entity(track.ped).state.humalike_vehicle_net)
         track.ownNet = networkId
     end
     local own = nil
@@ -109,12 +114,15 @@ local function sampleOwnVehicle(track, pass)
             local at = GetEntityCoords(vehicle)
             local dx, dy, dz = at.x - track.x, at.y - track.y, at.z - track.z
             local distance = math.sqrt(dx * dx + dy * dy + dz * dz)
-            local _, kind = vehicleInfo(vehicle)
+            if track.ownHandle ~= vehicle then
+                track.ownHandle = vehicle
+                track.ownKind = IsThisModelABike(GetEntityModel(vehicle)) and 'bike' or 'car'
+            end
             own = {
                 network_id = networkId,
                 distance_m = distance,
                 in_reach = distance <= returnDistance(),
-                kind = kind,
+                kind = track.ownKind,
             }
         end
     end
@@ -132,7 +140,7 @@ end
 -- a changed network id or a lease pointing elsewhere.
 local function identityMatches(track)
     local entry, ped = track.entry, track.ped
-    if NetworkGetNetworkIdFromEntity(ped) ~= entry.networkId then return false end
+    if NetworkGetNetworkIdFromEntity(ped) ~= track.networkId then return false end
     if entry.kind ~= 'ambient' then return true end
     return AmbientPeds ~= nil and AmbientPeds[track.npcId] == ped
 end
@@ -154,10 +162,20 @@ local function sample(track, now, pass, px, py, pz)
     local dx, dy, dz = x - track.x, y - track.y, z - track.z
     local moved2 = dx * dx + dy * dy + dz * dz
     local elapsed = (now - track.sampledAt) / 1000.0
+    -- Speed is the way made since the last sample. Measured against the
+    -- recorded position, a ped that once shifted less than MOVE_EPSILON would
+    -- read as moving for good.
     if track.exists and elapsed > 0 then
-        track.speed = math.sqrt(moved2) / elapsed
+        local sx, sy, sz = x - track.sampleX, y - track.sampleY, z - track.sampleZ
+        track.speed = math.sqrt(sx * sx + sy * sy + sz * sz) / elapsed
     else
         track.speed = 0.0
+    end
+    track.sampleX, track.sampleY, track.sampleZ = x, y, z
+    -- A registration may come without a network id: the ped's own is used.
+    if track.networkId == nil then
+        local networkId = tonumber(NetworkGetNetworkIdFromEntity(ped))
+        if networkId and networkId > 0 then track.networkId = networkId end
     end
     if not track.exists or moved2 > MOVE_EPSILON * MOVE_EPSILON then
         track.x, track.y, track.z = x, y, z
@@ -219,16 +237,18 @@ local function newTrack(npcId, entry)
         ped = entry.entity,
         generation = entry.generation,
         version = 0,
+        networkId = tonumber(entry.networkId),
         slot = (tonumber(entry.networkId) or 0) % FAR_PASSES,
         exists = false,
         x = 0.0, y = 0.0, z = 0.0, dist2 = math.huge, speed = 0.0,
+        sampleX = 0.0, sampleY = 0.0, sampleZ = 0.0,
         sampledAt = 0, nextPass = -math.huge,
         identityOk = true, identityPass = nil,
         inRange = false,
         heading = 0.0,
         zone = nil, zoneX = 0.0, zoneY = 0.0,
         vehicle = nil, vehicleState = nil, seat = nil, seatPass = -math.huge, vehiclePass = -math.huge,
-        ownNet = nil, ownVehicle = nil, ownPass = -math.huge,
+        ownNet = nil, ownVehicle = nil, ownPass = -math.huge, ownHandle = nil, ownKind = nil,
     }
 end
 
@@ -241,14 +261,20 @@ local function syncRegistry()
         local track = tracks[npcId]
         if not track or track.entry ~= entry then
             local fresh = newTrack(npcId, entry)
+            if track then
+                -- The version goes on counting for the npc id, so whoever keeps
+                -- "the version I last saw" sees a replaced track as changed.
+                fresh.version = track.version + 1
+            end
             if track and track.ped == entry.entity then
                 -- Same ped, new registration (token, activity): keep the samples.
                 fresh.exists, fresh.x, fresh.y, fresh.z = track.exists, track.x, track.y, track.z
+                fresh.sampleX, fresh.sampleY, fresh.sampleZ = track.sampleX, track.sampleY, track.sampleZ
                 fresh.dist2, fresh.sampledAt = track.dist2, track.sampledAt
                 fresh.inRange = track.inRange
                 fresh.zone, fresh.zoneX, fresh.zoneY = track.zone, track.zoneX, track.zoneY
                 fresh.ownNet = track.ownNet
-                fresh.version = track.version + 1
+                if fresh.networkId == nil then fresh.networkId = track.networkId end
             end
             if not track then HumalikeWorldTrack.count = HumalikeWorldTrack.count + 1 end
             tracks[npcId] = fresh
@@ -301,6 +327,24 @@ end
 function HumalikeWorldTrack.Get(npcId)
     return tracks[npcId]
 end
+
+-- The own-vehicle bag of a ped that is already tracked. The handler runs
+-- before the bag holds the value, so the value it is handed is the one kept.
+AddStateBagChangeHandler('humalike_vehicle_net', nil, function(bagName, _, value)
+    local ped = GetEntityFromStateBagName(bagName)
+    if not ped or ped <= 0 then return end
+    local networkId = ownNetOf(value)
+    for _, track in pairs(tracks) do
+        if track.ped == ped and track.ownNet ~= networkId then
+            track.ownNet = networkId
+            track.ownPass = -math.huge
+            if not networkId and track.ownVehicle then
+                track.ownVehicle = nil
+                bump(track)
+            end
+        end
+    end
+end)
 
 -- True when some live track is within `radius` metres of the player.
 function HumalikeWorldTrack.AnyWithin(radius)

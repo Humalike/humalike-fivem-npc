@@ -2,24 +2,30 @@ HumalikeWorldVehicle = {}
 
 -- A vehicle handle keeps its model and network id for as long as it exists;
 -- both are read once. Forget(vehicle) drops them once a ped left the vehicle,
--- so a handle reused by another car is read afresh.
+-- so a handle reused by another car is read afresh. Only a network id is
+-- kept: a vehicle can be registered with the network after it was first
+-- seen, so "not networked" is asked again.
 local kinds = {}
 local networkIds = {}
 local SEAT_RECHECK_MS = 1000
 local seats = {} -- ped -> { vehicle, seat, at }
+local occupied = {} -- ped -> the vehicle StreamState last saw it in
 
 function HumalikeWorldVehicle.Info(vehicle)
     local networkId = networkIds[vehicle]
     if networkId == nil then
-        networkId = false
         if NetworkGetEntityIsNetworked(vehicle) then
             local value = tonumber(NetworkGetNetworkIdFromEntity(vehicle))
-            if value and value > 0 then networkId = value end
+            if value and value > 0 then
+                networkId = value
+                networkIds[vehicle] = value
+            end
         end
-        networkIds[vehicle] = networkId
-        kinds[vehicle] = IsThisModelABike(GetEntityModel(vehicle)) and 'bike' or 'car'
+        if kinds[vehicle] == nil then
+            kinds[vehicle] = IsThisModelABike(GetEntityModel(vehicle)) and 'bike' or 'car'
+        end
     end
-    return networkId or nil, kinds[vehicle]
+    return networkId, kinds[vehicle]
 end
 
 function HumalikeWorldVehicle.Forget(vehicle)
@@ -49,14 +55,16 @@ end
 -- { networkId, seat, kind } for a ped in a networked vehicle, else nil.
 function HumalikeWorldVehicle.StreamState(ped, now)
     local vehicle = GetVehiclePedIsIn(ped, false)
+    local previous = occupied[ped]
+    if previous and previous ~= vehicle then
+        HumalikeWorldVehicle.Forget(previous)
+        seats[ped] = nil
+    end
     if vehicle == 0 then
-        local cached = seats[ped]
-        if cached then
-            HumalikeWorldVehicle.Forget(cached.vehicle)
-            seats[ped] = nil
-        end
+        occupied[ped] = nil
         return nil
     end
+    occupied[ped] = vehicle
     local networkId, kind = HumalikeWorldVehicle.Info(vehicle)
     if not networkId then return nil end
     local seat = seatOf(vehicle, ped, now or GetGameTimer())

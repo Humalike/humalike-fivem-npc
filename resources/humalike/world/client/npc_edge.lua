@@ -3,7 +3,6 @@ HumalikeWorldNpcEdge = {
     ticketPending = false,
     ticketGeneration = 0,
     sequence = 0,
-    cursor = 1,
     sentFrames = 0,
     coalescedFrames = 0,
     lastError = nil,
@@ -26,6 +25,7 @@ local PLAYER_MOVE_EPSILON = 0.1 -- metres
 local SETTLE_WINDOW_MS = 3000
 
 local sent = {} -- npcId -> track version last reported
+local sentIn = {} -- npcId -> sequence of the frame it was last reported in
 local selectedRevision = nil -- HumalikeWorldTrack.changeRevision the last selection saw
 
 -- Frames are encoded by hand: the generic JSON encoder spent a millisecond or
@@ -74,7 +74,7 @@ local function prefixOf(track)
     local modelHash = entry.modelHash
     if not modelHash then modelHash = unsignedHash(GetEntityModel(track.ped)) end
     track.edgePrefix = ('{"npc_id":%s,"entity_id":%d,"network_id":%d,"model_hash":%d,"runtime_token":%s'):format(
-        jsonString(entry.npcId), entry.entityId, entry.networkId, modelHash, jsonString(entry.runtimeToken))
+        jsonString(entry.npcId), entry.entityId, track.networkId, modelHash, jsonString(entry.runtimeToken))
     track.edgePrefixGeneration = track.generation
     return track.edgePrefix
 end
@@ -87,8 +87,7 @@ local function npcJson(track)
 end
 
 local function reportable(track)
-    local entry = track.entry
-    local entityId, networkId = tonumber(entry.entityId), tonumber(entry.networkId)
+    local entityId, networkId = tonumber(track.entry.entityId), track.networkId
     return track.exists and track.identityOk and entityId and entityId > 0 and networkId and networkId > 0
 end
 
@@ -101,44 +100,43 @@ local function priority(track)
     return activity == 'nearby' and 2 or 1
 end
 
+-- Urgent ones first; among equals the one that waited longest, so that with
+-- more to report than a frame holds nobody is left out for good.
 local sorter = function(a, b)
     if a.priority ~= b.priority then return a.priority > b.priority end
+    local waitedA, waitedB = sentIn[a.npcId] or -1, sentIn[b.npcId] or -1
+    if waitedA ~= waitedB then return waitedA < waitedB end
     return a.npcId < b.npcId
 end
 
--- The tracks to report this frame, urgent ones first. A keyframe takes every
--- reportable track; a delta takes the ones whose cache changed since they were
--- last reported. More than the per-frame cap rotates through the rest.
+-- The tracks to report this frame: the reportable ones whose cache changed
+-- since they were last reported. A keyframe forgets what was reported, so
+-- every one of them is due. With more due than the per-frame cap the rest
+-- goes out with the next frames: the second result says some were left.
 function HumalikeWorldNpcEdge.Select(keyframe)
+    if keyframe then
+        for npcId in pairs(sent) do sent[npcId] = nil end
+    end
     local urgent, regular = {}, {}
     local radius2 = WorldConfig.npcEdge.reportRadius * WorldConfig.npcEdge.reportRadius
     for npcId, track in pairs(HumalikeWorldTrack.tracks) do
-        if reportable(track) and track.dist2 <= radius2
-            and (keyframe or sent[npcId] ~= track.version) then
+        if reportable(track) and track.dist2 <= radius2 and sent[npcId] ~= track.version then
             track.priority = priority(track)
             local target = track.priority >= 3 and urgent or regular
             target[#target + 1] = track
         end
     end
-    for npcId in pairs(sent) do
-        if not HumalikeWorldTrack.tracks[npcId] then sent[npcId] = nil end
+    for npcId in pairs(sentIn) do
+        if not HumalikeWorldTrack.tracks[npcId] then sent[npcId], sentIn[npcId] = nil, nil end
     end
-    if #urgent == 0 and #regular == 0 then return urgent end
+    if #urgent == 0 and #regular == 0 then return urgent, false end
     table.sort(urgent, sorter)
     table.sort(regular, sorter)
     local cap = WorldConfig.npcEdge.maxNpcsPerFrame
     local selected = {}
     for index = 1, math.min(#urgent, cap) do selected[#selected + 1] = urgent[index] end
-    local remaining = cap - #selected
-    if remaining > 0 and #regular > 0 then
-        if HumalikeWorldNpcEdge.cursor > #regular then HumalikeWorldNpcEdge.cursor = 1 end
-        for offset = 0, math.min(remaining, #regular) - 1 do
-            local index = ((HumalikeWorldNpcEdge.cursor + offset - 1) % #regular) + 1
-            selected[#selected + 1] = regular[index]
-        end
-        HumalikeWorldNpcEdge.cursor = ((HumalikeWorldNpcEdge.cursor + remaining - 1) % #regular) + 1
-    end
-    return selected
+    for index = 1, math.min(#regular, cap - #selected) do selected[#selected + 1] = regular[index] end
+    return selected, #selected < #urgent + #regular
 end
 
 -- The NUI message, pre-encoded: `{"type":"npc_edge_frame","frame":{...}}`.
@@ -146,7 +144,7 @@ function HumalikeWorldNpcEdge.Encode(player, sequence, selected)
     local parts = {}
     for index, track in ipairs(selected) do
         parts[index] = npcJson(track)
-        sent[track.npcId] = track.version
+        sent[track.npcId], sentIn[track.npcId] = track.version, sequence
     end
     local position = player.position
     local vehicle = player.vehicle
@@ -175,7 +173,7 @@ function HumalikeWorldNpcEdge.RequestTicket()
 end
 
 local function resetReports()
-    sent = {}
+    sent, sentIn = {}, {}
     selectedRevision = nil
     HumalikeWorldNpcEdge.lastKeyframeBeat = nil
 end
@@ -251,8 +249,10 @@ function HumalikeWorldNpcEdge.Frame(player, now, beat)
     -- selection (a walk over every track) is skipped.
     local selected = EMPTY
     if keyframe or revision ~= selectedRevision then
-        selected = HumalikeWorldNpcEdge.Select(keyframe)
-        selectedRevision = revision
+        local more
+        selected, more = HumalikeWorldNpcEdge.Select(keyframe)
+        -- Tracks left out by the cap are due again on the next frame.
+        selectedRevision = not more and revision or nil
     end
     if #selected == 0 and not keyframe and not playerChanged(player) then
         local enteredAt = HumalikeWorldTrack.enteredAt
