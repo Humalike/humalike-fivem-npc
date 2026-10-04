@@ -1,10 +1,7 @@
-
 KnownNpcs = {}  -- npc_id (string) -> NpcRosterEntry-shaped table
 LoadedPeds = {} -- npc_id (string) -> ped handle
 
--- The npc id a ped carries. The lease index and the roster binding know it for
--- nothing; the ped's state bag (a dozen microseconds a read) is asked only
--- about a ped neither of them holds.
+-- The indexes first; the state bag only for a ped neither of them holds.
 function HumalikeNpcIdOfPed(ped)
     local npcId = AmbientPedNpcIds and AmbientPedNpcIds[ped]
     if npcId ~= nil then return npcId end

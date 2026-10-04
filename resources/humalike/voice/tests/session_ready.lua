@@ -109,7 +109,6 @@ handlers['humalike:world:voiceReconnect']()
 assert(nuiMessages[#nuiMessages].type == 'voice:reconnect',
     'voice assignment change did not request a NUI reconnect')
 
--- The PTT poll reads the shared game key every 50 ms instead of every frame.
 dofile('client/ptt.lua')
 local controlDown = false
 function IsControlPressed() return controlDown end
@@ -130,7 +129,6 @@ nuiCallbacks.ready({ bootId = 'boot-c' }, function(response) assert(response.ok)
 now = 1100
 assert(HumalikePulse.Run(now) == 100, 'a key of its own needs only the busy poll')
 
--- The samples of one pulse reach the NUI as one message.
 rawMessages = {}
 HumalikePulse.Every('samples', 100, function()
     collectorSubscribers.listener({ position = { x = 2, y = 0, z = 0 }, forward = { x = 1, y = 0, z = 0 } })

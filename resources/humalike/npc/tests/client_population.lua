@@ -47,7 +47,6 @@ local bagHandlers = {}
 function AddStateBagChangeHandler(key, _, handler) bagHandlers[key] = handler end
 function GetEntityFromStateBagName(name) return tonumber(name:match('^entity:(%d+)$')) - 1000 end
 function NetworkGetNetworkIdFromEntity(ped) return ped + 1000 end
--- A body streaming in: its kind bag reaches the client.
 local function announce(ped) bagHandlers.humalike_npc_kind(('entity:%d'):format(ped + 1000), 'humalike_npc_kind', 'population') end
 function CreateThread(callback) threads[#threads + 1] = callback end
 function TriggerServerEvent(...) sent = { ... } end
@@ -524,8 +523,6 @@ assert(#deleted == 5 and #missionMarks == 5)
 assert(deleted[1] == 50 and deleted[2] == 58 and deleted[3] == 59 and deleted[4] == 60
     and deleted[5] == 61, 'mission, near, in-vehicle, humalike and unowned peds survive')
 assert(missionMarks[1] == 50, 'a leftover becomes a mission entity before deletion')
--- A sweep that hit its cap goes on at the next pass; it does not wait out the
--- ten seconds between pool walks.
 assert(HumalikeNpcPopulationClient.Tick(nowMs + 2000, false) == 1 and deleted[6] == 62,
     'the leftovers beyond the cap are removed two seconds later')
 local poolWalks, walkPool = 0, GetGamePool
@@ -743,7 +740,6 @@ assert(HumalikeNpcPopulationClient.PaceTick() == false and #paceCalls == 0,
     'at the game\'s own rate the per-frame loop does nothing')
 Config.Population.MoveRate = 0.82
 
--- A body announced by its bag joins the next tick without a pool pass.
 pool[96], kinds[96], bodyKinds[96], owned[96] = true, 'population', 'persona', true
 entityReads = 0
 announce(96)
@@ -767,7 +763,6 @@ function GetGamePool()
     return peds
 end
 
--- A sliced pass spreads the pool over frames and swaps its lists in only at the end.
 pool[95], kinds[95], bodyKinds[95], owned[95] = true, 'population', 'persona', true
 local frames = 0
 function Wait(ms)
@@ -795,8 +790,6 @@ for _, call in ipairs(paceCalls) do
 end
 heldPeds[90] = nil
 
--- The change handler runs BEFORE the bag holds the value: a body whose ped is
--- already there must be taken on the handler's word, not on a read of the bag.
 pool[97], bodyKinds[97], owned[97] = true, 'persona', true
 assert(kinds[97] == nil)
 local before = HumalikeNpcPopulationClient.Count()
@@ -810,7 +803,6 @@ local tasked = false
 for _, ped in ipairs(wanderCalls) do tasked = tasked or ped == 97 end
 assert(tasked, 'and it is tasked on the next pass, without waiting for the pool walk')
 
--- A bag that arrives before its ped: the ped is looked for at every pass.
 local existing = { [1098] = false }
 function GetEntityFromStateBagName(name)
     local netId = tonumber(name:match('^entity:(%d+)$'))

@@ -470,5 +470,4 @@ assert(not walked()[52], 'the idle window applies first')
 HumalikeNpcPopulationClient.Tick(26000, false)
 assert(walked()[52] and not walked()[50], 'on foot with no vehicle: wander; the seated driver stays put')
 
-
 print('client_driving: ok')

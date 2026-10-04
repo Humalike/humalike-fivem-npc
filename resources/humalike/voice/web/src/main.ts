@@ -412,8 +412,6 @@ function sameStrings(left: string[], right: string[]): boolean {
 function reportNPCSpeech(id: string, active: boolean): void {
   nuiBestEffort("actorSpeechState", { kind: "npc", id, active });
 }
-// The game samples the listener fast only while an NPC with a position is
-// being heard here.
 function reportSpatialDemand(active: boolean): void {
   nuiBestEffort("listenerDemand", { active });
 }

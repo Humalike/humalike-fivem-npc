@@ -1,6 +1,6 @@
 AmbientPeds = {}
 AmbientNpcEntries = {}
-AmbientPedNpcIds = {} -- ped -> npc id, the reverse of AmbientPeds, so nobody reads the bag for it
+AmbientPedNpcIds = {} -- ped -> npc id
 
 local desiredAmbientLeases = {}
 local voiceMuteRevision = -1
@@ -88,8 +88,6 @@ local function bindAmbientLease(lease)
     return true
 end
 
--- A bound lease is verified for two natives: the ped is still there and still
--- carries the lease's network id (a recycled id lands on another ped).
 local function leaseIsBound(npcId, lease)
     local ped, entry = AmbientPeds[npcId], AmbientNpcEntries[npcId]
     if not ped or not entry

@@ -1,4 +1,3 @@
-
 local controls = {}
 local interactionIds = {}
 local ambientByControlKey = {}
@@ -316,8 +315,6 @@ CreateThread(function()
                 end
             end
         end
-        -- With nobody held the loop looks half as often; a new hold still starts
-        -- within a second and a half.
         if not applied then Wait(500) end
     end
 end)

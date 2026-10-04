@@ -8,21 +8,13 @@ HumalikeWorldCollector = {
     listenerDemand = false,
 }
 
--- The listener is announced when the ear moved or turned, and once in every
--- heartbeat (a beat of the pulse's clock, so the heartbeats of the listener,
--- the motion sample, the edge frame and the labels leave together).
 local LISTENER_MOVE_THRESHOLD = 0.05 -- metres
 local LISTENER_TURN_MIN_DOT = math.cos(math.rad(1.0))
 local LISTENER_HEARTBEAT_MS = 1000
--- With nothing spatial playing in the NUI the ear is sampled this often instead.
 local LISTENER_IDLE_MS = 250
--- A still player is polled a quarter as often; the first step shows up
--- within that poll.
 local IDLE_POLL_MS = 250
 
--- In-resource readers of the motion and listener samples are called directly
--- with the one sample table; they read it and never keep or change it. Each
--- table is rewritten in place by the next sample.
+-- Readers are called with the one sample table; the next sample rewrites it in place.
 local subscribers = { motion = {}, listener = {} }
 
 function HumalikeWorldCollector.Subscribe(kind, callback)
@@ -42,7 +34,7 @@ local listener = {
     position = { x = 0.0, y = 0.0, z = 0.0 },
     forward = { x = 0.0, y = 1.0, z = 0.0 },
 }
-local announcedBeat = nil -- the heartbeat of the last announcement, and what it said
+local announcedBeat = nil
 local announcedX, announcedY, announcedZ = 0.0, 0.0, 0.0
 local announcedFx, announcedFy, announcedFz = 0.0, 0.0, 0.0
 
@@ -64,8 +56,7 @@ local function uuid()
         .. '-8' .. randomHex(3) .. '-' .. randomHex(12)
 end
 
--- The player's state bag is looked up once: LocalPlayer.state builds a new
--- bag object (two natives and a string) on every access.
+-- LocalPlayer.state builds a new bag object on every access.
 local playerBag = nil
 
 local function voiceDistance()
@@ -79,8 +70,6 @@ local function voiceDistance()
     return math.min(WorldConfig.collector.maxVoiceDistance, math.max(0.0, distance))
 end
 
--- The zone is looked up again once the player walked this far from where it
--- was last read; zones are hundreds of metres across.
 local ZONE_REFRESH_M = 50.0
 local zoneName, zoneX, zoneY = nil, 0.0, 0.0
 
@@ -101,7 +90,6 @@ local sample = {
     flags = { dead = false, paused = false },
 }
 
--- `due` is the pulse's schedule time of this sample (the seat cache counts on it).
 function HumalikeWorldCollector.Sample(ped, now, position, velocity, due)
     position = position or GetEntityCoords(ped)
     velocity = velocity or GetEntityVelocity(ped)
@@ -132,14 +120,10 @@ function HumalikeWorldCollector.SetVoiceMode(mode)
     return true
 end
 
--- The NUI says whether an NPC is being heard; only then is the ear worth
--- sampling twenty times a second.
 function HumalikeWorldCollector.SetListenerDemand(active)
     HumalikeWorldCollector.listenerDemand = active == true
 end
 
--- `beat` numbers the heartbeat this sample falls in (the pulse counts them;
--- without one it is taken from the time).
 function HumalikeWorldCollector.SampleListener(now, ped, position, beat)
     ped = ped or HumalikePulse.Ped()
     if not ped or ped <= 0 then return nil end
@@ -165,8 +149,6 @@ function HumalikeWorldCollector.SampleListener(now, ped, position, beat)
     return listener
 end
 
--- The ear as it is right now, outside its own cadence: a push-to-talk press
--- takes the gaze from it.
 function HumalikeWorldCollector.RefreshListener(now)
     local ped = HumalikePulse.Ped()
     if not ped or ped <= 0 then return nil end
@@ -174,11 +156,6 @@ function HumalikeWorldCollector.RefreshListener(now)
         HumalikePulse.Beat(LISTENER_HEARTBEAT_MS))
 end
 
--- One poll of the player's motion. A sample goes out once per movingIntervalMs
--- while the player moves or a still player's position changed, and once per
--- idleIntervalMs otherwise. `step` and `beat` number those two intervals (the
--- pulse counts them, so a sample leaves on the pulse of the edge frame;
--- without them they are taken from the time). Returns true while moving.
 local lastStep, lastBeat, lastPosition = nil, nil, nil
 
 function HumalikeWorldCollector.PollMotion(now, ped, position, velocity, due, step, beat)

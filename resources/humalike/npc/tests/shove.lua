@@ -37,8 +37,6 @@ function IsPedRagdoll(ped) return ragdoll[ped] == true end
 function IsEntityTouchingEntity(_, ped) return touching[ped] == true end
 function HumalikeDebug() end
 
--- The tracker knows which registered peds stand within reach; ped 12 is
--- in no registry and never tracked.
 local function near(npcId, ped)
     return { npcId = npcId, ped = ped, exists = true, dist2 = 4.0, x = 2, y = 0, z = 0 }
 end
@@ -71,8 +69,6 @@ assert(HumalikeNpcShove.Tick(900) == 0 and playerReads == 0, 'with nobody in rea
 HumalikeWorldTrack.AnyWithin = function() return true end
 
 assert(HumalikeNpcShove.Tick(1000) == 0 and #sent == 0 and contactReads == 0, 'standing still touches nobody')
--- A ped behind the player is never asked about; one in the way but not
--- touched is asked about contact only.
 speed = 1.2
 local were = touching
 touching = {}

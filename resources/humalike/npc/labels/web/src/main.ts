@@ -2,8 +2,6 @@ import logoUrl from "./humalike.svg?url";
 import { aimLabel, isLabelTuple, normalizeLanguage, presentationScale, settleDelayMs } from "./model.mjs";
 import "./style.css";
 
-// A label is one small DOM element moved with a transform: the compositor
-// shifts a layer instead of repainting a screen-sized canvas on every frame.
 type LabelTuple = [x: number, y: number, language: string | false, muted: 0 | 1, id?: string];
 
 interface LabelNode {
@@ -18,8 +16,7 @@ interface LabelNode {
   at: number;
 }
 
-// Labels missing from the game for this long are dropped (the game sends an
-// explicit clear; this covers a dead script).
+// Labels the game has not mentioned for this long are dropped.
 const STALE_MS = 3000;
 const MIN_TRANSITION_MS = 16;
 const MAX_TRANSITION_MS = 120;
@@ -70,7 +67,6 @@ function applyFrame(labels: LabelTuple[], configuredScale: number): void {
     const key = typeof id === "string" && id.length > 0 ? id : `#${index}`;
     const node = nodes.get(key) ?? createNode(key);
     node.seen = generation;
-    // Velocity from the last two frames, projected one glide ahead.
     const [px, py, aimed] = aimLabel(node, x * width, y * height, now, transitionMs, STALE_MS);
     ahead ||= aimed;
     node.root.style.transform = `translate3d(${px.toFixed(1)}px, ${py.toFixed(1)}px, 0)`;
@@ -85,9 +81,7 @@ function applyFrame(labels: LabelTuple[], configuredScale: number): void {
   armSettle(ahead);
 }
 
-// Labels aimed ahead of their reported position expect the next frame. The
-// game sends none once the camera and the NPCs stand still, so without this
-// they would sit past the head until the once-a-second frame.
+// No next frame comes once everything stands still: back onto the reported position.
 function armSettle(ahead: boolean): void {
   window.clearTimeout(settleTimer);
   settleTimer = 0;

@@ -1,15 +1,11 @@
 HumalikeWorldVehicle = {}
 
--- A vehicle handle keeps its model and network id for as long as it exists;
--- both are read once. Forget(vehicle) drops them once a ped left the vehicle,
--- so a handle reused by another car is read afresh. Only a network id is
--- kept: a vehicle can be registered with the network after it was first
--- seen, so "not networked" is asked again.
+-- Read once per handle. "Not networked" is never kept: a vehicle can be networked later.
 local kinds = {}
 local networkIds = {}
 local SEAT_RECHECK_MS = 1000
 local seats = {} -- ped -> { vehicle, seat, at }
-local occupied = {} -- ped -> the vehicle StreamState last saw it in
+local occupied = {} -- ped -> vehicle
 
 function HumalikeWorldVehicle.Info(vehicle)
     local networkId = networkIds[vehicle]
@@ -40,8 +36,6 @@ function HumalikeWorldVehicle.SeatOf(vehicle, ped)
     return nil
 end
 
--- The seat a ped sits in, rechecked once a second: the seat loop is a native
--- per seat and a ped seldom moves over.
 local function seatOf(vehicle, ped, now)
     local cached = seats[ped]
     if cached and cached.vehicle == vehicle and now - cached.at < SEAT_RECHECK_MS then
@@ -52,7 +46,6 @@ local function seatOf(vehicle, ped, now)
     return seat
 end
 
--- { networkId, seat, kind } for a ped in a networked vehicle, else nil.
 function HumalikeWorldVehicle.StreamState(ped, now)
     local vehicle = GetVehiclePedIsIn(ped, false)
     local previous = occupied[ped]

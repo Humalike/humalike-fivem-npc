@@ -1,4 +1,3 @@
-
 HumaLikeNpcLabels = HumaLikeNpcLabels or {}
 
 local function labelConfig()
@@ -55,12 +54,8 @@ local function entryOf(npcId)
     return AmbientNpcEntries and AmbientNpcEntries[npcId] or nil
 end
 
--- The gameplay camera trails the player by a few metres; candidates are taken
--- from the tracker's player distance with that much slack on top of the margin.
 local CAMERA_SLACK = 4.0
 
--- Candidates come from the shared tracker: no native per NPC. A ped with a
--- label entry but no track (not registered yet) is checked directly.
 local function nearbyCandidates(maxDistance, margin)
     local radius = maxDistance + margin
     local candidates, seen = {}, {}
@@ -97,8 +92,6 @@ local function nearbyCandidates(maxDistance, margin)
     return candidates
 end
 
--- Projection of one candidate. The screen position is recomputed when the
--- camera moved or the ped did; a still scene reuses the last one.
 local function project(candidate, camera, cameraMoved, maxDistanceSquared, height)
     local ped = candidate.ped
     local track = candidate.track
@@ -106,8 +99,7 @@ local function project(candidate, camera, cameraMoved, maxDistanceSquared, heigh
     if track and track.speed <= 0.0 then
         x, y, z = track.x, track.y, track.z
     else
-        -- A tracked ped that vanished since its last sample reads as the origin,
-        -- which the distance below rejects; an untracked one is asked for.
+        -- A vanished ped reads as the origin, which the distance check rejects.
         if not track and not DoesEntityExist(ped) then return false end
         local coords = GetEntityCoords(ped)
         x, y, z = coords.x, coords.y, coords.z
@@ -129,8 +121,7 @@ local function buildCandidateFrame(candidates, camera, cameraMoved, maxDistance,
     for _, candidate in ipairs(candidates) do
         if project(candidate, camera, cameraMoved, maxDistance * maxDistance, height) then
             hasNearbyNpc = true
-            -- A projection that is not a number is left out: one bad number
-            -- would void the JSON of the whole pulse.
+            -- A projection that is not a number would void the JSON of the whole pulse.
             if candidate.visible and candidate.screenX == candidate.screenX
                 and candidate.screenY == candidate.screenY then
                 frame[#frame + 1] = {
@@ -146,7 +137,6 @@ local function buildCandidateFrame(candidates, camera, cameraMoved, maxDistance,
     return frame, hasNearbyNpc
 end
 
--- One frame straight from the game, for callers outside the render loop.
 function HumaLikeNpcLabels.BuildFrame()
     local labels = labelConfig()
     local maxDistance = tonumber(labels.MaxDistance) or 14.0
@@ -155,14 +145,9 @@ function HumaLikeNpcLabels.BuildFrame()
         tonumber(labels.Height) or 0.98)
 end
 
--- An unchanged frame is repeated on every heartbeat of the pulse; the NUI
--- drops labels it has not heard about for three seconds.
 local FRAME_HEARTBEAT_MS = 1000
-local FRAME_EPSILON = 0.001 -- normalised screen units, about a pixel
--- With no NPC within MaxDistance + CandidateMargin the job rechecks this often;
--- the margin covers the walk in between, so a label shows up at most this late.
+local FRAME_EPSILON = 0.001 -- about a pixel
 local IDLE_RECHECK_MS = 250
--- The idle camera breathes; below these the scene counts as still.
 local CAMERA_MOVE_EPSILON = 0.02 -- metres
 local CAMERA_TURN_EPSILON = 0.1  -- degrees
 local CAMERA_ZOOM_EPSILON = 0.05 -- degrees of field of view
@@ -177,8 +162,6 @@ local function sameFrame(frame, last)
     return true
 end
 
--- A frame goes to the NUI as `{"type":"labels:frame","scale":s,"labels":[[x,y,lang,muted,"id"],...]}`,
--- written by hand: the generic encoder cost more than the rest of a render.
 local function jsonString(value)
     value = tostring(value)
     if value:find('[%c"\\]') then
@@ -209,7 +192,7 @@ local function anyMoving(candidates)
     return false
 end
 
--- A zoom (a scope, an aim) moves every label without moving the camera.
+-- A zoom moves every label without moving the camera.
 local function cameraMovedSince(camera, rotation, fov, last)
     if not last then return true end
     return math.abs(camera.x - last.x) > CAMERA_MOVE_EPSILON
@@ -234,8 +217,6 @@ local function clear()
     lastFrame = nil
 end
 
--- One pass of the label loop; returns the milliseconds until the next one.
--- `due` is the pulse's schedule time: the candidate refresh is counted on it.
 function HumaLikeNpcLabels.Render(_, due)
     local labels = labelConfig()
     if labels.Enabled == false then
@@ -277,7 +258,6 @@ function HumaLikeNpcLabels.Render(_, due)
     end
     local beat = HumalikePulse.Beat(FRAME_HEARTBEAT_MS)
     local heartbeat = beat ~= lastSentBeat
-    -- A still camera over still peds: the last frame still holds.
     if cameraMoved or lastFrame == nil or heartbeat or anyMoving(candidates) then
         local frame = buildCandidateFrame(candidates, camera, cameraMoved,
             maxDistance, tonumber(labels.Height) or 0.98)

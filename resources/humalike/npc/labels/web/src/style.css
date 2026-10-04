@@ -11,7 +11,6 @@
   font-family: Nunito, Arial, sans-serif;
 }
 
-/* The anchor is the ped's head; the label sits centred above it. */
 .hl-label {
   position: absolute;
   left: 0;

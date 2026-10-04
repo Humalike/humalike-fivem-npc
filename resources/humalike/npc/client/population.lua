@@ -4,14 +4,10 @@ local scenarioIdleSince = {}
 local configured = {}
 local dressed = {}
 local paced = {}
--- Every population body this client knows of: ped -> { netId, state }. Bodies
--- announce themselves through their state bags as they stream in; a pool
--- pass every SweepTickMs catches what a bag missed and sweeps GTA leftovers.
+-- Every population body this client knows of: ped -> { netId, state }.
 local bodies = {}
 local ownedBodies = {}
-local paceSet = {} -- walkers this client drives right now; the per-frame loop touches only these
--- The pass in progress: it walks the bodies (and the ped pool, when due) in
--- slices, and the lists it builds replace ownedBodies/paceSet only at the end.
+local paceSet = {} -- walkers this client drives right now
 local currentPass = nil
 local enabled = false
 local copsAllowed = false
@@ -32,9 +28,7 @@ local function config()
     return Config.Population
 end
 
--- One read per key, absent keys included. Keys outside the list, and `:set`,
--- reach the live bag. A body's bags are written once, at spawn, so the
--- snapshot is kept per body and refreshed from the change handlers.
+-- One read per key; kept per body and refreshed from the change handlers.
 local function snapshot(ped)
     local live = Entity(ped).state
     local state = {}
@@ -45,8 +39,6 @@ local function snapshot(ped)
     end })
 end
 
--- The ambient lease module keeps the npc id of each leased ped; the bag
--- copy is the fallback where that index is missing.
 local function npcIdOf(ped, state)
     local index = AmbientPedNpcIds
     local npcId = index and index[ped] or nil
@@ -136,7 +128,7 @@ function HumalikeNpcPopulationClient.SetState(active, allowCops)
     active = active == true
     allowCops = allowCops == true
     if active == enabled and allowCops == copsAllowed then return false end
-    if active and not enabled then scanRequested = true end -- sweep the street at once
+    if active and not enabled then scanRequested = true end
     enabled, copsAllowed = active, allowCops
     applyRandomCops()
     if enabled then HumalikePulse.Frames() end
@@ -156,7 +148,6 @@ AddEventHandler('humalike:npc:populationState', function(payload)
     HumalikeNpcPopulationClient.SetState(payload.enabled, payload.cops_allowed)
 end)
 
--- `state` is a snapshot; its npc id is passed on so nobody re-reads the bag.
 local function managed(ped, state)
     if IsActionControlled and IsActionControlled(ped) then return true end
     local npcId = npcIdOf(ped, state) or false
@@ -222,8 +213,7 @@ local function capPace(ped, state)
     SetPedMaxMoveBlendRatio(ped, walkRate(state) or 1.0)
 end
 
--- A takeover hook during a sliced pass also corrects the pass's own list
--- for a body it already visited, so the swap does not bring back a stale entry.
+-- Also corrects the list of a pass in progress.
 local function setPacing(ped, value)
     paceSet[ped] = value
     if currentPass and currentPass.walkers[ped] ~= nil then currentPass.pacing[ped] = value end
@@ -245,15 +235,12 @@ local function pace(ped, state)
     end
 end
 
--- The cached bags of a known body, else a fresh read.
 local function stateOf(ped)
     local body = bodies[ped]
     if body then return body.state end
     return snapshot(ped)
 end
 
--- Whether the per-frame move-rate override applies to this body right now.
--- Called when a hold, wound, action or lease starts or ends; every body pass redoes it.
 function HumalikeNpcPopulationClient.RefreshPace(ped)
     local walking = ownedBodies[ped] or (currentPass and currentPass.walkers[ped])
     if not walking or not DoesEntityExist(ped) or not NetworkHasControlOfEntity(ped) then
@@ -317,8 +304,7 @@ function HumalikeNpcPopulationClient.OwnsReactions(ped)
     return state.humalike_npc_kind == 'population' and hasMind(state)
 end
 
--- A release or a migration may have handed the reactions back to GTA; the
--- flag is put back this often (and at once when ownership returns).
+-- A release or a migration may hand the reactions back to GTA.
 local REACTIONS_REASSERT_MS = 10000
 local reactionsAt = {}
 
@@ -424,9 +410,7 @@ local function gtaLeftover(ped, populationType, players)
     return not nearAnyPlayer(GetEntityCoords(ped), players, cfg.SweepMinPlayerDistance)
 end
 
--- A ped's kind is read from its bag, never from GTA's population type, which
--- differs between how a body was created and which client owns it. Only our
--- own bodies get the full snapshot.
+-- The kind comes from the bag: GTA's population type differs by creator and owner.
 local function bodyState(ped)
     local live = Entity(ped).state
     local kind = live.humalike_npc_kind
@@ -476,9 +460,6 @@ local function beginPass(now, scan)
     }
 end
 
--- A body this client controls: configured on first sight, refreshed after.
--- A network id that still matches is the ped that was discovered, which was
--- no player; only a body without one is asked.
 local function visitBody(pass, ped, body)
     if not DoesEntityExist(ped)
         or (body.netId and NetworkGetNetworkIdFromEntity(ped) ~= body.netId)
@@ -518,8 +499,6 @@ local function visitBody(pass, ped, body)
     end
 end
 
--- A ped from the pool: a body of ours a bag never announced (whoever owns
--- it: ownership can come later), or a leftover this client may delete.
 local function visitPool(pass, ped)
     if bodies[ped] then return end
     if not DoesEntityExist(ped) or IsPedAPlayer(ped) then return end
@@ -541,7 +520,6 @@ local function passLength(pass)
     return #pass.bodies + #pass.pool
 end
 
--- Visits up to `count` entries (bodies first, then the pool); true once done.
 local function stepPass(pass, count)
     local last = math.min(passLength(pass), pass.index + count - 1)
     for index = pass.index, last do
@@ -568,23 +546,17 @@ local function finishPass(pass)
     if HumalikeNpcDriving then HumalikeNpcDriving.Forget(seen) end
     ownedBodies = pass.walkers
     paceSet = pass.pacing
-    -- More leftovers than one pass may delete: the next pass walks the pool
-    -- again instead of waiting out the sweep interval.
+    -- A sweep that hit its cap goes on at the next pass.
     if pass.sweep and pass.removed >= config().SweepMaxPerTick then scanRequested = true end
     return pass.removed
 end
 
--- A pool pass is due every SweepTickMs, at once after the population is
--- switched on, and whenever a caller forces it.
 local function scanDue(now, forced)
     return forced == true or scanRequested or now - lastScanAt >= config().SweepTickMs
 end
 
-local resolveAwaited -- defined with the bag handlers below
+local resolveAwaited
 
--- `scan` forces a walk of the ped pool too, finding bodies a bag never
--- announced and (while enabled) sweeping GTA's leftovers; otherwise the pool
--- is walked only when due, and only the known bodies are visited.
 function HumalikeNpcPopulationClient.Tick(now, scan)
     resolveAwaited(now)
     scan = scanDue(now, scan)
@@ -594,7 +566,6 @@ function HumalikeNpcPopulationClient.Tick(now, scan)
     return finishPass(pass)
 end
 
--- The same pass as Tick, spread over `slices` frames.
 function HumalikeNpcPopulationClient.SlicedTick(now, scan, slices)
     resolveAwaited(now)
     scan = scanDue(now, scan)
@@ -607,8 +578,7 @@ function HumalikeNpcPopulationClient.SlicedTick(now, scan, slices)
     return finishPass(pass)
 end
 
--- SetPedMoveRateOverride lasts one frame, so this runs every frame, but over a
--- list the tick and the takeover hooks keep, with no lookups of its own.
+-- SetPedMoveRateOverride lasts one frame.
 function HumalikeNpcPopulationClient.PaceTick()
     local rate = config().MoveRate
     if rate == 1.0 then return false end
@@ -620,8 +590,6 @@ function HumalikeNpcPopulationClient.PaceTick()
     return any
 end
 
--- Bodies announce themselves: the bag arrives with the entity as it streams
--- in. The entity may not exist locally yet when the handler runs.
 local function entityOfBag(bagName)
     local netId = tonumber(bagName:match('^entity:(%d+)$'))
     if not netId then return nil end
@@ -630,8 +598,7 @@ local function entityOfBag(bagName)
     return nil, netId
 end
 
--- `kind` is the value a change handler was handed. The handler runs before
--- the bag holds that value, so a read of the bag there still gives the old one.
+-- A change handler runs before the bag holds the value: `kind` is what it was handed.
 local function announce(ped, netId, kind)
     if IsPedAPlayer(ped) then return end
     local state = snapshot(ped)
@@ -640,11 +607,9 @@ local function announce(ped, netId, kind)
     discover(ped, state, netId)
 end
 
--- A body whose bag arrived before its ped. The ped of a far body can take
--- seconds to be created: it is looked for on every frame-twentieth for a
--- second, then once per pass until it shows up or this long has gone by.
+-- A body whose bag arrived before its ped is looked for at every pass.
 local AWAIT_MS = 30000
-local awaited = {} -- network id -> the game time it is given up at
+local awaited = {} -- network id -> give-up time
 
 resolveAwaited = function(now)
     for netId, deadline in pairs(awaited) do
@@ -694,22 +659,16 @@ for _, key in ipairs(BODY_KEYS) do
     end
 end
 
--- The density multipliers and the move-rate override last one frame each.
 HumalikePulse.EveryFrame('street', function()
     local density = HumalikeNpcPopulationClient.DensityTick()
     local pacing = HumalikeNpcPopulationClient.PaceTick()
     return density or pacing
 end)
 
--- The frame thread ends when no job needs it; this brings it back within a
--- quarter of a second of a walker to pace (switching the population on wakes
--- it at once).
 HumalikePulse.Every('street frames', 250, function()
     if enabled or (config().MoveRate ~= 1.0 and next(paceSet) ~= nil) then HumalikePulse.Frames() end
 end, 90)
 
--- Frames one pass is spread over, so no frame pays for all of it; a pass that
--- walks the whole ped pool takes twice as many.
 local TICK_SLICES = 8
 local SCAN_SLICES = 32
 

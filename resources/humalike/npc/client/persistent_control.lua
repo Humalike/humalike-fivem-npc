@@ -1,4 +1,3 @@
-
 local configuredPeds = {}
 
 local function configurePersistentPed(ped, entry)
@@ -24,8 +23,6 @@ CreateThread(function()
                 activePeds[ped] = true
                 local entry = KnownNpcs and KnownNpcs[npcId] or nil
                 if entry and entry.type == 'static' then
-                    -- Only the owner configures; the signature (two natives
-                    -- and a string) is built for owned peds alone.
                     if NetworkHasControlOfEntity(ped) then
                         local signature = ('%s:%s'):format(
                             NetworkGetNetworkIdFromEntity(ped),

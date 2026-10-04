@@ -34,8 +34,6 @@ assert(calls == 1)
 playAmbientAction('ambient-1', 201, 'stale-token', 'wave', { speed = 2 })
 assert(calls == 1)
 
--- The npc id of a ped comes from the lease index or the roster binding; the
--- ped's state bag is read only for a ped neither of them holds.
 local bagReads = 0
 function Entity(ped)
     return { state = setmetatable({}, { __index = function(_, key)

@@ -8,16 +8,12 @@ local function signature(entity, entityId, networkId, modelHash, token, kind)
     return table.concat({ entity, entityId, networkId, modelHash, token, kind }, ':')
 end
 
--- The lease module indexes leased peds by npc id; one native confirms the
--- handle still carries the lease's network id.
 local function ambientIdentityMatches(npcId, entry, ped, networkId)
     if not AmbientPedNpcIds or AmbientPedNpcIds[ped] ~= npcId then return false end
     return tonumber(entry.network_id) == networkId
         and NetworkGetNetworkIdFromEntity(ped) == networkId
 end
 
--- `previous` is the registration last made for this npc; a handle keeps its
--- model, so the hash is read once per ped.
 local function registrationFor(npcId, entry, ped, token, kind, previous)
     if not ped or not DoesEntityExist(ped) or type(token) ~= 'string' or token == '' then return nil end
     local entityId = tonumber(entry.entity_id)
@@ -39,12 +35,7 @@ local function registrationFor(npcId, entry, ped, token, kind, previous)
     }, signature(ped, entityId, networkId, modelHash, token, kind)
 end
 
--- The periodic pass yields every few NPCs so a crowd never lands on one frame.
--- It walks the ids it took at the start and decides about each one when its
--- turn comes, from the roster and the leases as they are then: both change
--- while the pass is parked, a table must not be traversed across a change,
--- and a decision taken before the pause must not undo a registration made
--- during it.
+-- The roster and the leases change while the pass is parked: it walks ids taken up front.
 local SLICE = 8
 
 local function previousOf(npcId)
@@ -52,8 +43,6 @@ local function previousOf(npcId)
     return current and current.value or nil
 end
 
--- What this npc should be registered as right now: its lease when it has a
--- valid one, else its roster entry; nil when neither holds a ped.
 local function desiredFor(npcId)
     local lease = AmbientNpcEntries and AmbientNpcEntries[npcId] or nil
     if lease then

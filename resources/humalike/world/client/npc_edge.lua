@@ -6,30 +6,21 @@ HumalikeWorldNpcEdge = {
     sentFrames = 0,
     coalescedFrames = 0,
     lastError = nil,
-    lastSentBeat = nil,     -- the keep-alive beat of the last frame
-    lastKeyframeBeat = nil, -- the beat of the last keyframe; nil: the next frame is one
+    lastSentBeat = nil,
+    lastKeyframeBeat = nil, -- nil: the next frame is a keyframe
 }
 
--- The edge keeps an NPC's last position until it is told otherwise, so a frame
--- carries only what changed. The whole scene goes out again every other
--- keep-alive (a frame can be lost when two land in one of the edge's 200 ms
--- windows), and a frame goes out at least every KEEPALIVE_MS: the edge forgets
--- a player it has not heard from for three seconds. Both are counted in beats
--- of the pulse's clock, so they leave with the other once-a-second messages.
+-- Frames carry only what changed; a keyframe every other keep-alive resends everything.
 local KEEPALIVE_MS = 1000
-local KEYFRAME_BEATS = 2 -- a keyframe every other keep-alive beat
+local KEYFRAME_BEATS = 2
 local PLAYER_MOVE_EPSILON = 0.1 -- metres
--- The edge settles "someone walked up" two seconds after a player came within
--- range of an NPC, counted on that player's own frames. For this long after a
--- track came within range the player is reported on every frame, moving or not.
+-- For this long after an NPC came within range the player is reported on every frame.
 local SETTLE_WINDOW_MS = 3000
 
 local sent = {} -- npcId -> track version last reported
 local sentIn = {} -- npcId -> sequence of the frame it was last reported in
-local selectedRevision = nil -- HumalikeWorldTrack.changeRevision the last selection saw
+local selectedRevision = nil
 
--- Frames are encoded by hand: the generic JSON encoder spent a millisecond or
--- two on a 32-NPC frame, five times a second.
 local function jsonString(value)
     value = tostring(value)
     if value:find('[%c"\\]') then
@@ -65,7 +56,6 @@ local function unsignedHash(value)
     return value < 0 and value + 4294967296 or value
 end
 
--- The identity half of an NPC's sample never changes for a registration.
 local function prefixOf(track)
     if track.edgePrefix and track.edgePrefixGeneration == track.generation then
         return track.edgePrefix
@@ -100,8 +90,7 @@ local function priority(track)
     return activity == 'nearby' and 2 or 1
 end
 
--- Urgent ones first; among equals the one that waited longest, so that with
--- more to report than a frame holds nobody is left out for good.
+-- Urgent first; among equals the one that waited longest.
 local sorter = function(a, b)
     if a.priority ~= b.priority then return a.priority > b.priority end
     local waitedA, waitedB = sentIn[a.npcId] or -1, sentIn[b.npcId] or -1
@@ -109,10 +98,7 @@ local sorter = function(a, b)
     return a.npcId < b.npcId
 end
 
--- The tracks to report this frame: the reportable ones whose cache changed
--- since they were last reported. A keyframe forgets what was reported, so
--- every one of them is due. With more due than the per-frame cap the rest
--- goes out with the next frames: the second result says some were left.
+-- The second result says some were left out by the per-frame cap.
 function HumalikeWorldNpcEdge.Select(keyframe)
     if keyframe then
         for npcId in pairs(sent) do sent[npcId] = nil end
@@ -139,7 +125,6 @@ function HumalikeWorldNpcEdge.Select(keyframe)
     return selected, #selected < #urgent + #regular
 end
 
--- The NUI message, pre-encoded: `{"type":"npc_edge_frame","frame":{...}}`.
 function HumalikeWorldNpcEdge.Encode(player, sequence, selected)
     local parts = {}
     for index, track in ipairs(selected) do
@@ -221,7 +206,7 @@ RegisterNUICallback('npcEdgeStats', function(body, callback)
     callback({ ok = true })
 end)
 
-local lastPlayer = nil -- position and seat of the last frame sent
+local lastPlayer = nil
 
 local function playerChanged(player)
     local last = lastPlayer
@@ -235,23 +220,17 @@ local function playerChanged(player)
         or player.effectiveVoiceDistance ~= last.voiceDistance
 end
 
--- One frame decision; returns the encoded message or nil when nothing is due.
 local EMPTY = {}
 
--- `beat` numbers the keep-alive interval this frame falls in (the pulse counts
--- them; without one it is taken from the time).
 function HumalikeWorldNpcEdge.Frame(player, now, beat)
     beat = beat or now // KEEPALIVE_MS
     local lastKeyframeBeat = HumalikeWorldNpcEdge.lastKeyframeBeat
     local keyframe = lastKeyframeBeat == nil or beat // KEYFRAME_BEATS ~= lastKeyframeBeat // KEYFRAME_BEATS
     local revision = HumalikeWorldTrack.changeRevision
-    -- With no track changed since the last pass, a delta would be empty: the
-    -- selection (a walk over every track) is skipped.
     local selected = EMPTY
     if keyframe or revision ~= selectedRevision then
         local more
         selected, more = HumalikeWorldNpcEdge.Select(keyframe)
-        -- Tracks left out by the cap are due again on the next frame.
         selectedRevision = not more and revision or nil
     end
     if #selected == 0 and not keyframe and not playerChanged(player) then
@@ -277,10 +256,7 @@ end
 function HumalikeWorldNpcEdge.Start()
     if not WorldConfig.npcEdge.enabled then return end
     SetTimeout(1000, HumalikeWorldNpcEdge.RequestTicket)
-    -- After the collector and the tracker of the same pulse, so a frame carries
-    -- what they just read. The edge keeps one frame per 200 ms tick and a newer
-    -- one replaces it whole, so two frames must never be less than the interval
-    -- apart: the pulse's grid restarts at each frame sent.
+    -- Two frames are never less than the interval apart: the grid restarts at each frame sent.
     HumalikePulse.Every('edge frame', WorldConfig.npcEdge.frameIntervalMs, function(now)
         local player = HumalikeWorldCollector.latest
         if HumalikeWorldNpcEdge.connected and player then

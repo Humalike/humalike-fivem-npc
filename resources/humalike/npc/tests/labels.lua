@@ -41,7 +41,6 @@ function World3dToScreen2d(x, _, z)
     return true, 0.5 + x * 0.01, 0.4
 end
 
--- The tracker already knows where every registered NPC stands.
 local function trackOf(ped, dist)
     local at = positions[ped]
     return { ped = ped, exists = true, dist2 = dist * dist, speed = 0.0, x = at.x, y = at.y, z = at.z }
@@ -90,7 +89,6 @@ Config.NpcLabels.MaxDistance = 14
 local sent, now = {}, 0
 function GetGameTimer() return now end
 function SendNUIMessage() error('label messages are written by hand') end
--- Frames arrive hand-encoded; the count of labels and their ids are read off the string.
 function SendNuiMessage(raw)
     local _, count = raw:gsub('%[[%d%.]+,[%d%.]+,', '')
     sent[#sent + 1] = { type = raw:match('"type":"([^"]+)"'), raw = raw, count = count }
@@ -140,7 +138,6 @@ tick(1188)
 assert(natives.World3dToScreen2d == 2, 'a zoom moves every label on screen: both are projected again')
 cameraFov = 50.0
 
--- A tracked ped that vanished between two tracker samples reads as the origin: no label.
 positions[3] = { x = 0, y = 0, z = 0 }
 camera = { x = 500, y = -2, z = 0 }
 HumalikeWorldTrack.tracks.static.x = 500
@@ -151,7 +148,6 @@ positions[3] = { x = 2, y = 0, z = 0 }
 camera = { x = 0, y = -2, z = 0 }
 HumalikeWorldTrack.tracks.static.x = 0
 
--- Nobody within range: the scene is cleared once, then the job only rechecks every 250 ms.
 HumalikeWorldTrack.tracks = {}
 LoadedPeds, AmbientPeds = {}, {}
 function World3dToScreen2d() error('nothing to project without a nearby NPC') end
@@ -165,7 +161,6 @@ tick(3500)
 assert(#sent == cleared and sleep == 250 and natives.GetGameplayCamCoord == nil,
     'an empty street costs one candidate scan per 250 ms and no native')
 
--- A ped the tracker does not know yet is still found, by asking the game.
 LoadedPeds = { fresh = 9 }
 KnownNpcs.fresh = { language = 'de' }
 positions[9] = { x = 0, y = 0, z = 0 }
@@ -175,7 +170,6 @@ tick(4000)
 assert(natives.GetEntityCoords == 2 and sent[#sent].type == 'labels:frame' and sent[#sent].raw:find(',"fresh"]', 1, true),
     'an unregistered ped costs one coordinate read to find and one to project')
 
--- Switched off: the labels are cleared and the job checks once a second.
 Config.NpcLabels.Enabled = false
 tick(4033)
 assert(sent[#sent].type == 'labels:clear' and sleep == 967, 'next look on the second')

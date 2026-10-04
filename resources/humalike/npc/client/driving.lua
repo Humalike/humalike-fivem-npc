@@ -20,7 +20,6 @@ local function vehicleOf(state)
     return vehicle
 end
 
--- A task name is hashed once: the body tick asks this for every driver.
 local taskHashes = {}
 
 function HumalikeNpcDriving.TaskRunning(ped, taskName)

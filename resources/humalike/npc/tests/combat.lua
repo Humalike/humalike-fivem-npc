@@ -58,8 +58,6 @@ pcall(threads[2])
 assert(handlers.entityDamaged)
 assert(healthRestores == 2)
 
--- The gun: the pulse looks at the hand every 100 ms; a gun in it starts the
--- frame thread, which asks one native a frame.
 clock = 1000
 shooting = true
 assert(HumalikePulse.Run(clock) == 100 and #threads == 3, 'armed: the frame thread is started')
@@ -95,7 +93,6 @@ assert(coroutine.status(frames) == 'dead' and shootingChecks == 0, 'holstered, n
 clock = 2200
 assert(HumalikePulse.Run(clock) == 100 and #threads == 3, 'and the pulse looks at the hand every 100 ms')
 
--- The aim: read only while the player is aiming, twice as often at a target.
 assert(aimReads == 0)
 freeAiming, aimedEntity, stateNpcId = true, 77, 'ambient-aim'
 AmbientNpcEntries['ambient-aim'] = { entity_id = 707 }

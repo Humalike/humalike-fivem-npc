@@ -1,6 +1,3 @@
--- The collector, the tracker and the edge frame on the one pulse, driven by
--- frames that come at uneven times: what the edge and the NUI receive must
--- not depend on how late a frame was.
 math.randomseed(11)
 local now = 100000
 local sent, sampledAt = {}, {}
@@ -65,14 +62,12 @@ dofile('client/vehicle.lua')
 dofile('client/track.lua')
 dofile('client/collector.lua')
 dofile('client/npc_edge.lua')
--- The voice module forwards every motion sample to the NUI.
 HumalikeWorldCollector.Subscribe('motion', function() HumalikePulse.Send('{"type":"game:realtime"}') end)
 HumalikeWorldCollector.Start()
 HumalikeWorldTrack.Start()
 HumalikeWorldNpcEdge.Start()
 HumalikeWorldNpcEdge.connected = true
 
--- A minute at 52-71 fps. The player and the NPC at 40 m walk; the others stand.
 local wakeAt, pulses = 0, 0
 local stop = now + 60000
 while now < stop do
@@ -80,7 +75,6 @@ while now < stop do
     now = now + dt
     positions[1] = vec(positions[1].x + 1.5 * dt / 1000, 0, 30)
     positions[20] = vec(positions[20].x + 1.5 * dt / 1000, 0, 30)
-    -- The scheduler may resume the pulse a millisecond before the time it asked for.
     if now >= wakeAt - math.random(0, 1) then
         pulses = pulses + 1
         wakeAt = now + HumalikePulse.Run(now)
@@ -105,7 +99,6 @@ assert(alone <= 2, ('the motion sample rides in the message of the edge frame (%
 assert(#sent <= frames + 4 * 60 + 5, ('edge and motion share a message; the idle listener adds its four a second (%d messages)'):format(#sent))
 assert(pulses <= 10 * 60 + 12 * 60, ('one wake-up per grid point (%d pulses)'):format(pulses))
 
--- (The first interval is the still cadence: its speed is known from the second sample on.)
 local widest = 0
 for index = 4, #sampledAt do widest = math.max(widest, sampledAt[index] - sampledAt[index - 1]) end
 assert(#sampledAt >= 270 and widest <= 240,

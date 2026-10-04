@@ -1,8 +1,6 @@
 HumalikeNpcDirectTargets = HumalikeNpcDirectTargets or {}
 
 local REFRESH_MS = 100
--- With no NPC this close (and no target), the refresh runs this much slower:
--- nobody covers the distance to a gaze target between two refreshes.
 local IDLE_DISTANCE = 10.0
 local IDLE_REFRESH_MS = 400
 local GAZE_DISTANCE = 3.0
@@ -54,7 +52,6 @@ local function followTarget(ped, localServerId)
         and type(params) == 'table' and tonumber(params.player_id) == localServerId
 end
 
--- Life and line of sight are asked of the game this often per NPC at most.
 local ALIVE_CACHE_MS = 500
 local LOS_CACHE_MS = 300
 local aliveAt, aliveValue = {}, {}
@@ -77,9 +74,7 @@ local function clearLineOfSight(playerPed, track, now)
     return losValue
 end
 
--- The nearest living NPC within gaze distance and inside the gaze cone. Asked
--- only when the nearest one turned out to be dead: a body on the ground does
--- not hide the NPC standing behind it.
+-- Asked only when the nearest one is dead: a body does not hide the NPC behind it.
 local function livingGaze(playerCoords, forward, camera, now)
     local best, bestDistance2 = nil, (GAZE_DISTANCE + 1.0) * (GAZE_DISTANCE + 1.0)
     for npcId, track in pairs(HumalikeWorldTrack.tracks) do
@@ -101,11 +96,8 @@ local function livingGaze(playerCoords, forward, camera, now)
     return best
 end
 
--- Positions come from the shared tracker; the game is asked only about the
--- player, the camera and the few NPCs that qualify. With nobody to target the
--- answer is the one shared empty list.
 local EMPTY = {}
-local localServerId = nil -- this session's own server id never changes
+local localServerId = nil
 
 local function calculate(listener, now)
     local playerPed = HumalikePulse.Ped()
@@ -114,7 +106,7 @@ local function calculate(listener, now)
     local player = HumalikeWorldCollector and HumalikeWorldCollector.latest or nil
     local playerVehicleNet = player and player.vehicle and player.vehicle.networkId or nil
     local forward = listener and listener.forward or nil
-    local camera = nil -- read once, and only when somebody stands within gaze distance
+    local camera = nil
     local followers, vehiclePeers = nil, nil
     local gaze, gazeDistance2 = nil, (GAZE_DISTANCE + 1.0) * (GAZE_DISTANCE + 1.0)
     local nearby = false
@@ -180,10 +172,7 @@ function HumalikeNpcDirectTargets.Get()
     return copy(active)
 end
 
--- Push-to-talk freezes the targets for the utterance. They are worked out
--- afresh at the press, from the camera as it points then: the periodic
--- refresh may be a few hundred milliseconds old, and a player who turned to
--- somebody else and pressed the key must not be heard by the one before.
+-- The targets are worked out afresh at the press, then frozen for the utterance.
 function HumalikeNpcDirectTargets.Lock()
     if not locked and HumalikeWorldCollector and HumalikeWorldCollector.RefreshListener then
         local now = GetGameTimer()
@@ -211,7 +200,6 @@ function HumalikeNpcDirectTargets.IsExclusive()
     return available and #active > 0
 end
 
--- True while an NPC is close enough (or already a target) to keep the fast refresh.
 function HumalikeNpcDirectTargets.Refresh(listener, now)
     local nearby
     observed, nearby = calculate(listener, now or GetGameTimer())
@@ -219,9 +207,6 @@ function HumalikeNpcDirectTargets.Refresh(listener, now)
     return nearby
 end
 
--- After the collector and the tracker of the same pulse: the listener and the
--- positions are the ones just read. The life and line-of-sight caches count
--- on the schedule time, which a late frame does not stretch.
 HumalikePulse.Every('direct targets', REFRESH_MS, function(_, due)
     local listener = HumalikeWorldCollector and HumalikeWorldCollector.listener or nil
     local nearby = true

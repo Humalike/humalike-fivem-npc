@@ -1,4 +1,3 @@
-
 local pendingDeathChecks = {}
 
 AddEventHandler('entityDamaged', function(victim, culprit, weapon, baseDamage)
@@ -50,9 +49,6 @@ CreateThread(function()
     end
 end)
 
--- The player's gun. Every 100 ms (50 ms while aiming at somebody) a pulse job
--- looks at the hand and the aim; only while a gun is out does a frame job
--- watch for shots, one native a frame.
 local gunPed, armed = 0, false
 local burstOpen, lastShotAt = false, -1000
 local aimingAt = nil

@@ -69,17 +69,13 @@ local function settle(now)
     return reported
 end
 
--- Only registered peds can carry a HumaLike mind, and only the ones the
--- tracker puts within reach can be touched; the pool is never scanned.
 function HumalikeNpcShove.Tick(now)
     forgetStale(now)
     local reported = settle(now)
     local cfg = config()
-    -- Nobody within reach: the player's own state is not worth asking for.
     if not HumalikeWorldTrack.AnyWithin(cfg.MaxDistance) then return reported end
     local playerPed = HumalikePulse.Ped()
     if playerPed == 0 then return reported end
-    -- A still player shoves nobody: the speed is asked before anything else.
     local velocity = HumalikePulse.Velocity(playerPed)
     local speed = math.sqrt(velocity.x * velocity.x + velocity.y * velocity.y + velocity.z * velocity.z)
     if speed < cfg.MinSpeed or IsPedInAnyVehicle(playerPed, false)
@@ -91,8 +87,6 @@ function HumalikeNpcShove.Tick(now)
     for npcId, track in pairs(HumalikeWorldTrack.tracks) do
         if track.exists and track.dist2 <= max2 then
             local ped = track.ped
-            -- The free questions first: the game is asked about contact only for a
-            -- ped in the player's way, and about the rest only for one it touches.
             if not pending[ped] and due(ped, now) and towards(velocity, origin, track)
                 and IsEntityTouchingEntity(playerPed, ped) and not excluded(ped, npcId, now) then
                 pending[ped] = { since = now, npc_id = npcId, ragdolled = IsPedRagdoll(ped) }
@@ -102,11 +96,8 @@ function HumalikeNpcShove.Tick(now)
     return reported
 end
 
--- With nobody in reach and no contact pending the detector sleeps longer.
 local IDLE_TICK_MS = 500
 
--- After the tracker of the same pulse, so reach is judged on fresh distances.
--- The contact windows count on the schedule time, which a late frame does not stretch.
 HumalikePulse.Every('shove', IDLE_TICK_MS, function(_, due)
     HumalikeNpcShove.Tick(due)
     local busy = next(pending) ~= nil or HumalikeWorldTrack.AnyWithin(config().MaxDistance)

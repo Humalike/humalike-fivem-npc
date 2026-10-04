@@ -1,6 +1,3 @@
--- The edge frame is built from the tracker's cache: no native per NPC, a
--- hand-encoded message, deltas between keyframes, a keep-alive for the edge's
--- player timeout.
 local callbacks, handlers, nuiMessages, rawMessages, serverEvents = {}, {}, {}, {}, {}
 
 WorldConfig = {
@@ -74,15 +71,12 @@ assert(not message:find('npc-gone', 1, true) and not message:find('npc-other', 1
 local _, commas = message:gsub('"npc_id"', '')
 assert(commas == 2)
 
--- Nothing changed: no frame until the game clock's next second, then a
--- player-only frame (the other once-a-second messages leave on that same pulse).
 assert(HumalikeWorldNpcEdge.Frame(player, 2200) == nil, 'a still scene sends nothing')
 assert(HumalikeWorldNpcEdge.Frame(player, 2800) == nil)
 message = HumalikeWorldNpcEdge.Frame(player, 3000)
 assert(message and message:find('"sequence":2,', 1, true) and message:find('"npcs":[]}}', 1, true),
     'the keep-alive carries the player only')
 
--- A moved NPC is a delta of one.
 HumalikeWorldTrack.tracks['npc-a'].x = 6.0
 HumalikeWorldTrack.tracks['npc-a'].version = 2
 message = HumalikeWorldNpcEdge.Frame(player, 3200)
@@ -93,27 +87,21 @@ assert(message and message:find('"npc_id":"npc-a"', 1, true) and not message:fin
     'only the NPC that changed is in the delta')
 assert(HumalikeWorldNpcEdge.Frame(player, 3400) == nil, 'and not again while it stays put')
 
--- The player moving sends a frame; a step of ten centimetres is the threshold.
 player.position = { x = 1.55, y = 2.25, z = 3.125 }
 assert(HumalikeWorldNpcEdge.Frame(player, 3600) == nil, 'five centimetres is noise')
 player.position = { x = 1.75, y = 2.25, z = 3.125 }
 message = HumalikeWorldNpcEdge.Frame(player, 3800)
 assert(message and message:find('"x":1.750', 1, true) and message:find('"npcs":[]}}', 1, true))
 
--- The keyframe re-sends every reportable NPC, every other second of the game clock.
 message = HumalikeWorldNpcEdge.Frame(player, 4000)
 local _, both = message:gsub('"npc_id"', '')
 assert(both == 2, 'two seconds after the last keyframe everything goes out again')
 
--- A fresh socket starts from a keyframe.
 callbacks['npcEdgeReady'](nil, function() end)
 message = HumalikeWorldNpcEdge.Frame(player, 4200)
 _, both = message:gsub('"npc_id"', '')
 assert(both == 2 and HumalikeWorldNpcEdge.connected)
 
--- The edge settles "someone walked up" two seconds after a player came within
--- range of an NPC, counted on that player's frames: for three seconds after a
--- track came within range the player is reported on every frame, still or not.
 HumalikeWorldTrack.enteredAt = 4300
 for at = 4400, 7200, 200 do
     message = HumalikeWorldNpcEdge.Frame(player, at)
@@ -124,8 +112,6 @@ assert(HumalikeWorldNpcEdge.Frame(player, 7400) == nil, 'and once a second again
 assert(HumalikeWorldNpcEdge.Frame(player, 7800) == nil)
 assert(HumalikeWorldNpcEdge.Frame(player, 8000), 'the keep-alive (and here the keyframe) still goes out')
 
--- More NPCs than a frame holds: the urgent ones lead and the rest follows in
--- the next frames, each exactly once. Nobody waits for the next keyframe.
 WorldConfig.npcEdge.maxNpcsPerFrame = 3
 for index = 1, 5 do
     local npcId = ('npc-crowd-%d'):format(index)
@@ -153,8 +139,6 @@ end
 assert(names == 7, 'the keyframe reaches every reportable NPC over consecutive frames')
 assert(HumalikeWorldNpcEdge.Frame(player, 9600) == nil, 'and then nothing is left to send')
 
--- A crowd that keeps changing: with more urgent NPCs than a frame holds they
--- take turns, the one that waited longest first.
 for index = 1, 5 do HumalikeWorldTrack.tracks[('npc-crowd-%d'):format(index)].speed = 2.0 end
 local function crowdMoves()
     for index = 1, 5 do
@@ -186,8 +170,6 @@ assert(serverEvents[#serverEvents].name == 'humalike:world:requestNpcEdgeTicket'
     'edge reassignment must request a fresh ticket immediately')
 assert(#rawMessages == 0, 'the frame job, not the decision, sends to the NUI')
 
--- The frame job queues its message on the pulse, which sends it with the
--- other messages of that pulse.
 local jobs, queued, timeouts, anchors = {}, {}, {}, 0
 HumalikePulse = {
     Every = function(name, interval, run, order) jobs[name] = { interval = interval, run = run, order = order } end,
@@ -210,8 +192,6 @@ local before = HumalikeWorldNpcEdge.sentFrames
 jobs['edge frame'].run(10000, 10000)
 assert(#queued == 1 and queued[1]:find('"type":"npc_edge_frame"', 1, true)
     and HumalikeWorldNpcEdge.sentFrames == before + 1)
--- The edge keeps one frame per 200 ms tick: a frame restarts the pulse's grid,
--- so the next one is a whole interval later however late this one came.
 assert(anchors == 1, 'a frame that was sent anchors the grid')
 assert(jobs['edge frame'].run(10200, 10200) == 200 and #queued == 1 and anchors == 1,
     'nothing to send: nothing anchored; the interval is read again on every run')

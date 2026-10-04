@@ -83,9 +83,6 @@ handlers['humalike:npc:ambientPedAssigned'](
     'ambient-2', 20, AmbientNpcEntries['ambient-2'])
 assert(registerCalls == 1 and registered['ambient-2'])
 
--- The periodic pass pauses every few NPCs. While it is parked a lease can go
--- and others can bind: the pass must survive that (a table is never walked
--- across the pause) and must not undo a registration made meanwhile.
 local function lease(index)
     local npcId, ped = ('crowd-%02d'):format(index), 100 + index
     entities[ped] = true
@@ -112,7 +109,6 @@ for round = 1, 40 do
     local pass = coroutine.create(threads[1])
     assert(coroutine.resume(pass))
     assert(parked == 1, 'the pass pauses after a slice of the crowd')
-    -- While parked: one lease goes, a batch binds (enough to make the tables grow).
     drop(('crowd-%02d'):format((round % 20) + 1))
     local bound = {}
     for index = 1, 12 do

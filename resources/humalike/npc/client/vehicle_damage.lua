@@ -23,7 +23,6 @@ local function reset(vehicle, networkId, body, engine)
     TriggerServerEvent('humalike:npc:vehicleObserved', networkId)
 end
 
--- On foot the seat is looked at half as often.
 HumalikePulse.Every('vehicle damage', 500, function()
     local ped = HumalikePulse.Ped()
     local vehicle = ped and ped ~= 0 and DoesEntityExist(ped)

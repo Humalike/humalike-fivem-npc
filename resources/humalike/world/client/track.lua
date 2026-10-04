@@ -1,9 +1,4 @@
--- One spatial cache for every registered NPC. The edge frame, the labels, the
--- direct voice targets and the shove detector used to walk the registry on
--- their own clocks, each paying its own natives per NPC; they read this
--- cache instead. A track is sampled on a cadence set by its distance to the
--- player (and faster while it moves), so a crowd across the street costs a
--- native a second, not a dozen a frame.
+-- One position cache per registered NPC, sampled by distance; every consumer reads it.
 HumalikeWorldTrack = {
     tracks = {},          -- npcId -> track
     count = 0,
@@ -12,26 +7,20 @@ HumalikeWorldTrack = {
     nearest2 = math.huge, -- squared distance of the closest live track
     lastRegistryRevision = -1,
     changeRevision = 0,   -- bumped whenever any track's reportable state changed
-    enteredAt = nil,      -- game time an NPC last came within the edge's "walked up" range
+    enteredAt = nil,      -- game time an NPC last came within range
 }
 
 local TICK_MS = 100
--- Sample cadences by distance; a moving track the edge frame may report never
--- waits longer than FAST_MOVING_MS. Past the report radius (and this margin)
--- nobody reads a track's position, so it keeps the far cadence, moving or not.
--- The tracker runs in passes of TICK_MS and counts every cadence in passes (a
--- frame that comes late must not turn "every 200 ms" into "every 300").
+-- Cadences are counted in passes of TICK_MS, so a late frame does not stretch them.
 local NEAR_M, MID_M = 20.0, 60.0
 local NEAR_MS, MID_MS, FAR_MS = 150, 400, 1000
 local FAST_MOVING_MS = 200
 local REPORT_MARGIN_M = 10.0
 local SLOW_MS = 1000                -- identity, heading, far vehicle checks
-local MOVE_EPSILON = 0.05           -- metres; below this a position is the same
-local MOVING_SPEED = 0.5            -- m/s; a track past this is sampled fast
-local ZONE_REFRESH_M = 30.0         -- the zone is looked up again after this walk
+local MOVE_EPSILON = 0.05           -- metres
+local MOVING_SPEED = 0.5            -- m/s
+local ZONE_REFRESH_M = 30.0
 local OWN_VEHICLE_MS = 500
--- The edge counts a player as having walked up to an NPC inside ENTER_M and as
--- gone beyond LEAVE_M; the moment a track crosses in is kept for the edge frame.
 local ENTER_M, LEAVE_M = 10.0, 12.0
 
 local function passes(ms) return (ms + TICK_MS - 1) // TICK_MS end
@@ -97,9 +86,7 @@ local function ownNetOf(value)
     return value
 end
 
--- A population driver's own car, from the bag it was spawned with. The bag is
--- read at a track's first sample; one that arrives later is handed over by its
--- change handler (below), so a track is never left believing it has no car.
+-- Read at the first sample; a bag that arrives later is handed over by its change handler.
 local function sampleOwnVehicle(track, pass)
     track.ownPass = pass
     local networkId = track.ownNet
@@ -135,9 +122,6 @@ local function sampleOwnVehicle(track, pass)
     track.ownVehicle = own
 end
 
--- An ambient body is reported under its npc id only while this client still
--- holds that lease on that ped; a handle reused by another entity shows up as
--- a changed network id or a lease pointing elsewhere.
 local function identityMatches(track)
     local entry, ped = track.entry, track.ped
     if NetworkGetNetworkIdFromEntity(ped) ~= track.networkId then return false end
@@ -162,9 +146,7 @@ local function sample(track, now, pass, px, py, pz)
     local dx, dy, dz = x - track.x, y - track.y, z - track.z
     local moved2 = dx * dx + dy * dy + dz * dz
     local elapsed = (now - track.sampledAt) / 1000.0
-    -- Speed is the way made since the last sample. Measured against the
-    -- recorded position, a ped that once shifted less than MOVE_EPSILON would
-    -- read as moving for good.
+    -- Speed between two samples, not against the recorded position.
     if track.exists and elapsed > 0 then
         local sx, sy, sz = x - track.sampleX, y - track.sampleY, z - track.sampleZ
         track.speed = math.sqrt(sx * sx + sy * sy + sz * sz) / elapsed
@@ -172,7 +154,6 @@ local function sample(track, now, pass, px, py, pz)
         track.speed = 0.0
     end
     track.sampleX, track.sampleY, track.sampleZ = x, y, z
-    -- A registration may come without a network id: the ped's own is used.
     if track.networkId == nil then
         local networkId = tonumber(NetworkGetNetworkIdFromEntity(ped))
         if networkId and networkId > 0 then track.networkId = networkId end
@@ -222,8 +203,7 @@ local function sample(track, now, pass, px, py, pz)
     end
     local wait = interval
     if interval >= MID_PASSES then
-        -- Each track takes the slow cadences on its own pass of the interval, so
-        -- a street of far NPCs is never sampled in one frame.
+        -- The slow cadences are spread over the passes.
         wait = (track.slot - pass) % interval
         if wait == 0 then wait = interval end
     end
@@ -262,12 +242,10 @@ local function syncRegistry()
         if not track or track.entry ~= entry then
             local fresh = newTrack(npcId, entry)
             if track then
-                -- The version goes on counting for the npc id, so whoever keeps
-                -- "the version I last saw" sees a replaced track as changed.
+                -- Versions go on across a replaced track, so readers see it as changed.
                 fresh.version = track.version + 1
             end
             if track and track.ped == entry.entity then
-                -- Same ped, new registration (token, activity): keep the samples.
                 fresh.exists, fresh.x, fresh.y, fresh.z = track.exists, track.x, track.y, track.z
                 fresh.sampleX, fresh.sampleY, fresh.sampleZ = track.sampleX, track.sampleY, track.sampleZ
                 fresh.dist2, fresh.sampledAt = track.dist2, track.sampledAt
@@ -295,8 +273,6 @@ local function syncRegistry()
     end
 end
 
--- One pass: tracks that are due are sampled. `pass` is the number of this
--- pass (the pulse counts them; without one it is taken from the time).
 function HumalikeWorldTrack.Sample(now, px, py, pz, pass)
     pass = pass or now // TICK_MS
     syncRegistry()
@@ -307,7 +283,6 @@ function HumalikeWorldTrack.Sample(now, px, py, pz, pass)
             sample(track, now, pass, px, py, pz)
             sampled = sampled + 1
         elseif track.exists then
-            -- The player moved since this track was sampled; keep its distance current.
             local ex, ey, ez = track.x - px, track.y - py, track.z - pz
             track.dist2 = ex * ex + ey * ey + ez * ez
         end
@@ -328,8 +303,7 @@ function HumalikeWorldTrack.Get(npcId)
     return tracks[npcId]
 end
 
--- The own-vehicle bag of a ped that is already tracked. The handler runs
--- before the bag holds the value, so the value it is handed is the one kept.
+-- The handler runs before the bag holds the value: the value it is handed is kept.
 AddStateBagChangeHandler('humalike_vehicle_net', nil, function(bagName, _, value)
     local ped = GetEntityFromStateBagName(bagName)
     if not ped or ped <= 0 then return end
@@ -346,7 +320,6 @@ AddStateBagChangeHandler('humalike_vehicle_net', nil, function(bagName, _, value
     end
 end)
 
--- True when some live track is within `radius` metres of the player.
 function HumalikeWorldTrack.AnyWithin(radius)
     return HumalikeWorldTrack.nearest2 <= radius * radius
 end

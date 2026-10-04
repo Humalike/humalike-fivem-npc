@@ -53,14 +53,10 @@ assert(#threads == 1 and bagReads == 1, 'a ped the developer tools spawned is wa
 threads[1]()
 assert(wandered == 99)
 
--- An ordinary leased ped costs one bag read and no thread; it used to be
--- polled ten times a second for five seconds.
 handlers['humalike:npc:ambientPedAssigned']('npc-plain', 98)
 assert(#threads == 1 and bagReads == 2, 'no spawn id, nothing to watch')
--- The same ped set wandering once is not set wandering again.
 handlers['humalike:npc:ambientPedAssigned']('npc-id', 99)
 assert(#threads == 1 and bagReads == 3)
--- A spawn id that reaches the client after the lease announces itself.
 AmbientPedNpcIds = { [98] = 'npc-plain' }
 bagHandlers.humalike_debug_spawn_id('entity:98', 'humalike_debug_spawn_id', 'debug-2')
 assert(#threads == 2 and bagReads == 3, 'the handler brings the value: no read')

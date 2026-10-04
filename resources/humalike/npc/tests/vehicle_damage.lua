@@ -25,8 +25,6 @@ function GetVehicleEngineHealth() return engineHealth end
 function GetGameTimer() return timer end
 function TriggerServerEvent(...) sent[#sent + 1] = { ... } end
 
--- One poll on the shared pulse: 250 ms while a networked vehicle is tracked,
--- 500 ms on foot.
 local function tick()
     pulseAt = pulseAt + 500
     local sleep = HumalikePulse.Run(pulseAt)

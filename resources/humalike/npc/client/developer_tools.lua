@@ -1,4 +1,3 @@
-
 local initialized = {}
 
 local function addCommandSuggestion()
@@ -20,10 +19,7 @@ AddEventHandler('onClientResourceStart', function(resourceName)
     if resourceName == 'chat' then addCommandSuggestion() end
 end)
 
--- A ped spawned by the developer tools carries its spawn id in a bag. Only
--- such a ped is watched (until this client owns it) and set wandering, once.
--- A state-bag read costs a dozen microseconds, so a leased ped is asked for
--- the bag a single time; a bag that arrives later announces itself.
+-- The spawn-id bag is read once per lease; one that arrives later announces itself.
 local function settle(ped, spawnId)
     if type(spawnId) ~= 'string' or initialized[ped] == spawnId then return end
     CreateThread(function()

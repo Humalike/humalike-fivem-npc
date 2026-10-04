@@ -1,5 +1,3 @@
--- One thread runs the client's periodic jobs: on one grid, sharing one read
--- of the player per pulse, and sending the NUI messages of a pulse as one.
 local now = 0
 local threads, natives, sent, printed = {}, {}, {}, {}
 local function count(name) natives[name] = (natives[name] or 0) + 1 end
@@ -19,7 +17,6 @@ function print(text) printed[#printed + 1] = text end
 dofile('client/pulse.lua')
 assert(#threads == 1, 'one thread for every periodic job')
 
--- Jobs run on the grid of their interval, in their order, whatever the frame times are.
 local ran = {}
 HumalikePulse.Every('slow', 200, function(at, due) ran[#ran + 1] = ('slow@%d/%d'):format(at, due) end, 80)
 HumalikePulse.Every('fast', 100, function(at, due) ran[#ran + 1] = ('fast@%d/%d'):format(at, due) end, 20)
@@ -43,7 +40,6 @@ assert(#ran == 10)
 now = 3000
 assert(HumalikePulse.Run(now) == 100 and #ran == 12)
 
--- A job may return its next interval.
 local cadence, cadenceRuns = 500, 0
 HumalikePulse.Every('adaptive', 500, function() cadenceRuns = cadenceRuns + 1 return cadence end)
 now = 3100
@@ -65,7 +61,6 @@ now = 3900
 HumalikePulse.Run(now)
 assert(cadenceRuns == 4, 'and back to the slow cadence')
 
--- The player is read from the game once per pulse, however many jobs ask.
 natives = {}
 local seen = {}
 HumalikePulse.Every('reader a', 100, function()
@@ -93,7 +88,6 @@ HumalikePulse.Ped()
 HumalikePulse.Ped()
 assert(natives.PlayerPedId == 4, 'outside a pulse every call asks the game')
 
--- NUI messages of one pulse leave as one batch; a single message leaves as itself.
 sent = {}
 local outbox = {}
 HumalikePulse.Every('sender', 100, function()
@@ -118,7 +112,6 @@ assert(#sent == 3, 'nothing queued, nothing sent')
 HumalikePulse.Send('{"type":"d"}')
 assert(#sent == 4 and sent[4] == '{"type":"d"}', 'outside a pulse a message is sent at once')
 
--- A failing job is reported (not on every run) and the others keep running.
 local after = 0
 HumalikePulse.Every('broken', 100, function() error('boom') end, 10)
 HumalikePulse.Every('after', 100, function() after = after + 1 end, 90)
@@ -133,7 +126,6 @@ now = 4700 + 10000
 HumalikePulse.Run(now)
 assert(#printed == 2, 'and again ten seconds later')
 
--- A job registered by a job joins on the next pulse.
 local late = 0
 HumalikePulse.Every('registrar', 100000, function()
     HumalikePulse.Every('late', 100, function() late = late + 1 end)
@@ -144,7 +136,6 @@ now = 20016
 HumalikePulse.Run(now)
 assert(late == 1)
 
--- An interval of zero (a convar can say so) runs on every pulse instead of dividing by it.
 local zero = 0
 HumalikePulse.Every('zero', 0, function() zero = zero + 1 return 0 end)
 now = 21000
@@ -153,7 +144,6 @@ now = 21002
 HumalikePulse.Run(now)
 assert(zero == 2)
 
--- With humalike_profile_jobs set, a profiler recording sees each job under its own name.
 local scopes, depth = {}, 0
 local profileJobs, recording, recordingChecks = false, true, 0
 function GetConvarInt(name, default)
@@ -191,21 +181,17 @@ now = 26100
 HumalikePulse.Run(now)
 assert(#scopes == 0)
 
--- A game timer that went backwards does not park the jobs.
 local fastRuns = #ran
 now = 500
 HumalikePulse.Run(now)
 assert(#ran > fastRuns, 'the jobs run again at once')
 
--- The pulse thread sleeps until the next job is due.
 local pulse = coroutine.create(threads[1])
 now = 600
 local _, waited = coroutine.resume(pulse)
 assert(waited <= 2, 'the job with no interval is due on the next frame')
 print = realPrint
 
--- Beats and the anchor, on a fresh scheduler: beats count the pulse's clock;
--- Anchor() restarts the grid at the pulse it is called in.
 threads = {}
 dofile('client/pulse.lua')
 local edge, label, edgeBeats = {}, {}, {}
@@ -216,7 +202,6 @@ HumalikePulse.Every('edge', 200, function(at)
     edgeBeats[#edgeBeats + 1] = HumalikePulse.Beat(1000)
     if sending then HumalikePulse.Anchor() end
 end, 80)
--- Frames 14-19 ms apart: every pulse wakes a little late, by a different amount.
 math.randomseed(7)
 local wakeAt = 0
 now = 100000
@@ -256,7 +241,6 @@ end
 assert(seconds >= 55 and seconds <= 61,
     ('a beat is about a second: the anchor stretches it by the frames that came late (%d in a minute)'):format(seconds))
 
--- Without the anchor the grid stays put and the same job can run early after a late run.
 sending = false
 edge = {}
 stop = now + 20000
@@ -268,7 +252,6 @@ shortest = math.huge
 for index = 2, #edge do shortest = math.min(shortest, edge[index] - edge[index - 1]) end
 assert(shortest < 200, 'which is why a sender whose receiver keeps one message per interval anchors')
 
--- Frame jobs: a thread that lives only while some job needs the next frame.
 print = function(text) printed[#printed + 1] = text end
 local frameRuns, wanted = 0, 3
 HumalikePulse.EveryFrame('frames', function()

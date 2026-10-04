@@ -1,5 +1,3 @@
--- Direct voice targets are chosen from the tracker's cache; the game is asked
--- about the player, the camera, and the line of sight to one gaze target.
 local handlers = {}
 local timer = 100
 local natives = {}
@@ -85,7 +83,6 @@ HumalikeNpcDirectTargets.SetAvailable(false)
 assert(not HumalikeNpcDirectTargets.IsExclusive())
 assert(not HumalikeNpcDirectTargets.IsReady('follower'), 'UI readiness is capability gated')
 
--- The refresh slows down while no NPC is within ten metres and nobody is a target.
 ActionControlledPeds = {}
 local forward = { forward = { x = 1, y = 0, z = 0 } }
 assert(HumalikeNpcDirectTargets.Refresh(forward) == true, 'NPCs within ten metres keep the fast refresh')
@@ -106,7 +103,6 @@ HumalikeWorldTrack.tracks.gaze.x, HumalikeWorldTrack.tracks.gaze.y = 4, 0
 timer = 10400
 assert(HumalikePulse.Run(timer) == 100, 'and the fast refresh is back once an NPC is near')
 
--- A dead gaze target is not a target; life is asked again after half a second.
 HumalikeWorldTrack.tracks.gaze.x, HumalikeWorldTrack.tracks.gaze.y = 2, 0
 function IsEntityDead(ped) return ped == 3 end
 HumalikeNpcDirectTargets.Refresh(forward)
@@ -120,15 +116,12 @@ HumalikeNpcDirectTargets.Refresh(forward)
 assert(natives.GetGameplayCamCoord == 1 and natives.HasEntityClearLosToEntity == nil,
     'with the gaze target dead no line of sight is traced; the camera is read for the candidate')
 
--- A dead NPC in the line of sight does not hide a living one behind it.
 HumalikeWorldTrack.tracks.far.x, HumalikeWorldTrack.tracks.far.y = 3.5, 0
 timer = timer + 100
 HumalikeNpcDirectTargets.Refresh(forward)
 latest = HumalikeNpcDirectTargets.Get()
 assert(#latest == 1 and latest[1] == 'far', 'the living NPC behind a dead one is the gaze target')
 
--- Push-to-talk works the targets out afresh at the press. The player turned
--- from one NPC to another since the last refresh: the one looked at now hears.
 function IsEntityDead() return false end
 timer = timer + 600
 HumalikeWorldTrack.tracks.far.x, HumalikeWorldTrack.tracks.far.y = 0, 2

@@ -1,4 +1,3 @@
--- Vehicle facts are read once per handle; a seat once a second.
 local natives = {}
 local function count(name) natives[name] = (natives[name] or 0) + 1 end
 
@@ -47,8 +46,6 @@ occupants[101][-1] = 1
 HumalikeWorldVehicle.Forget(101)
 networked[101] = false
 assert(HumalikeWorldVehicle.StreamState(1, 4400) == nil, 'a local vehicle is not reported')
--- "Not networked" is never kept: a vehicle registered with the network while
--- the ped sits in it, or between two rides, is reported from then on.
 networked[101] = true
 state = HumalikeWorldVehicle.StreamState(1, 4600)
 assert(state and state.networkId == 777, 'a vehicle that became networked is reported without being forgotten first')

@@ -194,7 +194,6 @@ export class AudioEngine {
     return moving || distance(remote.position, remote.target) > 0.01;
   }
 
-
   #setRemoteTransmitting(identity: string, remote: RemoteSource, active: boolean): void {
     if (remote.transmitting === active) return;
     remote.transmitting = active;
@@ -204,10 +203,7 @@ export class AudioEngine {
     this.#updateSpatialDemand();
   }
 
-  // The game samples the listener fast only while a source with a position is
-  // actually heard. The answer is taken once the current change has settled:
-  // a source that is replaced detaches and attaches in one go, and the game
-  // must not hear "nobody" in between (the two reports could arrive swapped).
+  // Taken once the change has settled: a replaced source must not report "nobody" in between.
   #spatialDemand = false;
   #spatialDemandQueued = false;
   #updateSpatialDemand(): void {

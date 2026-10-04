@@ -12,8 +12,7 @@ local nuiBootId = nil
 local sessionRetryGeneration = 0
 local PTT_RELEASE_TAIL_MS = 200
 local PTT_POLL_MS = 100
--- A key shared with the game's own PTT is read off the control natives; a
--- held key shows up within this many ms.
+-- A key shared with the game's own PTT is read off the control natives this often.
 local PTT_SHARED_POLL_MS = 50
 local PTT_COMMAND = '+humalike_voice_ptt'
 local PTT_RELEASE_COMMAND = '-' .. PTT_COMMAND:sub(2)
@@ -213,10 +212,6 @@ RegisterNetEvent('humalike:world:cabinMembership', function(snapshot)
         membership = cabinMembership, epoch = cabinEpoch, revision = cabinRevision })
 end)
 
--- The motion and listener samples are the two messages the NUI hears most
--- (up to five and twenty a second); they are encoded by hand instead of
--- through the generic JSON encoder, and leave with the other messages of
--- their pulse.
 local function finite(value)
     value = tonumber(value) or 0.0
     if value ~= value or value == math.huge or value == -math.huge then return 0.0 end
@@ -262,8 +257,6 @@ HumalikeWorldCollector.Subscribe('listener', function(listener)
     HumalikePulse.Send(HumalikeVoiceListenerJson(listener))
 end)
 
--- The NUI reports whether an NPC is being heard; the ear is sampled twenty
--- times a second only then.
 RegisterNUICallback('listenerDemand', function(data, callback)
     HumalikeWorldCollector.SetListenerDemand(type(data) == 'table' and data.active == true)
     callback({ ok = true })
@@ -326,7 +319,6 @@ RegisterCommand(PTT_RELEASE_COMMAND, function()
 end, false)
 RegisterKeyMapping(PTT_COMMAND, 'Humalike AI voice PTT', 'keyboard', 'N')
 
--- First in its pulse: a key press is acted on before anything is sampled.
 HumalikePulse.Every('ptt', PTT_POLL_MS, function()
     evaluatePtt()
     return pttSharesNativeBinding and PTT_SHARED_POLL_MS or PTT_POLL_MS
@@ -338,8 +330,6 @@ CreateThread(function()
     if nuiReady then syncNuiState() end
 end)
 
--- GetControlInstructionalButton costs a good fraction of a millisecond; a
--- rebinding shows up within this many seconds (at once when the panel opens).
 local PTT_BINDING_REFRESH_MS = 15000
 
 CreateThread(function()

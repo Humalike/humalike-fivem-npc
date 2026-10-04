@@ -1,5 +1,3 @@
--- The listener is sampled every tick but announced only when it moved or
--- turned, or on the heartbeat, so a still player sends nothing downstream.
 WorldConfig = {
     protocolVersion = 1,
     collector = {
@@ -47,8 +45,6 @@ sample()
 assert(#announced == 4 and announced[4].position.x == 0.2, 'a turn is announced')
 assert(announced[4] == HumalikeWorldCollector.listener, 'readers see the one sample table')
 
--- The heartbeat is a beat of the pulse's clock, wherever the last announcement
--- was in it, so it leaves with the other once-a-second messages.
 now = 5990
 HumalikeWorldCollector.SampleListener(now, 1, position, 5)
 local before = #announced
@@ -60,8 +56,6 @@ assert(#announced == before + 1)
 HumalikeWorldCollector.SampleListener(7000, 1, position, 7)
 assert(#announced == before + 2)
 
--- Motion: a moving player is sampled every movingIntervalMs, a still one when
--- its position changed and once in every idle second of the game clock.
 local Vec = {}
 Vec.__sub = function(a, b) return setmetatable({ x = a.x - b.x, y = a.y - b.y, z = a.z - b.z }, Vec) end
 Vec.__len = function(v) return math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z) end
@@ -84,7 +78,6 @@ local motions = {}
 assert(HumalikeWorldCollector.Subscribe('motion', function(state) motions[#motions + 1] = state.clientTimeMs end))
 local still, walking = vec(0, 0, 0), vec(1.5, 0, 0)
 local at = vec(10, 0, 0)
--- poll(now, position, velocity): the step and the beat are taken from the time, as the pulse numbers them.
 local function poll(time, position, velocity)
     return HumalikeWorldCollector.PollMotion(time, 1, position, velocity, time - time % 50)
 end
@@ -117,7 +110,6 @@ proximity = { distance = 500.0 }
 poll(23000, vec(10.9, 0, 0), still)
 assert(HumalikeWorldCollector.latest.effectiveVoiceDistance == 20.0, 'yet its value is read on every sample, and capped')
 
--- The ear is sampled fast only while the NUI has an NPC speaking.
 function GetGameTimer() return now end
 function GetEntityVelocity() return still end
 function SendNuiMessage() end
@@ -149,8 +141,6 @@ now = 30700
 HumalikePulse.Run(now)
 assert(samples() == base + 6, 'and back to the idle cadence')
 
--- The ear on demand (a push-to-talk press): read from the camera as it is now,
--- on the pulse's beat, so nothing is announced twice within a heartbeat.
 local announcedBefore = #announced
 yaw = 90.0
 local fresh = HumalikeWorldCollector.RefreshListener(123456)

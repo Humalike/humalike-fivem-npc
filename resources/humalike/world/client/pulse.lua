@@ -1,10 +1,4 @@
--- One clock for the client's periodic work. Each poll used to own a thread:
--- a wake-up costs a few microseconds, so did every copy of PlayerPedId and
--- GetEntityCoords the polls read on their own, and every NUI message is a
--- cross-process call. Jobs registered here run on one thread and one grid (a
--- 100 ms job runs at ...100, 200, 300 of the pulse's clock), so jobs that are
--- due together wake the resource once, read the player once, and their NUI
--- messages leave as one.
+-- One thread and one grid for the client's periodic jobs.
 HumalikePulse = { now = 0 }
 
 local MAX_SLEEP_MS = 1000
@@ -15,10 +9,8 @@ local EARLY_MS = 1
 
 local jobs, pending = {}, {}
 local inPulse = false
-local serial = 0 -- one per pulse; a shared read is valid for the pulse it was made in
+local serial = 0 -- one per pulse
 local profiling, profilingAt = false, -PROFILER_CHECK_MS
--- The grid counts from `epoch`. Anchor() moves it to the pulse it was called
--- in, so the next run of every job is a whole interval after this one.
 local epoch = 0
 local late, anchorBy = 0, nil
 
@@ -31,12 +23,8 @@ local function insert(job)
     jobs[at] = job
 end
 
--- `run(now, due)` is called every `interval` ms. `now` is the game timer;
--- `due` is the time the run was scheduled for (`now` less however late the
--- frame came), so two runs of a job are never less than its interval apart on
--- `due`: count "at least N ms since" on it, not on `now`. A number returned by
--- `run` is the interval until its next run. Lower `order` runs first within a
--- pulse. A job must never yield.
+-- run(now, due): `due` is the scheduled time; count cadences on it, not on a late `now`.
+-- A returned number is the next interval. A job must never yield.
 function HumalikePulse.Every(name, interval, run, order)
     interval = tonumber(interval) or MAX_SLEEP_MS
     if interval < 1 then interval = 1 end -- a convar may say 0
@@ -46,23 +34,17 @@ function HumalikePulse.Every(name, interval, run, order)
     return job
 end
 
--- How many whole `period`s the pulse's clock has counted. Every job of a pulse
--- reads the same number, and jobs whose intervals divide the period see it
--- change on the same pulse: the way to do something once a period, together.
+-- Whole `period`s on the pulse's clock: the same number for every job of a pulse.
 function HumalikePulse.Beat(period)
     return (HumalikePulse.now + EARLY_MS - epoch) // period
 end
 
--- For a job that just sent something whose receiver wants the next one a whole
--- interval later (the edge keeps one frame per 200 ms tick, so a frame sent
--- 190 ms after a late one can replace it): the grid restarts at this pulse.
+-- Restarts the grid at this pulse: the next run of every job is a whole interval away.
 function HumalikePulse.Anchor()
     if inPulse then anchorBy = late end
 end
 
--- The player's ped, position, velocity and camera: each is read from the game
--- at most once per pulse, however many jobs ask. Outside a pulse every call
--- reads the game.
+-- Read from the game at most once per pulse.
 local pedAt, ped = -1, 0
 local coordsAt, coords = -1, nil
 local velocityAt, velocity = -1, nil
@@ -75,7 +57,6 @@ function HumalikePulse.Ped()
     return ped
 end
 
--- `playerPed` is the ped the caller already holds, when it has one.
 function HumalikePulse.Coords(playerPed)
     if inPulse and coordsAt == serial then return coords end
     coords, coordsAt = GetEntityCoords(playerPed or HumalikePulse.Ped()), serial
@@ -100,10 +81,7 @@ function HumalikePulse.CamCoord()
     return camCoord
 end
 
--- NUI messages, already encoded. Those posted during a pulse leave together
--- as `{"type":"batch","messages":[...]}`; the NUI host hands each part to the
--- page's listeners as if it had arrived alone. Outside a pulse a message is
--- sent at once.
+-- Messages queued during a pulse leave as one {"type":"batch"} call.
 local outbox, outboxCount = {}, 0
 
 function HumalikePulse.Send(json)
@@ -128,8 +106,6 @@ local function flush()
     for index = 1, count do outbox[index] = nil end
 end
 
--- A failing job is reported with its traceback, at most every ten seconds,
--- and the jobs behind it still run.
 local traceback = debug and debug.traceback or function(message) return message end
 
 local function report(job, now, failure)
@@ -138,11 +114,7 @@ local function report(job, now, failure)
     print(('^1[humalike] periodic job %s failed: %s^7'):format(job.name, tostring(failure)))
 end
 
--- A profiler recording shows this thread as one row. With
--- `setr humalike_profile_jobs 1` each job runs inside a profiler scope of its
--- own name while a recording runs (the scope natives are the ones the
--- scheduler wraps a thread in; they cost two natives per job run, so such a
--- recording reads a little above what a player pays). Asked once a second.
+-- With humalike_profile_jobs 1 a profiler recording shows each job under its own name.
 local function profilerRecording(now)
     if now - profilingAt >= PROFILER_CHECK_MS or now < profilingAt then
         profilingAt = now
@@ -154,8 +126,6 @@ local function profilerRecording(now)
     return profiling
 end
 
--- One pulse: every due job runs, then the queued NUI messages are sent.
--- Returns the milliseconds until the next job is due.
 function HumalikePulse.Run(now)
     serial = serial + 1
     inPulse = true
@@ -189,9 +159,6 @@ function HumalikePulse.Run(now)
     inPulse = false
     local shift = anchorBy and anchorBy + EARLY_MS or 0
     if shift > 0 then
-        -- The grid restarts here: a job that ran is next due a whole interval
-        -- from now (even if that wake-up comes a millisecond early), the others
-        -- keep their place on the grid.
         epoch = epoch + shift
         soonest = now + MAX_SLEEP_MS
         for index = 1, #jobs do
@@ -213,10 +180,7 @@ function HumalikePulse.Run(now)
     return math.max(0, soonest - now)
 end
 
--- Work the game needs on every frame (a density multiplier lasts one frame; a
--- shot is visible for one). `run()` returns true while it still needs the
--- next frame. The frame thread lives only while some job does; Frames() starts
--- it again.
+-- Per-frame jobs: run() returns true while it needs the next frame.
 local frameJobs, frameThread = {}, false
 
 function HumalikePulse.EveryFrame(name, run)
@@ -251,7 +215,6 @@ CreateThread(function()
     while true do
         local ok, sleep = pcall(HumalikePulse.Run, GetGameTimer())
         if not ok then
-            -- Nothing in Run is expected to raise; if it does, the pulse survives it.
             inPulse = false
             print(('^1[humalike] pulse failed: %s^7'):format(tostring(sleep)))
             sleep = 100

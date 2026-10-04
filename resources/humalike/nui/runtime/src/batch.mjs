@@ -1,9 +1,4 @@
-/**
- * The game sends the messages of one pulse as `{ type: "batch", messages: [...] }`:
- * one cross-process call instead of one per message.
- * @param {unknown} data
- * @returns {unknown[] | null} the parts, or null when `data` is not a batch
- */
+/** @param {unknown} data @returns {unknown[] | null} the parts of a batch message, else null */
 export function batchParts(data) {
   if (!data || typeof data !== "object") return null;
   const message = /** @type {{ type?: unknown, messages?: unknown }} */ (data);
@@ -11,11 +6,7 @@ export function batchParts(data) {
   return message.messages;
 }
 
-/**
- * Each part of a batch reaches the target's message listeners as if the game
- * had sent it on its own, in the order the game queued them.
- * @param {EventTarget} target
- */
+/** Hands each part of a batch to the target's message listeners. @param {EventTarget} target */
 export function installBatchDispatcher(target) {
   target.addEventListener("message", (event) => {
     const parts = batchParts(/** @type {MessageEvent<unknown>} */ (event).data);

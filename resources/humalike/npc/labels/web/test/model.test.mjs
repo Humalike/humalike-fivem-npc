@@ -37,11 +37,8 @@ test("a moving label is aimed one glide ahead and comes back to the head when it
   assert.equal(ahead, true);
   assert.equal(x, 120, "ten pixels in fifty milliseconds: aimed ten pixels further");
   assert.equal(y, 200);
-  // The camera stops: no further frame. The label is put back on what the game
-  // last reported, which the node still holds.
   assert.deepEqual([node.x, node.y], [110, 200]);
   assert.equal(settleDelayMs(50), 75, "after one and a half glides without a frame");
-  // The once-a-second frame repeats the position: nothing to aim at.
   assert.deepEqual(aimLabel(node, 110, 200, 2050, 50, 3000), [110, 200, false]);
 });
 

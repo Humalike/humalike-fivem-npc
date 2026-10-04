@@ -17,7 +17,7 @@ HumalikeDefineConfig(function()
 end)
 
 Config.PlayerSessionSyncIntervalMs = 15000
-Config.AppearancePollIntervalMs = 3000 -- a clothing change reaches the server within this
+Config.AppearancePollIntervalMs = 3000
 Config.AppearanceUpsertDebounceMs = 750
 Config.AppearancePropIds = { 0, 1, 2, 6, 7 }
 Config.AppearanceMaxDrawableId = 65535
@@ -29,7 +29,7 @@ Config.AmbientControl = {
     ReleaseDistance = 30.0,
     RequestCooldownMs = 750,
     StandTaskDurationMs = 2000,
-    StandTaskRefreshMs = 1000, -- the stand task lasts 2 s; it is renewed this often
+    StandTaskRefreshMs = 1000,
     FaceToleranceDeg = 25.0,
 }
 Config.Population = {
@@ -45,10 +45,10 @@ Config.Population = {
     RetryBackoffMs = 500,
     RetryBackoffCapMs = 30000,
     ReleaseMaxAttempts = 8,
-    WanderTickMs = 2000, -- the bodies this client drives are looked at this often
+    WanderTickMs = 2000,
     WanderIdleMs = 5000,
     ScenarioIdleMs = 10000,
-    SweepTickMs = 10000, -- the ped pool is walked this often: bodies a bag missed, GTA leftovers
+    SweepTickMs = 10000,
     SweepMinPlayerDistance = 15.0,
     SweepMaxPerTick = 5,
     DriverSpawnOffset = 2.5, -- metres beside the car a driver is created before being seated
@@ -121,8 +121,7 @@ function HumalikeJobList(value)
     return names
 end
 HumalikeDefineConfig(function()
-    -- Fraction of the walk animation rate for the bodies this client drives;
-    -- 1.0 is the game's own. Anything else is a native per body per frame.
+    -- 1.0 is the game's own rate; anything else costs a native per body per frame.
     local rate = tonumber(HumalikeConvar('humalike_population_move_rate', '1.0')) or 1.0
     Config.Population.MoveRate = math.max(0.5, math.min(1.15, rate))
 end)

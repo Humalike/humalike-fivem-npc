@@ -1,6 +1,3 @@
--- The tracker samples each registered NPC on a cadence set by its distance,
--- caches what the edge frame, labels, targets and shove detector read, and
--- bumps a version only when something they would report changed.
 local natives = {}
 local function count(name) natives[name] = (natives[name] or 0) + 1 end
 local function total()
@@ -18,7 +15,6 @@ local now = 0
 
 function vector3(x, y, z) return { x = x, y = y, z = z } end
 function DoesEntityExist(entity) count('DoesEntityExist') return exists[entity] == true end
--- The game answers the origin for an entity that is gone.
 function GetEntityCoords(entity)
     count('GetEntityCoords')
     return exists[entity] and positions[entity] or { x = 0.0, y = 0.0, z = 0.0 }
@@ -77,8 +73,6 @@ assert(HumalikeWorldTrack.nearest2 == 25)
 assert(HumalikeWorldTrack.AnyWithin(6) and not HumalikeWorldTrack.AnyWithin(4))
 local firstVersionA = a.version
 
--- Cadence, counted in 100 ms passes: near every second pass (150 ms rounds up),
--- mid every fourth, far every tenth.
 natives = {}
 now = 1100
 assert(HumalikeWorldTrack.Sample(now, 0, 0, 0) == 0, 'nothing is due 100 ms later')
@@ -103,7 +97,6 @@ assert(natives.GetEntityHeading == 2, 'heading is refreshed once a second within
 assert(natives.NetworkGetNetworkIdFromEntity == 3, 'identity is re-checked once a second')
 assert(natives.GetStateBagValue == nil, 'the own-vehicle bag is never read again')
 
--- Movement bumps the version and speeds the cadence up.
 positions[20] = { x = 41.0, y = 0, z = 0 }
 now = 2400
 local versionB = b.version
@@ -116,13 +109,11 @@ versionB = b.version
 assert(HumalikeWorldTrack.Sample(now, 0, 0, 0) >= 1, 'and a late frame does not make it wait a third pass')
 assert(b.version == versionB, 'two centimetres is no move')
 
--- The player moving refreshes distances without sampling.
 natives = {}
 now = 2700
 HumalikeWorldTrack.Sample(now, 4, 0, 0)
 assert(a.dist2 == 1 and natives.GetEntityCoords == nil, 'distances follow the player for free')
 
--- A vehicle: seat state lands in the cache and bumps the version once.
 pedVehicles[30] = 500
 now = 3100
 local versionC = c.version
@@ -138,7 +129,6 @@ now = 5200
 HumalikeWorldTrack.Sample(now, 0, 0, 0)
 assert(c.vehicleState == nil and c.version == versionC + 1, 'leaving the car is a change')
 
--- Identity: a handle whose network id changed is no longer this NPC.
 netIds[10] = 999
 now = 6300
 HumalikeWorldTrack.Sample(now, 0, 0, 0)
@@ -150,7 +140,6 @@ HumalikeWorldTrack.Sample(now, 0, 0, 0)
 assert(b.identityOk == false, 'an ambient lease that moved to another ped is caught')
 AmbientPeds['npc-b'] = 20
 
--- Registry changes: a removed NPC loses its track, a new one gets one.
 HumalikeWorldRegistry.entries['npc-a'] = nil
 HumalikeWorldRegistry.entries['npc-d'] = { npcId = 'npc-d', entity = 40, entityId = 140, networkId = 240,
     modelHash = 4, runtimeToken = 'd', kind = 'persistent', activity = 'idle', generation = 1 }
@@ -161,7 +150,6 @@ HumalikeWorldTrack.Sample(now, 0, 0, 0)
 assert(HumalikeWorldTrack.Get('npc-a') == nil and HumalikeWorldTrack.Get('npc-d').exists
     and HumalikeWorldTrack.count == 3 and HumalikeWorldTrack.revision == 2)
 
--- A deleted ped: the track stays (the registry owns the entry) but is not live.
 exists[40] = false
 now = 7700
 natives = {}
@@ -169,14 +157,11 @@ HumalikeWorldTrack.Sample(now, 0, 0, 0)
 local d = HumalikeWorldTrack.Get('npc-d')
 assert(d.exists == false and d.dist2 == math.huge)
 assert(natives.DoesEntityExist == 1, 'the origin answer is checked against the entity')
--- A ped that really stands on the origin is still a ped.
 exists[40], positions[40] = true, { x = 0.0, y = 0.0, z = 0.0 }
 now = 8800
 HumalikeWorldTrack.Sample(now, 3, 0, 0)
 assert(d.exists == true and d.dist2 == 9)
 
--- The moment an NPC comes within the edge's "walked up" range is kept: in at
--- ten metres, out past twelve, so hovering at the line is one arrival.
 local c2 = HumalikeWorldTrack.Get('npc-c')
 assert(c2.inRange == false and d.inRange == true and HumalikeWorldTrack.enteredAt == 8800)
 now = 8900
@@ -192,8 +177,6 @@ now = 9200
 HumalikeWorldTrack.Sample(now, 9, 0, 0)
 assert(d.inRange == true and HumalikeWorldTrack.enteredAt == 9200, 'a new arrival is stamped')
 
--- Past the edge's report radius nobody reads a position: a walker there keeps
--- the far cadence; inside it a walker is sampled five times a second.
 positions[30] = { x = 121.5, y = 0, z = 0 }
 now = 20000
 HumalikeWorldTrack.Sample(now, 9, 0, 0)
@@ -207,8 +190,6 @@ HumalikeWorldTrack.Sample(now, -60, 0, 0)
 assert(c2.speed > 0.5 and c2.dist2 > 160 * 160 and c2.nextPass == 220,
     'the same walker beyond it waits for its pass of the next second')
 
--- The slow cadences are spread over the passes of their interval by network
--- id, so far NPCs are not all sampled in the same frame.
 for index = 1, 10 do
     local npcId = ('npc-far-%d'):format(index)
     HumalikeWorldRegistry.entries[npcId] = { npcId = npcId, entity = 600 + index, entityId = 700 + index,
@@ -241,7 +222,6 @@ assert(far1.sampledAt - sampledAt >= 984 and far1.sampledAt - sampledAt <= 1016,
 assert(far1.identityPass == far1.nextPass - 10 and natives.NetworkGetNetworkIdFromEntity >= 10,
     'with identity checked on every one of those samples, whichever way the frames were late')
 
--- The pulse job reads the player once, samples, and numbers its passes on the pulse's clock.
 local jobs = {}
 HumalikePulse.Every = function(name, interval, run, order) jobs[name] = { interval = interval, run = run, order = order } end
 HumalikePulse.Beat = function(period) assert(period == 100) return 400 end
@@ -252,8 +232,6 @@ jobs.tracker.run(40016, 40000)
 assert(HumalikeWorldTrack.playerX == 9.5, 'the pass runs from the player position of this pulse')
 assert(far1.nextPass > 400 and far1.nextPass <= 410, 'and the tracks are scheduled in passes of the pulse')
 
--- Speed is the way made between two samples. A ped that shifted a few
--- centimetres once (less than a position counts as changed) stands still.
 positions[61], exists[61], netIds[61] = { x = 6.0, y = 0.0, z = 0.0 }, true, 261
 HumalikeWorldRegistry.entries = { ['npc-still'] = { npcId = 'npc-still', entity = 61, entityId = 161, networkId = 261,
     modelHash = 1, runtimeToken = 's', kind = 'persistent', activity = 'idle', generation = 1 } }
@@ -269,8 +247,6 @@ end
 assert(still.x == 6.0, 'a shift below the epsilon is not a new position')
 assert(still.speed == 0.0, ('a ped that stands still has no speed (%.3f)'):format(still.speed))
 
--- A track replaced for another ped goes on counting versions, so a reader that
--- remembers the version it last saw takes the new ped as changed.
 local seenVersion = still.version
 positions[62], exists[62], netIds[62] = { x = 6.04, y = 0.0, z = 0.0 }, true, 262
 HumalikeWorldRegistry.entries['npc-still'] = { npcId = 'npc-still', entity = 62, entityId = 162, networkId = 262,
@@ -282,7 +258,6 @@ local rebound = HumalikeWorldTrack.Get('npc-still')
 assert(rebound ~= still and rebound.ped == 62 and rebound.version > seenVersion,
     'the new ped of an npc never carries a version its old ped already had')
 
--- A registration without a network id is tracked under the ped's own.
 positions[63], exists[63], netIds[63] = { x = 7.0, y = 0.0, z = 0.0 }, true, 263
 HumalikeWorldRegistry.entries['npc-bare'] = { npcId = 'npc-bare', entity = 63, entityId = 163,
     modelHash = 1, runtimeToken = 'n', kind = 'persistent', activity = 'idle', generation = 1 }
@@ -292,8 +267,6 @@ HumalikeWorldTrack.Sample(now, 0, 0, 0, 514)
 local bare = HumalikeWorldTrack.Get('npc-bare')
 assert(bare.networkId == 263 and bare.identityOk, 'the ped\'s network id stands in for a missing one')
 
--- The own-vehicle bag of a track that was sampled before the bag arrived: the
--- change handler hands the value over (it runs before the bag holds it).
 assert(bare.ownNet == false and bare.ownVehicle == nil, 'no car while the bag is not there')
 bagHandlers.humalike_vehicle_net('entity:63', 'humalike_vehicle_net', 900)
 positions[500] = { x = 8.0, y = 0.0, z = 0.0 }
