@@ -83,4 +83,54 @@ handlers['humalike:npc:ambientPedAssigned'](
     'ambient-2', 20, AmbientNpcEntries['ambient-2'])
 assert(registerCalls == 1 and registered['ambient-2'])
 
+-- The periodic pass pauses every few NPCs. While it is parked a lease can go
+-- and others can bind: the pass must survive that (a table is never walked
+-- across the pause) and must not undo a registration made meanwhile.
+local function lease(index)
+    local npcId, ped = ('crowd-%02d'):format(index), 100 + index
+    entities[ped] = true
+    AmbientNpcEntries[npcId] = { entity_id = 1000 + index, network_id = ped + 200, lease_token = 'lease-' .. index }
+    AmbientPeds[npcId], AmbientPedNpcIds[ped] = ped, npcId
+    return npcId, ped
+end
+local function drop(npcId)
+    local ped = AmbientPeds[npcId]
+    AmbientNpcEntries[npcId], AmbientPeds[npcId], AmbientPedNpcIds[ped] = nil, nil, nil
+    handlers['humalike:npc:ambientPedRemoved'](npcId)
+end
+for index = 1, 20 do lease(index) end
+handlers['humalike:world:registrationRequested']()
+for index = 1, 20 do assert(registered[('crowd-%02d'):format(index)], 'the crowd is registered') end
+
+for round = 1, 40 do
+    local parked = 0
+    function Wait(ms)
+        if ms ~= 0 then error('stop') end
+        parked = parked + 1
+        coroutine.yield()
+    end
+    local pass = coroutine.create(threads[1])
+    assert(coroutine.resume(pass))
+    assert(parked == 1, 'the pass pauses after a slice of the crowd')
+    -- While parked: one lease goes, a batch binds (enough to make the tables grow).
+    drop(('crowd-%02d'):format((round % 20) + 1))
+    local bound = {}
+    for index = 1, 12 do
+        local npcId, ped = lease(1000 + round * 20 + index)
+        handlers['humalike:npc:ambientPedAssigned'](npcId, ped, AmbientNpcEntries[npcId])
+        bound[#bound + 1] = npcId
+    end
+    while coroutine.status(pass) == 'suspended' do
+        local ok, failure = coroutine.resume(pass)
+        assert(ok or tostring(failure):find('stop', 1, true), 'the pass died: ' .. tostring(failure))
+    end
+    for _, npcId in ipairs(bound) do
+        assert(registered[npcId], 'a lease bound while the pass was parked stays registered')
+    end
+    for _, npcId in ipairs(bound) do drop(npcId) end
+    lease((round % 20) + 1)
+    handlers['humalike:world:registrationRequested']()
+end
+function Wait() error('stop') end
+
 print('world: ok')

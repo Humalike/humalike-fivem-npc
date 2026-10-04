@@ -40,6 +40,11 @@ local function registrationFor(npcId, entry, ped, token, kind, previous)
 end
 
 -- The periodic pass yields every few NPCs so a crowd never lands on one frame.
+-- It walks the ids it took at the start and decides about each one when its
+-- turn comes, from the roster and the leases as they are then: both change
+-- while the pass is parked, a table must not be traversed across a change,
+-- and a decision taken before the pause must not undo a registration made
+-- during it.
 local SLICE = 8
 
 local function previousOf(npcId)
@@ -47,47 +52,50 @@ local function previousOf(npcId)
     return current and current.value or nil
 end
 
-local function desiredRegistrations(sliced)
-    local desired = {}
-    local visited = 0
-    local function step()
-        visited = visited + 1
-        if sliced and visited % SLICE == 0 then Wait(0) end
+-- What this npc should be registered as right now: its lease when it has a
+-- valid one, else its roster entry; nil when neither holds a ped.
+local function desiredFor(npcId)
+    local lease = AmbientNpcEntries and AmbientNpcEntries[npcId] or nil
+    if lease then
+        local value, valueSignature = registrationFor(npcId, lease,
+            AmbientPeds and AmbientPeds[npcId] or nil, lease.lease_token, 'ambient', previousOf(npcId))
+        if value then return value, valueSignature end
     end
-    for npcId, entry in pairs(KnownNpcs or {}) do
-        local ped = ResolveNpcPed(npcId)
-        local token = ped and DoesEntityExist(ped)
-            and (Entity(ped).state.humalike_runtime_token or entry.runtime_token) or nil
-        local value, valueSignature = registrationFor(npcId, entry, ped, token, 'persistent', previousOf(npcId))
-        if value then desired[npcId] = { value = value, signature = valueSignature } end
-        step()
-    end
-    for npcId, entry in pairs(AmbientNpcEntries or {}) do
-        local ped = AmbientPeds and AmbientPeds[npcId] or nil
-        local value, valueSignature = registrationFor(
-            npcId, entry, ped, entry.lease_token, 'ambient', previousOf(npcId))
-        if value then desired[npcId] = { value = value, signature = valueSignature } end
-        step()
-    end
-    return desired
+    local entry = KnownNpcs and KnownNpcs[npcId] or nil
+    if not entry then return nil end
+    local ped = ResolveNpcPed(npcId)
+    local token = ped and DoesEntityExist(ped)
+        and (Entity(ped).state.humalike_runtime_token or entry.runtime_token) or nil
+    return registrationFor(npcId, entry, ped, token, 'persistent', previousOf(npcId))
 end
 
 local function reconcile(force, sliced)
-    local desired = desiredRegistrations(sliced)
-    for npcId, current in pairs(registrations) do
-        if not desired[npcId] then
-            exports['humalike']:UnregisterNpc(npcId)
-            registrations[npcId] = nil
-        elseif force or desired[npcId].signature ~= current.signature then
-            local ok = exports['humalike']:RegisterNpc(desired[npcId].value)
-            if ok then registrations[npcId] = desired[npcId] end
+    local ids, listed = {}, {}
+    local function list(source)
+        for npcId in pairs(source or {}) do
+            if not listed[npcId] then
+                listed[npcId] = true
+                ids[#ids + 1] = npcId
+            end
         end
     end
-    for npcId, candidate in pairs(desired) do
-        if not registrations[npcId] then
-            local ok = exports['humalike']:RegisterNpc(candidate.value)
-            if ok then registrations[npcId] = candidate end
+    list(registrations)
+    list(KnownNpcs)
+    list(AmbientNpcEntries)
+    for index = 1, #ids do
+        local npcId = ids[index]
+        local value, valueSignature = desiredFor(npcId)
+        local current = registrations[npcId]
+        if not value then
+            if current then
+                exports['humalike']:UnregisterNpc(npcId)
+                registrations[npcId] = nil
+            end
+        elseif not current or force or current.signature ~= valueSignature then
+            local ok = exports['humalike']:RegisterNpc(value)
+            if ok then registrations[npcId] = { value = value, signature = valueSignature } end
         end
+        if sliced and index % SLICE == 0 then Wait(0) end
     end
 end
 
