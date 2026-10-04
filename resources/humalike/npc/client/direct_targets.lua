@@ -77,6 +77,30 @@ local function clearLineOfSight(playerPed, track, now)
     return losValue
 end
 
+-- The nearest living NPC within gaze distance and inside the gaze cone. Asked
+-- only when the nearest one turned out to be dead: a body on the ground does
+-- not hide the NPC standing behind it.
+local function livingGaze(playerCoords, forward, camera, now)
+    local best, bestDistance2 = nil, (GAZE_DISTANCE + 1.0) * (GAZE_DISTANCE + 1.0)
+    for npcId, track in pairs(HumalikeWorldTrack.tracks) do
+        local voiceUnavailable = HumalikeNpcRuntimeControl
+            and HumalikeNpcRuntimeControl.IsVoiceUnavailable(npcId)
+        if not voiceUnavailable and track.exists then
+            local px, py, pz = track.x - playerCoords.x, track.y - playerCoords.y, track.z - playerCoords.z
+            local playerDistance2 = px * px + py * py + pz * pz
+            if playerDistance2 > 0.01 * 0.01 and playerDistance2 <= GAZE_DISTANCE * GAZE_DISTANCE
+                and playerDistance2 < bestDistance2 then
+                local dx, dy, dz = track.x - camera.x, track.y - camera.y, track.z - camera.z
+                local cameraDistance = math.sqrt(dx * dx + dy * dy + dz * dz)
+                local dot = cameraDistance > 0.01
+                    and (dx * forward.x + dy * forward.y + dz * forward.z) / cameraDistance or -1.0
+                if dot >= GAZE_MIN_DOT and alive(track, now) then best, bestDistance2 = track, playerDistance2 end
+            end
+        end
+    end
+    return best
+end
+
 -- Positions come from the shared tracker; the game is asked only about the
 -- player, the camera and the few NPCs that qualify. With nobody to target the
 -- answer is the one shared empty list.
@@ -126,11 +150,12 @@ local function calculate(listener, now)
     for npcId in pairs(aliveAt) do
         if not HumalikeWorldTrack.tracks[npcId] then aliveAt[npcId], aliveValue[npcId] = nil, nil end
     end
+    if gaze and not alive(gaze, now) then gaze = livingGaze(playerCoords, forward, camera, now) end
     if not followers and not vehiclePeers and not gaze then return EMPTY, nearby end
     local result, seen = {}, {}
     if followers then addGroup(result, seen, followers) end
     if vehiclePeers then addGroup(result, seen, vehiclePeers) end
-    if gaze and not seen[gaze.npcId] and #result < MAX_TARGETS and alive(gaze, now)
+    if gaze and not seen[gaze.npcId] and #result < MAX_TARGETS
         and clearLineOfSight(playerPed, gaze, now) then
         result[#result + 1] = gaze.npcId
     end
@@ -155,7 +180,16 @@ function HumalikeNpcDirectTargets.Get()
     return copy(active)
 end
 
+-- Push-to-talk freezes the targets for the utterance. They are worked out
+-- afresh at the press, from the camera as it points then: the periodic
+-- refresh may be a few hundred milliseconds old, and a player who turned to
+-- somebody else and pressed the key must not be heard by the one before.
 function HumalikeNpcDirectTargets.Lock()
+    if not locked and HumalikeWorldCollector and HumalikeWorldCollector.RefreshListener then
+        local now = GetGameTimer()
+        local listener = HumalikeWorldCollector.RefreshListener(now)
+        if listener then HumalikeNpcDirectTargets.Refresh(listener, now) end
+    end
     locked = true
 end
 

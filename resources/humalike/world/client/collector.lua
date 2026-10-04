@@ -165,6 +165,15 @@ function HumalikeWorldCollector.SampleListener(now, ped, position, beat)
     return listener
 end
 
+-- The ear as it is right now, outside its own cadence: a push-to-talk press
+-- takes the gaze from it.
+function HumalikeWorldCollector.RefreshListener(now)
+    local ped = HumalikePulse.Ped()
+    if not ped or ped <= 0 then return nil end
+    return HumalikeWorldCollector.SampleListener(now, ped, HumalikePulse.Coords(ped),
+        HumalikePulse.Beat(LISTENER_HEARTBEAT_MS))
+end
+
 -- One poll of the player's motion. A sample goes out once per movingIntervalMs
 -- while the player moves or a still player's position changed, and once per
 -- idleIntervalMs otherwise. `step` and `beat` number those two intervals (the

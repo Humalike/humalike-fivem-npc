@@ -119,4 +119,37 @@ timer = timer + 100
 HumalikeNpcDirectTargets.Refresh(forward)
 assert(natives.GetGameplayCamCoord == 1 and natives.HasEntityClearLosToEntity == nil,
     'with the gaze target dead no line of sight is traced; the camera is read for the candidate')
+
+-- A dead NPC in the line of sight does not hide a living one behind it.
+HumalikeWorldTrack.tracks.far.x, HumalikeWorldTrack.tracks.far.y = 3.5, 0
+timer = timer + 100
+HumalikeNpcDirectTargets.Refresh(forward)
+latest = HumalikeNpcDirectTargets.Get()
+assert(#latest == 1 and latest[1] == 'far', 'the living NPC behind a dead one is the gaze target')
+
+-- Push-to-talk works the targets out afresh at the press. The player turned
+-- from one NPC to another since the last refresh: the one looked at now hears.
+function IsEntityDead() return false end
+timer = timer + 600
+HumalikeWorldTrack.tracks.far.x, HumalikeWorldTrack.tracks.far.y = 0, 2
+HumalikeNpcDirectTargets.Refresh(forward)
+latest = HumalikeNpcDirectTargets.Get()
+assert(#latest == 1 and latest[1] == 'gaze', 'looking along x the NPC ahead is the target')
+local turned = { forward = { x = 0.4472, y = 0.8944, z = 0 } }
+local asked = 0
+HumalikeWorldCollector.RefreshListener = function(now)
+    asked = asked + 1
+    assert(now == timer, 'the ear is read at the time of the press')
+    return turned
+end
+HumalikeNpcDirectTargets.Lock()
+latest = HumalikeNpcDirectTargets.Get()
+assert(asked == 1 and #latest == 1 and latest[1] == 'far', 'the press takes the gaze as it is now')
+HumalikeNpcDirectTargets.Lock()
+assert(asked == 1, 'a held key does not ask again')
+timer = timer + 100
+HumalikeNpcDirectTargets.Refresh(forward)
+assert(HumalikeNpcDirectTargets.Get()[1] == 'far', 'and the target stays frozen for the utterance')
+HumalikeNpcDirectTargets.Unlock()
+assert(HumalikeNpcDirectTargets.Get()[1] == 'gaze', 'the release goes back to what the refresh sees')
 print('direct_targets: ok')

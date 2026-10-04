@@ -148,4 +148,15 @@ HumalikePulse.Run(now)
 now = 30700
 HumalikePulse.Run(now)
 assert(samples() == base + 6, 'and back to the idle cadence')
+
+-- The ear on demand (a push-to-talk press): read from the camera as it is now,
+-- on the pulse's beat, so nothing is announced twice within a heartbeat.
+local announcedBefore = #announced
+yaw = 90.0
+local fresh = HumalikeWorldCollector.RefreshListener(123456)
+assert(fresh == HumalikeWorldCollector.listener and math.abs(fresh.forward.x + 1.0) < 1e-6,
+    'the listener is sampled at once from the current camera')
+assert(#announced == announcedBefore + 1, 'a turn is announced')
+HumalikeWorldCollector.RefreshListener(123460)
+assert(#announced == announcedBefore + 1, 'the same ear is not announced again')
 print('client_collector: ok')
