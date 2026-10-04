@@ -52,3 +52,41 @@ export function isLabelTuple(value) {
     && (value[3] === 0 || value[3] === 1)
     && (value[4] === undefined || typeof value[4] === "string");
 }
+
+// A label glides to each new position over one frame interval, so it would
+// trail the head by that much. The glide is aimed one interval ahead along
+// the label's own motion instead; the step is capped so a stop never overshoots far.
+const PREDICT_FACTOR = 1.0;
+const MAX_PREDICT_PX = 40;
+
+/**
+ * Where a label is drawn for a newly reported position. `node` holds the
+ * position the game last reported (`x`, `y`) and when (`at`); both are updated.
+ * @param {{ x: number, y: number, at: number }} node
+ * @param {number} x @param {number} y reported position in pixels
+ * @param {number} now @param {number} transitionMs @param {number} staleMs
+ * @returns {[number, number, boolean]} the position to draw at, and whether it is ahead of the reported one
+ */
+export function aimLabel(node, x, y, now, transitionMs, staleMs) {
+  let dx = 0;
+  let dy = 0;
+  const dt = now - node.at;
+  if (node.at > 0 && dt > 0 && dt < staleMs) {
+    dx = (x - node.x) / dt * transitionMs * PREDICT_FACTOR;
+    dy = (y - node.y) / dt * transitionMs * PREDICT_FACTOR;
+    const step = Math.hypot(dx, dy);
+    if (step > MAX_PREDICT_PX) { dx *= MAX_PREDICT_PX / step; dy *= MAX_PREDICT_PX / step; }
+  }
+  node.x = x; node.y = y; node.at = now;
+  return [x + dx, y + dy, dx !== 0 || dy !== 0];
+}
+
+/**
+ * A label aimed ahead waits this long for the next frame. When none comes (the
+ * camera and the NPC stopped, so the game has nothing new to say) it is put
+ * back on the position the game last reported.
+ * @param {number} transitionMs
+ */
+export function settleDelayMs(transitionMs) {
+  return Math.round(transitionMs * 1.5);
+}

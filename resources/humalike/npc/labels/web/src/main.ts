@@ -1,5 +1,5 @@
 import logoUrl from "./humalike.svg?url";
-import { isLabelTuple, normalizeLanguage, presentationScale } from "./model.mjs";
+import { aimLabel, isLabelTuple, normalizeLanguage, presentationScale, settleDelayMs } from "./model.mjs";
 import "./style.css";
 
 // A label is one small DOM element moved with a transform: the compositor
@@ -23,11 +23,6 @@ interface LabelNode {
 const STALE_MS = 3000;
 const MIN_TRANSITION_MS = 16;
 const MAX_TRANSITION_MS = 120;
-// A label glides to each new position over one frame interval, so it would
-// trail the head by that much. The glide is aimed one interval ahead along
-// the label's own motion instead; the step is capped so a stop never overshoots far.
-const PREDICT_FACTOR = 1.0;
-const MAX_PREDICT_PX = 40;
 
 const container = document.createElement("div");
 container.id = "humalike-labels";
@@ -38,6 +33,7 @@ const nodes = new Map<string, LabelNode>();
 let generation = 0;
 let lastFrameAt = 0;
 let staleTimer = 0;
+let settleTimer = 0;
 let transitionMs = 50;
 
 window.addEventListener("message", ({ data }: MessageEvent<unknown>) => {
@@ -68,26 +64,15 @@ function applyFrame(labels: LabelTuple[], configuredScale: number): void {
   const height = Math.max(1, window.innerHeight);
   container.style.setProperty("--s", String(presentationScale(height, configuredScale)));
   container.style.setProperty("--t", `${Math.round(transitionMs)}ms`);
+  let ahead = false;
   labels.forEach((label, index) => {
     const [x, y, rawLanguage, muted, id] = label;
     const key = typeof id === "string" && id.length > 0 ? id : `#${index}`;
     const node = nodes.get(key) ?? createNode(key);
     node.seen = generation;
-    let px = x * width;
-    let py = y * height;
-    const dt = now - node.at;
-    if (node.at > 0 && dt > 0 && dt < STALE_MS) {
-      // Velocity from the last two frames, projected one glide ahead.
-      let dx = (px - node.x) / dt * transitionMs * PREDICT_FACTOR;
-      let dy = (py - node.y) / dt * transitionMs * PREDICT_FACTOR;
-      const step = Math.hypot(dx, dy);
-      if (step > MAX_PREDICT_PX) { dx *= MAX_PREDICT_PX / step; dy *= MAX_PREDICT_PX / step; }
-      node.x = px; node.y = py;
-      px += dx; py += dy;
-    } else {
-      node.x = px; node.y = py;
-    }
-    node.at = now;
+    // Velocity from the last two frames, projected one glide ahead.
+    const [px, py, aimed] = aimLabel(node, x * width, y * height, now, transitionMs, STALE_MS);
+    ahead ||= aimed;
     node.root.style.transform = `translate3d(${px.toFixed(1)}px, ${py.toFixed(1)}px, 0)`;
     const language = rawLanguage === false ? null : normalizeLanguage(rawLanguage);
     if (language !== node.language) setLanguage(node, language);
@@ -97,6 +82,24 @@ function applyFrame(labels: LabelTuple[], configuredScale: number): void {
     if (node.seen !== generation) { node.root.remove(); nodes.delete(key); }
   }
   armStaleCheck();
+  armSettle(ahead);
+}
+
+// Labels aimed ahead of their reported position expect the next frame. The
+// game sends none once the camera and the NPCs stand still, so without this
+// they would sit past the head until the once-a-second frame.
+function armSettle(ahead: boolean): void {
+  window.clearTimeout(settleTimer);
+  settleTimer = 0;
+  if (!ahead) return;
+  const armedFor = generation;
+  settleTimer = window.setTimeout(() => {
+    settleTimer = 0;
+    if (generation !== armedFor) return;
+    for (const node of nodes.values()) {
+      node.root.style.transform = `translate3d(${node.x.toFixed(1)}px, ${node.y.toFixed(1)}px, 0)`;
+    }
+  }, settleDelayMs(transitionMs));
 }
 
 function createNode(key: string): LabelNode {
@@ -156,7 +159,9 @@ function clear(): void {
   for (const node of nodes.values()) node.root.remove();
   nodes.clear();
   window.clearTimeout(staleTimer);
+  window.clearTimeout(settleTimer);
   staleTimer = 0;
+  settleTimer = 0;
   lastFrameAt = 0;
 }
 
