@@ -1,47 +1,66 @@
 HumalikeWorldVehicle = {}
 
-local function kindOf(vehicle)
-    return IsThisModelABike(GetEntityModel(vehicle)) and 'bike' or 'car'
-end
+-- Read once per handle. "Not networked" is never kept: a vehicle can be networked later.
+local kinds = {}
+local networkIds = {}
+local SEAT_RECHECK_MS = 1000
+local seats = {} -- ped -> { vehicle, seat, at }
+local occupied = {} -- ped -> vehicle
 
-local function networkIdOf(vehicle)
-    if not vehicle or vehicle <= 0 or not DoesEntityExist(vehicle)
-        or not NetworkGetEntityIsNetworked(vehicle) then return nil end
-    local networkId = tonumber(NetworkGetNetworkIdFromEntity(vehicle))
-    if not networkId or networkId <= 0 then return nil end
-    return networkId
-end
-
-function HumalikeWorldVehicle.StreamState(ped)
-    if not ped or ped <= 0 or not DoesEntityExist(ped) then return nil end
-    local vehicle = GetVehiclePedIsIn(ped, false)
-    local networkId = networkIdOf(vehicle)
-    if not networkId then return nil end
-    for seat = -1, GetVehicleMaxNumberOfPassengers(vehicle) - 1 do
-        if GetPedInVehicleSeat(vehicle, seat) == ped then
-            return { network_id = networkId, seat = seat, kind = kindOf(vehicle) }
+function HumalikeWorldVehicle.Info(vehicle)
+    local networkId = networkIds[vehicle]
+    if networkId == nil then
+        if NetworkGetEntityIsNetworked(vehicle) then
+            local value = tonumber(NetworkGetNetworkIdFromEntity(vehicle))
+            if value and value > 0 then
+                networkId = value
+                networkIds[vehicle] = value
+            end
         end
+        if kinds[vehicle] == nil then
+            kinds[vehicle] = IsThisModelABike(GetEntityModel(vehicle)) and 'bike' or 'car'
+        end
+    end
+    return networkId, kinds[vehicle]
+end
+
+function HumalikeWorldVehicle.Forget(vehicle)
+    networkIds[vehicle] = nil
+    kinds[vehicle] = nil
+end
+
+function HumalikeWorldVehicle.SeatOf(vehicle, ped)
+    for seat = -1, GetVehicleMaxNumberOfPassengers(vehicle) - 1 do
+        if GetPedInVehicleSeat(vehicle, seat) == ped then return seat end
     end
     return nil
 end
 
--- The vehicle a population driver was spawned with, wherever the body stands
--- now: the edge tells the NPC where its own car is, so "get back in your car"
--- means this one and never the player's. Nil once the car is gone.
-function HumalikeWorldVehicle.OwnState(ped)
-    if not ped or ped <= 0 or not DoesEntityExist(ped) then return nil end
-    local networkId = Entity(ped).state.humalike_vehicle_net
-    if type(networkId) ~= 'number' or networkId <= 0
-        or not NetworkDoesEntityExistWithNetworkId(networkId) then return nil end
-    local vehicle = NetworkGetEntityFromNetworkId(networkId)
-    if not vehicle or vehicle <= 0 or not DoesEntityExist(vehicle) then return nil end
-    local distance = #(GetEntityCoords(vehicle) - GetEntityCoords(ped))
-    return {
-        network_id = networkId,
-        distance_m = distance,
-        -- The walk back is this resource's call (Config.Vehicles.ReturnDistance);
-        -- the edge offers the deed only while this says so.
-        in_reach = distance <= Config.Vehicles.ReturnDistance,
-        kind = kindOf(vehicle),
-    }
+local function seatOf(vehicle, ped, now)
+    local cached = seats[ped]
+    if cached and cached.vehicle == vehicle and now - cached.at < SEAT_RECHECK_MS then
+        return cached.seat
+    end
+    local seat = HumalikeWorldVehicle.SeatOf(vehicle, ped)
+    seats[ped] = { vehicle = vehicle, seat = seat, at = now }
+    return seat
+end
+
+function HumalikeWorldVehicle.StreamState(ped, now)
+    local vehicle = GetVehiclePedIsIn(ped, false)
+    local previous = occupied[ped]
+    if previous and previous ~= vehicle then
+        HumalikeWorldVehicle.Forget(previous)
+        seats[ped] = nil
+    end
+    if vehicle == 0 then
+        occupied[ped] = nil
+        return nil
+    end
+    occupied[ped] = vehicle
+    local networkId, kind = HumalikeWorldVehicle.Info(vehicle)
+    if not networkId then return nil end
+    local seat = seatOf(vehicle, ped, now or GetGameTimer())
+    if not seat then return nil end
+    return { networkId = networkId, seat = seat, kind = kind }
 end

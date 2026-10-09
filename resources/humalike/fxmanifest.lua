@@ -83,6 +83,7 @@ server_scripts {
 
 client_scripts {
     'npc/client/settings.lua',
+    'world/client/pulse.lua',
     'integration/client/interactions.lua',
     'integration/providers/esx/world_events_client.lua',
     'integration/providers/qbcore/world_events_client.lua',
@@ -92,8 +93,9 @@ client_scripts {
     'world/client/contracts.lua',
     'world/client/registry.lua',
     'world/client/vehicle.lua',
-    'world/client/cabins.lua',
+    'world/client/track.lua',
     'world/client/collector.lua',
+    'world/client/cabins.lua',
     'world/client/npc_edge.lua',
     'world/client/main.lua',
     'npc/client/style.lua',

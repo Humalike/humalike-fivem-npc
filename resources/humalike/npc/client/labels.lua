@@ -1,4 +1,3 @@
-
 HumaLikeNpcLabels = HumaLikeNpcLabels or {}
 
 local function labelConfig()
@@ -49,59 +48,90 @@ function HumaLikeNpcLabels.NormalizeLanguage(language)
         or baseKey
 end
 
-local function appendProjected(frame, seen, npcId, ped, entry, camera, maxDistanceSquared, height)
-    if not ped or seen[ped] or not entry or not DoesEntityExist(ped) then return false end
-    seen[ped] = true
+local function entryOf(npcId)
+    local entry = KnownNpcs and KnownNpcs[npcId]
+    if entry then return entry end
+    return AmbientNpcEntries and AmbientNpcEntries[npcId] or nil
+end
 
-    local coords = GetEntityCoords(ped)
-    local dx, dy, dz = camera.x - coords.x, camera.y - coords.y, camera.z - coords.z
+local CAMERA_SLACK = 4.0
+
+local function nearbyCandidates(maxDistance, margin)
+    local radius = maxDistance + margin
+    local candidates, seen = {}, {}
+    local tracks = HumalikeWorldTrack and HumalikeWorldTrack.tracks or nil
+    if tracks then
+        local trackRadius2 = (radius + CAMERA_SLACK) * (radius + CAMERA_SLACK)
+        for npcId, track in pairs(tracks) do
+            if track.exists and track.dist2 <= trackRadius2 then
+                local entry = entryOf(npcId)
+                local index = seen[track.ped]
+                if entry and index and KnownNpcs and KnownNpcs[npcId] and not KnownNpcs[candidates[index].npcId] then
+                    -- One ped under two ids: the persistent registration labels it.
+                    candidates[index] = { npcId = npcId, ped = track.ped, entry = entry, track = track }
+                elseif entry and not index then
+                    candidates[#candidates + 1] = { npcId = npcId, ped = track.ped, entry = entry, track = track }
+                    seen[track.ped] = #candidates
+                end
+            end
+        end
+    end
+    local camera = nil
+    local function direct(npcId, ped, entry)
+        if not ped or seen[ped] or not entry or (tracks and tracks[npcId]) or not DoesEntityExist(ped) then return end
+        seen[ped] = #candidates + 1
+        camera = camera or HumalikePulse.CamCoord()
+        local coords = GetEntityCoords(ped)
+        local dx, dy, dz = camera.x - coords.x, camera.y - coords.y, camera.z - coords.z
+        if dx * dx + dy * dy + dz * dz <= radius * radius then
+            candidates[#candidates + 1] = { npcId = npcId, ped = ped, entry = entry }
+        end
+    end
+    for npcId, ped in pairs(LoadedPeds or {}) do direct(npcId, ped, KnownNpcs and KnownNpcs[npcId]) end
+    for npcId, ped in pairs(AmbientPeds or {}) do direct(npcId, ped, AmbientNpcEntries and AmbientNpcEntries[npcId]) end
+    return candidates
+end
+
+local function project(candidate, camera, cameraMoved, maxDistanceSquared, height)
+    local ped = candidate.ped
+    local track = candidate.track
+    local x, y, z
+    if track and track.speed <= 0.0 then
+        x, y, z = track.x, track.y, track.z
+    else
+        -- A vanished ped reads as the origin, which the distance check rejects.
+        if not track and not DoesEntityExist(ped) then return false end
+        local coords = GetEntityCoords(ped)
+        x, y, z = coords.x, coords.y, coords.z
+    end
+    local dx, dy, dz = camera.x - x, camera.y - y, camera.z - z
     local distanceSquared = dx * dx + dy * dy + dz * dz
     if distanceSquared <= 0.0 or distanceSquared > maxDistanceSquared then return false end
-    local visible, screenX, screenY = World3dToScreen2d(coords.x, coords.y, coords.z + height)
-    if visible then
-        frame[#frame + 1] = {
-            screenX,
-            screenY,
-            normalizedLanguage(entry),
-            voiceMuted(npcId, entry) and 1 or 0,
-        }
+    local pedMoved = x ~= candidate.lastX or y ~= candidate.lastY or z ~= candidate.lastZ
+    if cameraMoved or pedMoved or candidate.visible == nil then
+        candidate.lastX, candidate.lastY, candidate.lastZ = x, y, z
+        candidate.visible, candidate.screenX, candidate.screenY = World3dToScreen2d(x, y, z + height)
     end
     return true
 end
 
-local function appendCandidate(candidates, seen, npcId, ped, entry, camera, radiusSquared)
-    if not ped or seen[ped] or not entry or not DoesEntityExist(ped) then return end
-    seen[ped] = true
-    local coords = GetEntityCoords(ped)
-    local dx, dy, dz = camera.x - coords.x, camera.y - coords.y, camera.z - coords.z
-    if dx * dx + dy * dy + dz * dz <= radiusSquared then
-        candidates[#candidates + 1] = { npcId = npcId, ped = ped, entry = entry }
-    end
-end
-
-local function nearbyCandidates(maxDistance, margin)
-    local camera = GetGameplayCamCoord()
-    local radius = maxDistance + margin
-    local candidates, seen = {}, {}
-    for npcId, ped in pairs(LoadedPeds or {}) do
-        appendCandidate(candidates, seen, npcId, ped, KnownNpcs and KnownNpcs[npcId], camera,
-            radius * radius)
-    end
-    for npcId, ped in pairs(AmbientPeds or {}) do
-        appendCandidate(candidates, seen, npcId, ped, AmbientNpcEntries and AmbientNpcEntries[npcId], camera,
-            radius * radius)
-    end
-    return candidates
-end
-
-local function buildCandidateFrame(candidates, maxDistance, height)
-    local camera = GetGameplayCamCoord()
-    local frame, seen = {}, {}
+local function buildCandidateFrame(candidates, camera, cameraMoved, maxDistance, height)
+    local frame = {}
     local hasNearbyNpc = false
     for _, candidate in ipairs(candidates) do
-        if appendProjected(frame, seen, candidate.npcId, candidate.ped, candidate.entry, camera,
-                maxDistance * maxDistance, height) then
+        if project(candidate, camera, cameraMoved, maxDistance * maxDistance, height) then
             hasNearbyNpc = true
+            -- A projection that is not a number would void the JSON of the whole pulse.
+            if candidate.visible and candidate.screenX == candidate.screenX
+                and candidate.screenY == candidate.screenY then
+                frame[#frame + 1] = {
+                    candidate.screenX,
+                    candidate.screenY,
+                    normalizedLanguage(candidate.entry),
+                    voiceMuted(candidate.npcId, candidate.entry) and 1 or 0,
+                    candidate.npcId,
+                }
+            end
         end
     end
     return frame, hasNearbyNpc
@@ -110,76 +140,141 @@ end
 function HumaLikeNpcLabels.BuildFrame()
     local labels = labelConfig()
     local maxDistance = tonumber(labels.MaxDistance) or 14.0
-    local maxDistanceSquared = maxDistance * maxDistance
-    local height = tonumber(labels.Height) or 0.98
-    local camera = GetGameplayCamCoord()
-    local frame, seen = {}, {}
-    local hasNearbyNpc = false
-
-    for npcId, ped in pairs(LoadedPeds or {}) do
-        if appendProjected(frame, seen, npcId, ped, KnownNpcs and KnownNpcs[npcId], camera, maxDistanceSquared, height) then
-            hasNearbyNpc = true
-        end
-    end
-    for npcId, ped in pairs(AmbientPeds or {}) do
-        if appendProjected(frame, seen, npcId, ped, AmbientNpcEntries and AmbientNpcEntries[npcId], camera, maxDistanceSquared, height) then
-            hasNearbyNpc = true
-        end
-    end
-
-    return frame, hasNearbyNpc
+    local candidates = nearbyCandidates(maxDistance, 0.0)
+    return buildCandidateFrame(candidates, HumalikePulse.CamCoord(), true, maxDistance,
+        tonumber(labels.Height) or 0.98)
 end
 
-CreateThread(function()
-    local hadVisibleLabels = false
-    local candidates = {}
-    local candidatesAt = -1000000
-    local nextFrameAt = 0
-    while true do
-        local labels = labelConfig()
-        if labels.Enabled == false then
-            if hadVisibleLabels then
-                SendNUIMessage({ type = 'labels:clear' })
-                hadVisibleLabels = false
-            end
-            Wait(1000)
-        else
-            local now = GetGameTimer()
-            local maxDistance = tonumber(labels.MaxDistance) or 14.0
-            local refreshMs = math.max(50, tonumber(labels.CandidateRefreshMs) or 200)
-            if now - candidatesAt >= refreshMs then
-                candidates = nearbyCandidates(maxDistance,
-                    math.max(0.0, tonumber(labels.CandidateMargin) or 3.0))
-                candidatesAt = now
-            end
+local FRAME_HEARTBEAT_MS = 1000
+local FRAME_EPSILON = 0.001 -- about a pixel
+local IDLE_RECHECK_MS = 250
+local CAMERA_MOVE_EPSILON = 0.02 -- metres
+local CAMERA_TURN_EPSILON = 0.1  -- degrees
+local CAMERA_ZOOM_EPSILON = 0.05 -- degrees of field of view
 
-            local renderFps = math.max(1, tonumber(labels.RenderFps) or 60)
-            if now < nextFrameAt then
-                Wait(0)
-            else
-                local frameInterval = math.max(1, math.floor(1000 / renderFps))
-                nextFrameAt = math.max(now, nextFrameAt + frameInterval)
-                local frame, hasNearbyNpc = buildCandidateFrame(candidates, maxDistance,
-                    tonumber(labels.Height) or 0.98)
-                if #frame > 0 then
-                    SendNUIMessage({
-                        type = 'labels:frame',
-                        scale = tonumber(labels.Scale) or 1.0,
-                        labels = frame,
-                    })
-                    hadVisibleLabels = true
-                    Wait(0)
-                else
-                    if hadVisibleLabels then
-                        SendNUIMessage({ type = 'labels:clear' })
-                        hadVisibleLabels = false
-                    end
-                    Wait(hasNearbyNpc and 50 or 250)
-                end
+local function sameFrame(frame, last)
+    if not last or #frame ~= #last then return false end
+    for index = 1, #frame do
+        local a, b = frame[index], last[index]
+        if a[3] ~= b[3] or a[4] ~= b[4] or a[5] ~= b[5] or math.abs(a[1] - b[1]) > FRAME_EPSILON
+            or math.abs(a[2] - b[2]) > FRAME_EPSILON then return false end
+    end
+    return true
+end
+
+local function jsonString(value)
+    value = tostring(value)
+    if value:find('[%c"\\]') then
+        value = value:gsub('[%c"\\]', function(char)
+            if char == '"' then return '\\"' end
+            if char == '\\' then return '\\\\' end
+            return ('\\u%04x'):format(char:byte())
+        end)
+    end
+    return '"' .. value .. '"'
+end
+
+local function encodeFrame(frame, scale)
+    local parts = {}
+    for index, label in ipairs(frame) do
+        parts[index] = ('[%.4f,%.4f,%s,%d,%s]'):format(label[1], label[2],
+            label[3] and jsonString(label[3]) or 'false', label[4], jsonString(label[5]))
+    end
+    return ('{"type":"labels:frame","scale":%.3f,"labels":[%s]}'):format(scale, table.concat(parts, ','))
+end
+HumaLikeNpcLabels.EncodeFrame = encodeFrame
+
+local function anyMoving(candidates)
+    for _, candidate in ipairs(candidates) do
+        local track = candidate.track
+        if not track or track.speed > 0.0 then return true end
+    end
+    return false
+end
+
+-- A zoom moves every label without moving the camera.
+local function cameraMovedSince(camera, rotation, fov, last)
+    if not last then return true end
+    return math.abs(camera.x - last.x) > CAMERA_MOVE_EPSILON
+        or math.abs(camera.y - last.y) > CAMERA_MOVE_EPSILON
+        or math.abs(camera.z - last.z) > CAMERA_MOVE_EPSILON
+        or math.abs(rotation.x - last.pitch) > CAMERA_TURN_EPSILON
+        or math.abs(rotation.z - last.yaw) > CAMERA_TURN_EPSILON
+        or math.abs(fov - last.fov) > CAMERA_ZOOM_EPSILON
+end
+
+local CLEAR = '{"type":"labels:clear"}'
+local hadVisibleLabels = false
+local candidates = {}
+local candidatesDue = -1000000
+local lastFrame, lastSentBeat = nil, nil
+local lastCamera = nil
+
+local function clear()
+    if not hadVisibleLabels then return end
+    HumalikePulse.Send(CLEAR)
+    hadVisibleLabels = false
+    lastFrame = nil
+end
+
+function HumaLikeNpcLabels.Render(_, due)
+    local labels = labelConfig()
+    if labels.Enabled == false then
+        clear()
+        return 1000
+    end
+    local maxDistance = tonumber(labels.MaxDistance) or 14.0
+    local refreshMs = math.max(50, tonumber(labels.CandidateRefreshMs) or 200)
+    if due - candidatesDue >= refreshMs then
+        local previous = {}
+        for _, candidate in ipairs(candidates) do previous[candidate.npcId] = candidate end
+        candidates = nearbyCandidates(maxDistance,
+            math.max(0.0, tonumber(labels.CandidateMargin) or 3.0))
+        for _, candidate in ipairs(candidates) do
+            local old = previous[candidate.npcId]
+            if old and old.ped == candidate.ped then
+                candidate.lastX, candidate.lastY, candidate.lastZ = old.lastX, old.lastY, old.lastZ
+                candidate.visible, candidate.screenX, candidate.screenY = old.visible, old.screenX, old.screenY
             end
         end
+        candidatesDue = due
     end
-end)
+
+    if #candidates == 0 then
+        clear()
+        candidatesDue = -1000000 -- rescan on the next pass
+        lastCamera = nil
+        return IDLE_RECHECK_MS
+    end
+
+    local renderFps = math.max(1, tonumber(labels.RenderFps) or 30)
+    local camera, rotation = HumalikePulse.CamCoord(), HumalikePulse.CamRot()
+    local fov = GetFinalRenderedCamFov()
+    local cameraMoved = cameraMovedSince(camera, rotation, fov, lastCamera)
+    if cameraMoved then
+        lastCamera = lastCamera or {}
+        lastCamera.x, lastCamera.y, lastCamera.z = camera.x, camera.y, camera.z
+        lastCamera.pitch, lastCamera.yaw, lastCamera.fov = rotation.x, rotation.z, fov
+    end
+    local beat = HumalikePulse.Beat(FRAME_HEARTBEAT_MS)
+    local heartbeat = beat ~= lastSentBeat
+    if cameraMoved or lastFrame == nil or heartbeat or anyMoving(candidates) then
+        local frame = buildCandidateFrame(candidates, camera, cameraMoved,
+            maxDistance, tonumber(labels.Height) or 0.98)
+        if #frame > 0 then
+            if heartbeat or not sameFrame(frame, lastFrame) then
+                HumalikePulse.Send(encodeFrame(frame, tonumber(labels.Scale) or 1.0))
+                lastFrame, lastSentBeat = frame, beat
+            end
+            hadVisibleLabels = true
+        else
+            clear()
+        end
+    end
+    return math.max(1, math.floor(1000 / renderFps))
+end
+
+HumalikePulse.Every('labels', IDLE_RECHECK_MS, HumaLikeNpcLabels.Render, 60)
 
 AddEventHandler('onClientResourceStop', function(resourceName)
     if resourceName == GetCurrentResourceName() then

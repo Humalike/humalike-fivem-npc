@@ -33,11 +33,14 @@ export class AudioEngine {
   #activeRemotes = new Set<string>();
   #renderTimer = 0;
   readonly #onNPCSpeaking: (id: string, active: boolean) => void;
+  readonly #onSpatialDemand: (active: boolean) => void;
 
   constructor(
     onNPCSpeaking: (id: string, active: boolean) => void = () => undefined,
+    onSpatialDemand: (active: boolean) => void = () => undefined,
   ) {
     this.#onNPCSpeaking = onNPCSpeaking;
+    this.#onSpatialDemand = onSpatialDemand;
     this.npc.connect(this.master); this.master.connect(this.context.destination);
     this.context.addEventListener("statechange", () => {
       for (const remote of this.#remotes.values()) this.updateRoute(remote.route);
@@ -162,6 +165,7 @@ export class AudioEngine {
     remote.source.disconnect(); remote.audible.disconnect();
     remote.distance.disconnect(); remote.panner?.disconnect(); this.#remotes.delete(identity);
     this.#activeRemotes.delete(identity); this.#stopRenderLoopIfIdle();
+    this.#updateSpatialDemand();
   }
 
   #ensureRenderLoop(): void {
@@ -190,13 +194,31 @@ export class AudioEngine {
     return moving || distance(remote.position, remote.target) > 0.01;
   }
 
-
   #setRemoteTransmitting(identity: string, remote: RemoteSource, active: boolean): void {
     if (remote.transmitting === active) return;
     remote.transmitting = active;
     remote.audible.gain.setTargetAtTime(active ? 1 : 0, this.context.currentTime, active ? 0.015 : 0.025);
     this.#onNPCSpeaking(identity.slice(4), active);
     this.#reconcileActive(identity, remote);
+    this.#updateSpatialDemand();
+  }
+
+  // Taken once the change has settled: a replaced source must not report "nobody" in between.
+  #spatialDemand = false;
+  #spatialDemandQueued = false;
+  #updateSpatialDemand(): void {
+    if (this.#spatialDemandQueued) return;
+    this.#spatialDemandQueued = true;
+    queueMicrotask(() => {
+      this.#spatialDemandQueued = false;
+      let speaking = false;
+      for (const remote of this.#remotes.values()) {
+        if (remote.transmitting && remote.panner) { speaking = true; break; }
+      }
+      if (speaking === this.#spatialDemand) return;
+      this.#spatialDemand = speaking;
+      this.#onSpatialDemand(speaking);
+    });
   }
 
   async microphone(deviceId: string, gainValue: number): Promise<MicrophonePipeline> {

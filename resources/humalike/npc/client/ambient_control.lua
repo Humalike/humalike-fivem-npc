@@ -1,4 +1,3 @@
-
 local controls = {}
 local interactionIds = {}
 local ambientByControlKey = {}
@@ -47,8 +46,14 @@ local function faceController(ped, control)
     return true
 end
 
-function HumalikeAmbientControlHeldPed(ped)
-    local npcId = DoesEntityExist(ped) and Entity(ped).state.humalike_npc_id or nil
+function HumalikeAmbientControlHeldPed(ped, npcId)
+    if npcId == nil then
+        if HumalikeNpcIdOfPed then
+            npcId = HumalikeNpcIdOfPed(ped)
+        else
+            npcId = DoesEntityExist(ped) and Entity(ped).state.humalike_npc_id or nil
+        end
+    end
     local entry = npcId and AmbientNpcEntries and AmbientNpcEntries[npcId] or nil
     local control = entry and controls[controlKey(entry)] or nil
     return control ~= nil and control.mode == 'held'
@@ -155,6 +160,9 @@ AddEventHandler('humalike:npc:ambientControlChanged', function(key, control)
     local previous = controls[key]
     controls[key] = control
     if previous and not control then resumePedForKey(key) end
+    if HumalikeNpcPopulationClient and HumalikeNpcPopulationClient.RebuildPace then
+        HumalikeNpcPopulationClient.RebuildPace()
+    end
 end)
 
 RegisterNetEvent('humalike:npc:ambientControlSnapshot')
@@ -163,6 +171,9 @@ AddEventHandler('humalike:npc:ambientControlSnapshot', function(snapshot)
     controls = type(snapshot) == 'table' and snapshot or {}
     for key in pairs(previous) do
         if not controls[key] then resumePedForKey(key) end
+    end
+    if HumalikeNpcPopulationClient and HumalikeNpcPopulationClient.RebuildPace then
+        HumalikeNpcPopulationClient.RebuildPace()
     end
 end)
 
@@ -304,7 +315,7 @@ CreateThread(function()
                 end
             end
         end
-        if not applied then Wait(1000) end
+        if not applied then Wait(500) end
     end
 end)
 

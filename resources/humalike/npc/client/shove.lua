@@ -69,39 +69,37 @@ local function settle(now)
     return reported
 end
 
--- Only registry peds can carry a HumaLike mind; the pool is never scanned.
-local function eachOwnPed(callback)
-    for npcId, ped in pairs(AmbientPeds or {}) do callback(npcId, ped) end
-    for npcId, ped in pairs(LoadedPeds or {}) do
-        if not (AmbientPeds and AmbientPeds[npcId] == ped) then callback(npcId, ped) end
-    end
-end
-
 function HumalikeNpcShove.Tick(now)
     forgetStale(now)
-    local playerPed = PlayerPedId()
-    if playerPed == 0 or not DoesEntityExist(playerPed) then return 0 end
     local reported = settle(now)
     local cfg = config()
-    if IsPedInAnyVehicle(playerPed, false) or IsEntityDead(playerPed) or IsPedRagdoll(playerPed)
-        or IsPedInMeleeCombat(playerPed) or GetEntitySpeed(playerPed) < cfg.MinSpeed then
+    if not HumalikeWorldTrack.AnyWithin(cfg.MaxDistance) then return reported end
+    local playerPed = HumalikePulse.Ped()
+    if playerPed == 0 then return reported end
+    local velocity = HumalikePulse.Velocity(playerPed)
+    local speed = math.sqrt(velocity.x * velocity.x + velocity.y * velocity.y + velocity.z * velocity.z)
+    if speed < cfg.MinSpeed or IsPedInAnyVehicle(playerPed, false)
+        or IsEntityDead(playerPed) or IsPedRagdoll(playerPed) or IsPedInMeleeCombat(playerPed) then
         return reported
     end
-    local origin = GetEntityCoords(playerPed)
-    local velocity = GetEntityVelocity(playerPed)
-    eachOwnPed(function(npcId, ped)
-        if not pending[ped] and due(ped, now) and not excluded(ped, npcId, now)
-            and IsEntityTouchingEntity(playerPed, ped)
-            and towards(velocity, origin, GetEntityCoords(ped)) then
-            pending[ped] = { since = now, npc_id = npcId, ragdolled = IsPedRagdoll(ped) }
+    local origin = HumalikePulse.Coords(playerPed)
+    local max2 = cfg.MaxDistance * cfg.MaxDistance
+    for npcId, track in pairs(HumalikeWorldTrack.tracks) do
+        if track.exists and track.dist2 <= max2 then
+            local ped = track.ped
+            if not pending[ped] and due(ped, now) and towards(velocity, origin, track)
+                and IsEntityTouchingEntity(playerPed, ped) and not excluded(ped, npcId, now) then
+                pending[ped] = { since = now, npc_id = npcId, ragdolled = IsPedRagdoll(ped) }
+            end
         end
-    end)
+    end
     return reported
 end
 
-CreateThread(function()
-    while true do
-        Wait(config().TickMs)
-        HumalikeNpcShove.Tick(GetGameTimer())
-    end
+local IDLE_TICK_MS = 500
+
+HumalikePulse.Every('shove', IDLE_TICK_MS, function(_, due)
+    HumalikeNpcShove.Tick(due)
+    local busy = next(pending) ~= nil or HumalikeWorldTrack.AnyWithin(config().MaxDistance)
+    return busy and config().TickMs or IDLE_TICK_MS
 end)

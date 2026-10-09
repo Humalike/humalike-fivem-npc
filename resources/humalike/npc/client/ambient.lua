@@ -1,5 +1,6 @@
 AmbientPeds = {}
 AmbientNpcEntries = {}
+AmbientPedNpcIds = {} -- ped -> npc id
 
 local desiredAmbientLeases = {}
 local voiceMuteRevision = -1
@@ -33,6 +34,7 @@ local function removeAmbientAssignment(npcId)
         if DoesEntityExist(ped) and Entity(ped).state.humalike_npc_id == npcId then
             Entity(ped).state:set('humalike_npc_id', nil, false)
         end
+        if AmbientPedNpcIds[ped] == npcId then AmbientPedNpcIds[ped] = nil end
     end
     AmbientPeds[npcId] = nil
     AmbientNpcEntries[npcId] = nil
@@ -67,6 +69,7 @@ local function bindAmbientLease(lease)
     if changed and previousPed then removeAmbientAssignment(npcId) end
 
     AmbientPeds[npcId] = ped
+    AmbientPedNpcIds[ped] = npcId
     AmbientNpcEntries[npcId] = {
         name = lease.display_name,
         entity_id = lease.entity_id,
@@ -87,17 +90,16 @@ end
 
 local function leaseIsBound(npcId, lease)
     local ped, entry = AmbientPeds[npcId], AmbientNpcEntries[npcId]
-    local resolvedPed = pedForNetworkId(lease.network_id)
-    return ped and resolvedPed == ped and GetEntityType(ped) == 1
-        and not IsPedAPlayer(ped) and entry
-        and entry.entity_id == lease.entity_id
-        and entry.network_id == lease.network_id
-        and entry.lease_token == lease.lease_token
-        and entry.routing_bucket == lease.routing_bucket
-        and entry.name == lease.display_name
-        and entry.language == lease.language
-        and entry.voice_muted == (lease.voice_muted == true)
-        and Entity(ped).state.humalike_npc_id == npcId
+    if not ped or not entry
+        or entry.entity_id ~= lease.entity_id
+        or entry.network_id ~= lease.network_id
+        or entry.lease_token ~= lease.lease_token
+        or entry.routing_bucket ~= lease.routing_bucket
+        or entry.name ~= lease.display_name
+        or entry.language ~= lease.language
+        or entry.voice_muted ~= (lease.voice_muted == true)
+        or AmbientPedNpcIds[ped] ~= npcId then return false end
+    return DoesEntityExist(ped) and NetworkGetNetworkIdFromEntity(ped) == lease.network_id
 end
 
 RegisterNetEvent('humalike:npc:ambientLeases')

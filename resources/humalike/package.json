@@ -7,6 +7,6 @@
     "build": "pnpm --dir nui/host build",
     "check": "pnpm --dir nui/runtime check && pnpm --dir voice/web check && pnpm --dir npc/labels/web check && pnpm --dir nui/host check",
     "dev": "pnpm --dir nui/host dev",
-    "test:unit": "pnpm --dir voice/web test:unit && pnpm --dir npc/labels/web test:unit"
+    "test:unit": "pnpm --dir nui/runtime test:unit && pnpm --dir voice/web test:unit && pnpm --dir npc/labels/web test:unit"
   }
 }

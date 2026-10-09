@@ -49,5 +49,35 @@ export function isLabelTuple(value) {
     && value[0] >= 0 && value[0] <= 1
     && value[1] >= 0 && value[1] <= 1
     && (value[2] === false || typeof value[2] === "string")
-    && (value[3] === 0 || value[3] === 1);
+    && (value[3] === 0 || value[3] === 1)
+    && (value[4] === undefined || typeof value[4] === "string");
+}
+
+// The glide is aimed one interval ahead along the label's own motion, capped.
+const PREDICT_FACTOR = 1.0;
+const MAX_PREDICT_PX = 40;
+
+/**
+ * @param {{ x: number, y: number, at: number }} node last reported position and time; updated
+ * @param {number} x @param {number} y @param {number} now
+ * @param {number} transitionMs @param {number} staleMs
+ * @returns {[number, number, boolean]} where to draw, and whether that is ahead of the report
+ */
+export function aimLabel(node, x, y, now, transitionMs, staleMs) {
+  let dx = 0;
+  let dy = 0;
+  const dt = now - node.at;
+  if (node.at > 0 && dt > 0 && dt < staleMs) {
+    dx = (x - node.x) / dt * transitionMs * PREDICT_FACTOR;
+    dy = (y - node.y) / dt * transitionMs * PREDICT_FACTOR;
+    const step = Math.hypot(dx, dy);
+    if (step > MAX_PREDICT_PX) { dx *= MAX_PREDICT_PX / step; dy *= MAX_PREDICT_PX / step; }
+  }
+  node.x = x; node.y = y; node.at = now;
+  return [x + dx, y + dy, dx !== 0 || dy !== 0];
+}
+
+/** How long a label aimed ahead waits for the next frame. @param {number} transitionMs */
+export function settleDelayMs(transitionMs) {
+  return Math.round(transitionMs * 1.5);
 }

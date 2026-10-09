@@ -50,31 +50,28 @@ local function classify(previousWeapon, weapon)
     if previousWeapon ~= unarmed and weapon == unarmed then return 'weapon_holstered' end
 end
 
-CreateThread(function()
-    local previousPed
-    local previousWeapon
+local previousPed
+local previousWeapon
 
-    while true do
-        Wait(100)
-        local ped = PlayerPedId()
+HumalikePulse.Every('weapon', 250, function()
+    local ped = HumalikePulse.Ped()
 
-        if not ped or ped == 0 or not DoesEntityExist(ped) then
-            previousPed = nil
-            previousWeapon = nil
-        else
-            local weapon = normalize(GetSelectedPedWeapon(ped))
-            if ped ~= previousPed or previousWeapon == nil then
-                previousPed = ped
-                previousWeapon = weapon
-            elseif weapon ~= previousWeapon then
-                local eventType = classify(previousWeapon, weapon)
-                local previousName, weaponName = namesByHash[previousWeapon], namesByHash[weapon]
-                if eventType and previousName and weaponName then
-                    TriggerServerEvent('humalike:npc:weaponStateChanged', eventType,
-                        previousWeapon, weapon, previousName, weaponName)
-                end
-                previousWeapon = weapon
+    if not ped or ped == 0 or not DoesEntityExist(ped) then
+        previousPed = nil
+        previousWeapon = nil
+    else
+        local weapon = normalize(GetSelectedPedWeapon(ped))
+        if ped ~= previousPed or previousWeapon == nil then
+            previousPed = ped
+            previousWeapon = weapon
+        elseif weapon ~= previousWeapon then
+            local eventType = classify(previousWeapon, weapon)
+            local previousName, weaponName = namesByHash[previousWeapon], namesByHash[weapon]
+            if eventType and previousName and weaponName then
+                TriggerServerEvent('humalike:npc:weaponStateChanged', eventType,
+                    previousWeapon, weapon, previousName, weaponName)
             end
+            previousWeapon = weapon
         end
     end
 end)

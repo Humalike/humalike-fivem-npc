@@ -23,11 +23,17 @@ function Wait()
     if ticks > waitLimit then error('done') end
 end
 function PlayerPedId() return 42 end
-function IsPedShooting() return ticks == 1 or ticks == 2 or ticks == 5 end
-function GetGameTimer() return ticks * 250 end
+local shooting = false
+function IsPedShooting(ped) assert(ped == 42) return shooting end
+local armed = true
+function IsPedArmed() return armed end
+local clock = nil
+function GetGameTimer() return clock or ticks * 250 end
 function PlayerId() return 7 end
-function GetEntityPlayerIsFreeAimingAt() return false, 0 end
-function IsEntityAPed() return false end
+local aimedEntity, freeAiming, aimReads = 0, false, 0
+function GetEntityPlayerIsFreeAimingAt() aimReads = aimReads + 1 return aimedEntity ~= 0, aimedEntity end
+function IsPlayerFreeAiming() return freeAiming end
+function IsEntityAPed(entity) return entity ~= 0 end
 function Entity() return { state = { humalike_npc_id = stateNpcId } } end
 function DoesEntityExist() return true end
 function NetworkGetEntityIsNetworked() return networked end
@@ -45,19 +51,67 @@ function TriggerServerEvent(...)
     sent[#sent + 1] = { ... }
 end
 
+dofile('../world/client/pulse.lua')
 dofile('client/combat.lua')
-assert(#threads == 3)
-pcall(threads[1])
-ticks = 0
-waitLimit = 6
+assert(#threads == 2, 'the shared pulse and the health loop: the gun has no thread of its own')
 pcall(threads[2])
-
 assert(handlers.entityDamaged)
 assert(healthRestores == 2)
-assert(#sent == 2 and sent[1][1] == 'humalike:npc:gunshotFired'
-    and sent[2][1] == 'humalike:npc:gunshotFired',
-    'automatic fire reports once per burst and rearms after 500 ms silence')
+
+clock = 1000
+shooting = true
+assert(HumalikePulse.Run(clock) == 100 and #threads == 3, 'armed: the frame thread is started')
+assert(#sent == 1 and sent[1][1] == 'humalike:npc:gunshotFired', 'a shot on the frame the gun is first seen is not lost')
+local frameWaits = {}
+function Wait(ms) frameWaits[#frameWaits + 1] = ms coroutine.yield() end
+local frames = coroutine.create(threads[3])
+local function frame(at, firing)
+    clock, shooting = at, firing
+    assert(coroutine.resume(frames))
+end
+frame(1016, true)
+frame(1033, true)
+assert(#sent == 1 and sent[1][1] == 'humalike:npc:gunshotFired', 'automatic fire reports once per burst')
+frame(1300, false)
+assert(#sent == 1)
+frame(1540, false) -- 507 ms of silence closes the burst
+frame(1556, true)
+assert(#sent == 2 and sent[2][1] == 'humalike:npc:gunshotFired', 'and rearms after 500 ms of silence')
+assert(frameWaits[#frameWaits] == 0, 'one look per frame while a gun is out')
 table.remove(sent, 2) -- preserve the existing event index assertions below
+armed = false
+clock = 1600
+HumalikePulse.Run(clock)
+frame(1616, false)
+assert(coroutine.status(frames) == 'suspended', 'an open burst is watched to its end')
+frame(2100, false)
+assert(coroutine.status(frames) == 'suspended')
+local shootingChecks = 0
+function IsPedShooting() shootingChecks = shootingChecks + 1 return false end
+assert(coroutine.resume(frames))
+assert(coroutine.status(frames) == 'dead' and shootingChecks == 0, 'holstered, nobody asks about shots')
+clock = 2200
+assert(HumalikePulse.Run(clock) == 100 and #threads == 3, 'and the pulse looks at the hand every 100 ms')
+
+assert(aimReads == 0)
+freeAiming, aimedEntity, stateNpcId = true, 77, 'ambient-aim'
+AmbientNpcEntries['ambient-aim'] = { entity_id = 707 }
+clock = 2300
+assert(HumalikePulse.Run(clock) == 50, 'aiming at an NPC: the next look comes 50 ms later')
+assert(sent[#sent][1] == 'humalike:npc:aimingCandidateChanged' and sent[#sent][2] == 'ambient-aim'
+    and sent[#sent][3] == 707)
+local aimEvents = #sent
+clock = 2350
+HumalikePulse.Run(clock)
+assert(#sent == aimEvents, 'the same target is not announced twice')
+freeAiming = false
+clock = 2400
+assert(HumalikePulse.Run(clock) == 100 and sent[#sent][1] == 'humalike:npc:aimingCandidateChanged'
+    and sent[#sent][2] == nil, 'lowering the gun clears the candidate')
+table.remove(sent)
+table.remove(sent)
+stateNpcId, AmbientNpcEntries['ambient-aim'] = nil, nil
+clock = nil
 
 local damageNotes = {}
 HumalikeNpcShove = { NoteDamage = function(ped, at) damageNotes[#damageNotes + 1] = { ped, at } end }

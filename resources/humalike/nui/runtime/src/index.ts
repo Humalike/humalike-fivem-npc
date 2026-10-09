@@ -1,3 +1,5 @@
+export { installBatchDispatcher } from "./batch.mjs";
+
 export type AnimationFrameHandler = (now: number) => void;
 
 const frameHandlers = new Set<AnimationFrameHandler>();
