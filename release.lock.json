@@ -28,6 +28,15 @@
         "voice/server",
         "nui/host/dist"
       ]
+    },
+    {
+      "name": "humalike-updater",
+      "path": "resources/humalike-updater",
+      "version": "0.5.1",
+      "include": [
+        "fxmanifest.lua",
+        "server.lua"
+      ]
     }
   ]
 }

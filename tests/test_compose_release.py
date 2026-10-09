@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 from pathlib import Path
@@ -76,15 +77,21 @@ class ComposeReleaseTest(unittest.TestCase):
                 "web/dist/assets/app.js": "console.log('voice')\n",
             },
         )
+        self._resource(
+            "humalike-updater",
+            "fx_version 'cerulean'\ngame 'gta5'\nversion '0.1.0'\nserver_script 'server.lua'\n",
+            {"server.lua": "return true\n"},
+        )
         lock = {
             "schema_version": 2,
             "product": {
                 "name": "humalike-fivem",
-                "version": "0.1.0-test.1",
+                "version": "0.1.0",
                 "protocols": {"world_state": 1, "voice_control": 1},
             },
             "resources": [
                 self._entry("humalike", ["fxmanifest.lua", "client", "web/dist"]),
+                self._entry("humalike-updater", ["fxmanifest.lua", "server.lua"]),
             ],
         }
         lock_path = self.root / "release.lock.json"
@@ -108,7 +115,13 @@ class ComposeReleaseTest(unittest.TestCase):
         with zipfile.ZipFile(first) as archive:
             names = archive.namelist()
             self.assertEqual(first.name, "humalike.zip")
-            self.assertTrue(all(name.startswith("humalike/") for name in names))
+            self.assertTrue(
+                all(
+                    name.startswith(("humalike/", "humalike-updater/"))
+                    for name in names
+                )
+            )
+            self.assertIn("humalike-updater/server.lua", names)
             self.assertIn("humalike/fxmanifest.lua", names)
             self.assertIn("humalike/client/main.lua", names)
             self.assertFalse(any("uncommitted-secret" in name for name in names))
@@ -116,6 +129,27 @@ class ComposeReleaseTest(unittest.TestCase):
             self.assertFalse(any("web/src/" in name for name in names))
             self.assertIn("humalike/LICENSE.md", names)
             self.assertIn("humalike/NOTICE", names)
+        update = first.parent / "humalike.update.json"
+        self.assertEqual(
+            update.read_bytes(),
+            (self.root / "second" / "humalike.update.json").read_bytes(),
+        )
+        bundle = json.loads(update.read_text())
+        self.assertEqual(bundle["schema"], 1)
+        self.assertEqual(bundle["resource"], "humalike")
+        self.assertEqual(bundle["revision"], revision)
+        with zipfile.ZipFile(first) as archive:
+            for entry in bundle["files"]:
+                data = archive.read(f"humalike/{entry['path']}")
+                self.assertEqual(entry["size"], len(data))
+                self.assertEqual(entry["sha256"], hashlib.sha256(data).hexdigest())
+                self.assertEqual(base64.b64decode(entry["data"]), data)
+            self.assertEqual(
+                sorted(f"humalike/{entry['path']}" for entry in bundle["files"]),
+                sorted(
+                    name for name in archive.namelist() if name.startswith("humalike/")
+                ),
+            )
         manifest = json.loads(first.with_suffix(".manifest.json").read_text())
         self.assertEqual(manifest["source"]["revision"], revision)
         self.assertEqual(
@@ -138,6 +172,14 @@ class ComposeReleaseTest(unittest.TestCase):
         _git(self.root, "commit", "--quiet", "-m", "break NUI reference")
         with self.assertRaisesRegex(ReleaseError, "NUI references missing asset"):
             compose(lock, self.root / "out")
+
+    def test_resource_version_must_match_product_version(self) -> None:
+        lock, _ = self._commit_fixture()
+        data = json.loads(lock.read_text())
+        data["product"]["version"] = "0.2.0"
+        lock.write_text(json.dumps(data), encoding="utf-8")
+        with self.assertRaisesRegex(ReleaseError, "must equal product version"):
+            load_lock(lock)
 
     def test_lock_requires_current_schema(self) -> None:
         lock, _ = self._commit_fixture()
