@@ -26,30 +26,43 @@ AmbientInteractionAdapters.builtin = {
     end,
 }
 
-CreateThread(function()
-    while true do
-        local playerPed = PlayerPedId()
-        local playerCoords = GetEntityCoords(playerPed)
-        local closest, closestId, closestDistance, availableOptions = nil, nil, math.huge, nil
-        for id, entry in pairs(entries) do
-            if not DoesEntityExist(entry.entity) then
-                entries[id] = nil
-            else
-                local distance = #(playerCoords - GetEntityCoords(entry.entity))
-                if distance <= ((Config.AmbientControl or {}).InteractionDistance or 3.0)
-                    and distance < closestDistance then
-                    local usableOptions = {}
-                    for _, option in ipairs(entry.options) do
-                        if usable(option, entry.entity) then
-                            usableOptions[#usableOptions + 1] = option
-                        end
-                    end
-                    if #usableOptions > 0 then
-                        closest, closestId, closestDistance = entry, id, distance
-                        availableOptions = usableOptions
+local SCAN_MS = 250
+
+local function findClosest()
+    local playerPed = PlayerPedId()
+    local playerCoords = GetEntityCoords(playerPed)
+    local closest, closestId, closestDistance, availableOptions = nil, nil, math.huge, nil
+    for id, entry in pairs(entries) do
+        if not DoesEntityExist(entry.entity) then
+            entries[id] = nil
+        else
+            local distance = #(playerCoords - GetEntityCoords(entry.entity))
+            if distance <= ((Config.AmbientControl or {}).InteractionDistance or 3.0)
+                and distance < closestDistance then
+                local usableOptions = {}
+                for _, option in ipairs(entry.options) do
+                    if usable(option, entry.entity) then
+                        usableOptions[#usableOptions + 1] = option
                     end
                 end
+                if #usableOptions > 0 then
+                    closest, closestId, closestDistance = entry, id, distance
+                    availableOptions = usableOptions
+                end
             end
+        end
+    end
+    return closest, closestId, availableOptions
+end
+
+CreateThread(function()
+    local closest, closestId, availableOptions = nil, nil, nil
+    local scannedAt = -SCAN_MS
+    while true do
+        local now = GetGameTimer()
+        if now - scannedAt >= SCAN_MS or (closestId and not entries[closestId]) then
+            scannedAt = now
+            closest, closestId, availableOptions = findClosest()
         end
         if closest then
             local selectedIndex = math.min(selectedIndexes[closestId] or 1, #availableOptions)
@@ -68,7 +81,10 @@ CreateThread(function()
                 ('%s~INPUT_CONTEXT~  %s'):format(
                     choiceHint, selectedOption.text or 'interact'))
             EndTextCommandDisplayHelp(0, false, true, -1)
-            if IsControlJustReleased(0, 38) and selectedOption.onSelect then
+            if IsControlJustReleased(0, 38) and selectedOption.onSelect
+                and DoesEntityExist(closest.entity) and usable(selectedOption, closest.entity)
+                and #(GetEntityCoords(PlayerPedId()) - GetEntityCoords(closest.entity))
+                    <= ((Config.AmbientControl or {}).InteractionDistance or 3.0) then
                 pcall(selectedOption.onSelect, closest.entity)
             end
             Wait(0)

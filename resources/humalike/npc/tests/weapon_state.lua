@@ -6,7 +6,6 @@ local hashes = {
 }
 local weapons = { 0, 10, 10, -2084633992, 0, 30 }
 local sent = {}
-local thread
 local index = 0
 
 function GetHashKey(name)
@@ -14,12 +13,7 @@ function GetHashKey(name)
     return 1000 + #name
 end
 
-function CreateThread(callback) thread = callback end
-
-function Wait()
-    index = index + 1
-    if index > #weapons then error('done') end
-end
+function CreateThread() end
 
 function PlayerPedId() return 1 end
 function DoesEntityExist() return true end
@@ -29,8 +23,12 @@ function TriggerServerEvent(_, eventType, previousWeapon, weapon, previousName, 
     sent[#sent + 1] = { eventType, previousWeapon, weapon, previousName, weaponName }
 end
 
+dofile('../world/client/pulse.lua')
 dofile('client/weapon_state.lua')
-pcall(thread)
+for poll = 1, #weapons do
+    index = poll
+    assert(HumalikePulse.Run(poll * 250) == 250, 'the hand is looked at four times a second, on the shared pulse')
+end
 
 assert(#sent == 3) -- initial sync, pistol -> pistol and pistol -> carbine emit nothing
 assert(sent[1][1] == 'weapon_drawn' and sent[1][4] == 'WEAPON_UNARMED'

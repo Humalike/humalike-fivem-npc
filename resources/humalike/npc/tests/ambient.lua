@@ -23,6 +23,7 @@ function NetworkGetEntityFromNetworkId()
     conversions = conversions + 1
     return resolvedPed
 end
+function NetworkGetNetworkIdFromEntity(ped) return ped == resolvedPed and 53 or 0 end
 function Entity(entity)
     return {
         state = {
@@ -77,8 +78,9 @@ function Wait()
     if waits > 1 then error('stop thread') end
 end
 pcall(threads[1])
-assert(conversions == 3)
+assert(conversions == 1, 'a bound lease is never resolved through its network id again')
 assert(AmbientPeds.new == 99 and AmbientNpcEntries.new.lease_token == 'new-token')
+assert(AmbientPedNpcIds[99] == 'new', 'the ped is indexed back to its npc id')
 assert(AmbientNpcEntries.new.language == 'en')
 assert(stateTags[99] == 'new')
 resolvedPed = 42

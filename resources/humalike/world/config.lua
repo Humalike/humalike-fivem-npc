@@ -5,9 +5,9 @@ HumalikeDefineConfig(function()
 
         collector = {
             tickMs = HumalikeConvarInt('humalike_world_tick_ms', 20),
-            movingIntervalMs = HumalikeConvarInt('humalike_world_moving_interval_ms', 100),
+            movingIntervalMs = HumalikeConvarInt('humalike_world_moving_interval_ms', 200),
             idleIntervalMs = HumalikeConvarInt('humalike_world_idle_interval_ms', 1000),
-            listenerIntervalMs = HumalikeConvarInt('humalike_world_listener_interval_ms', 33),
+            listenerIntervalMs = HumalikeConvarInt('humalike_world_listener_interval_ms', 50),
             movementThreshold = 0.08,
             positionThreshold = 0.15,
             defaultVoiceDistance = 15.0,
@@ -16,7 +16,8 @@ HumalikeDefineConfig(function()
 
         npcEdge = {
             enabled = HumalikeConvarInt('humalike_world_npc_edge_enabled', 1) == 1,
-            frameIntervalMs = HumalikeConvarInt('humalike_world_npc_edge_interval_ms', 200),
+            -- Frames are deltas: sent faster than the receiver's tick they would be dropped.
+            frameIntervalMs = math.max(200, HumalikeConvarInt('humalike_world_npc_edge_interval_ms', 200)),
             ticketRetryMs = HumalikeConvarInt('humalike_world_npc_edge_ticket_retry_ms', 3000),
             ticketRefreshMs = HumalikeConvarInt('humalike_world_npc_edge_ticket_refresh_ms', 12000),
             reportRadius = HumalikeConvarInt('humalike_world_npc_report_radius', 150) + 0.0,

@@ -15,3 +15,6 @@ export function labelLayout(hasLanguage: boolean, muted: boolean, scale: number)
   totalWidth: number;
 };
 export function isLabelTuple(value: unknown): boolean;
+export function aimLabel(node: { x: number; y: number; at: number }, x: number, y: number,
+  now: number, transitionMs: number, staleMs: number): [number, number, boolean];
+export function settleDelayMs(transitionMs: number): number;

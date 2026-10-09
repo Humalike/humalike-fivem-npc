@@ -6,19 +6,22 @@ TriggerServerEvent = function(name, body)
     serverEvents[#serverEvents + 1] = { name = name, body = body }
 end
 HumalikeWorldContracts = { Copy = function(value) return value end }
-HumalikeWorldCollector = { latest = { vehicle = { networkId = 777, seat = 1 } } }
+HumalikeWorldCollector = {
+    latest = { vehicle = { networkId = 777, seat = 1 } },
+    Subscribe = function(kind, callback) handlers['collector:' .. kind] = callback end,
+}
 
 dofile('client/cabins.lua')
 
-handlers['humalike:world:playerMotion']({ vehicle = nil })
+handlers['collector:motion']({ vehicle = nil })
 assert(#serverEvents == 1 and serverEvents[1].body == nil)
-handlers['humalike:world:playerMotion']({ vehicle = nil })
+handlers['collector:motion']({ vehicle = nil })
 assert(#serverEvents == 1)
-handlers['humalike:world:playerMotion']({ vehicle = { networkId = 501, seat = -1 } })
+handlers['collector:motion']({ vehicle = { networkId = 501, seat = -1 } })
 assert(#serverEvents == 2 and serverEvents[2].body.networkId == 501)
-handlers['humalike:world:playerMotion']({ vehicle = { networkId = 501, seat = -1 } })
+handlers['collector:motion']({ vehicle = { networkId = 501, seat = -1 } })
 assert(#serverEvents == 2)
-handlers['humalike:world:playerMotion']({ vehicle = { networkId = 501, seat = 0 } })
+handlers['collector:motion']({ vehicle = { networkId = 501, seat = 0 } })
 assert(#serverEvents == 3 and serverEvents[3].body.seat == 0)
 handlers['humalike:world:requestCabinState']()
 assert(#serverEvents == 4 and serverEvents[4].body.networkId == 777)

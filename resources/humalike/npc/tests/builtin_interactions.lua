@@ -13,6 +13,7 @@ local function vector(x, y, z) return setmetatable({ x = x, y = y, z = z }, vect
 
 function CreateThread(callback) thread = callback end
 function PlayerPedId() return 1 end
+function GetGameTimer() return 0 end
 function DoesEntityExist(entity) return entity == 1 or entity == 42 end
 function GetEntityCoords(entity)
     return entity == 1 and vector(0, 0, 0) or vector(1, 0, 0)

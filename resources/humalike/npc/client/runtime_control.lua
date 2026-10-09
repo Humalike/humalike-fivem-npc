@@ -19,6 +19,9 @@ AddEventHandler('humalike:npc:runtimeControlSnapshot', function(nextRevision, sn
     if not nextRevision or nextRevision <= revision or type(snapshot) ~= 'table' then return end
     revision = nextRevision
     controls = snapshot
+    if HumalikeNpcPopulationClient and HumalikeNpcPopulationClient.RebuildPace then
+        HumalikeNpcPopulationClient.RebuildPace()
+    end
 end)
 
 CreateThread(function()

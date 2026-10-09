@@ -370,8 +370,13 @@ function DeleteEntity() end
 function ClearPedTasks(ped) clearCalls[#clearCalls + 1] = ped end
 TaskStartScenarioInPlace = record('scenario')
 HumalikeNpcStyle = { ApplySeed = function() return true end }
+function AddStateBagChangeHandler() end
+function GetEntityFromStateBagName() return 0 end
+function NetworkGetNetworkIdFromEntity(ped) return ped + 1000 end
+dofile('../world/client/pulse.lua')
 dofile('client/reactions.lua')
 dofile('client/population.lua')
+Config.Population.MoveRate = 0.82 -- the ambling rate, to exercise the per-frame loop
 
 pool[1] = true
 nodes[10] = { 60, 1, 30.5, 270 }
@@ -464,6 +469,5 @@ HumalikeNpcPopulationClient.Tick(20000, false)
 assert(not walked()[52], 'the idle window applies first')
 HumalikeNpcPopulationClient.Tick(26000, false)
 assert(walked()[52] and not walked()[50], 'on foot with no vehicle: wander; the seated driver stays put')
-
 
 print('client_driving: ok')

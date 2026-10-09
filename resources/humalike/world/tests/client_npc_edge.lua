@@ -1,5 +1,4 @@
-local callbacks, handlers, threads, nuiMessages, serverEvents = {}, {}, {}, {}, {}
-local coordsCalls, velocityCalls = {}, {}
+local callbacks, handlers, nuiMessages, rawMessages, serverEvents = {}, {}, {}, {}, {}
 
 WorldConfig = {
     collector = { movementThreshold = 0.08 },
@@ -8,69 +7,157 @@ WorldConfig = {
         frameIntervalMs = 200, ticketRetryMs = 3000,
     },
 }
-HumalikeWorldRegistry = { entries = {
-    ['npc-a'] = {
-        npcId = 'npc-a', entity = 10, entityId = 110, networkId = 210,
-        modelHash = 100, runtimeToken = 'a', activity = 'idle', kind = 'persistent',
-    },
-    ['npc-b'] = {
-        npcId = 'npc-b', entity = 20, entityId = 120, networkId = 220,
-        modelHash = 200, runtimeToken = 'b', activity = 'talking', kind = 'persistent',
-    },
-    ['npc-stale'] = {
-        npcId = 'npc-stale', entity = 30, entityId = 130, networkId = 230,
-        modelHash = 300, runtimeToken = 'stale', activity = 'idle', kind = 'ambient',
-    },
-} }
-HumalikeWorldVehicle = { StreamState = function() return nil end, OwnState = function() return nil end }
 HumalikeWorldCollector = { bootId = 'boot', latest = nil }
+HumalikeWorldRegistry = { entries = {}, revision = 0 }
 
-function vector3(x, y, z) return { x = x, y = y, z = z } end
-function DoesEntityExist() return true end
-function GetEntityCoords(entity)
-    coordsCalls[entity] = (coordsCalls[entity] or 0) + 1
-    return entity == 10 and vector3(5, 0, 0) or vector3(10, 0, 0)
+local function track(npcId, fields)
+    local entry = {
+        npcId = npcId, entity = fields.entity or 1, entityId = fields.entityId or 100,
+        networkId = fields.networkId or 200, modelHash = fields.modelHash or 7,
+        runtimeToken = fields.runtimeToken or 'tok', kind = fields.kind or 'persistent',
+        activity = fields.activity or 'idle', generation = 1,
+    }
+    return {
+        npcId = npcId, entry = entry, ped = entry.entity, generation = 1, networkId = entry.networkId,
+        version = fields.version or 1, exists = fields.exists ~= false,
+        x = fields.x or 0.0, y = fields.y or 0.0, z = fields.z or 0.0,
+        dist2 = fields.dist2 or 1.0, speed = fields.speed or 0.0,
+        identityOk = fields.identityOk ~= false, heading = fields.heading or 45.0,
+        zone = fields.zone, vehicleState = fields.vehicleState, ownVehicle = fields.ownVehicle,
+    }
 end
-function GetEntityVelocity(entity)
-    velocityCalls[entity] = (velocityCalls[entity] or 0) + 1
-    return entity == 10 and vector3(0, 0, 0) or vector3(1, 0, 0)
-end
-function GetEntityHeading() return 90 end
-function GetNameOfZone() return 'TEST' end
-function NetworkGetNetworkIdFromEntity(entity) return entity + 200 end
-function NetworkGetEntityIsNetworked() return true end
-function NetworkDoesEntityExistWithNetworkId() return true end
-function NetworkGetEntityFromNetworkId(networkId)
-    return networkId == 230 and 99 or networkId - 200
-end
-function Entity(entity)
-    return { state = { humalike_npc_id = entity == 30 and 'npc-stale' or nil } }
-end
-function GetEntityModel() return 999 end
+HumalikeWorldTrack = { tracks = {}, changeRevision = 0 }
+local function changed() HumalikeWorldTrack.changeRevision = HumalikeWorldTrack.changeRevision + 1 end
+
+function GetEntityModel() error('the frame never asks the game about an NPC') end
+function GetEntityCoords() error('the frame never asks the game about an NPC') end
 function RegisterNetEvent(name, callback) handlers[name] = callback end
 function RegisterNUICallback(name, callback) callbacks[name] = callback end
 function AddEventHandler() end
-function CreateThread(callback) threads[#threads + 1] = callback end
+function CreateThread() end
 function SetTimeout() end
 function TriggerServerEvent(name, ...)
     serverEvents[#serverEvents + 1] = { name = name, args = { ... } }
 end
 function TriggerEvent() end
 function SendNUIMessage(message) nuiMessages[#nuiMessages + 1] = message end
+function SendNuiMessage(message) rawMessages[#rawMessages + 1] = message end
 function PlayerPedId() return 1 end
 
 dofile('client/npc_edge.lua')
 
-local frame = HumalikeWorldNpcEdge.BuildPositionsFrame({
-    position = vector3(0, 0, 0), effectiveVoiceDistance = 15,
-}, 1, 1)
+HumalikeWorldTrack.tracks['npc-a'] = track('npc-a', { entity = 10, entityId = 110, networkId = 210, x = 5, dist2 = 25, zone = 'DOWNT' })
+HumalikeWorldTrack.tracks['npc-b'] = track('npc-b', { entity = 20, entityId = 120, networkId = 220, x = 10, dist2 = 100, activity = 'talking',
+    runtimeToken = 'quote"back\\slash', vehicleState = { network_id = 501, seat = 0, kind = 'bike' },
+    ownVehicle = { network_id = 501, distance_m = 0.0, in_reach = true, kind = 'bike' } })
+HumalikeWorldTrack.tracks['npc-far'] = track('npc-far', { entity = 30, entityId = 130, networkId = 230, x = 200, dist2 = 200 * 200 })
+HumalikeWorldTrack.tracks['npc-gone'] = track('npc-gone', { entity = 40, entityId = 140, networkId = 240, exists = false })
+HumalikeWorldTrack.tracks['npc-other'] = track('npc-other', { entity = 50, entityId = 150, networkId = 250, identityOk = false })
 
-assert(#frame.npcs == 2)
-assert(coordsCalls[10] == 1 and coordsCalls[20] == 1,
-    'each NPC position must be sampled once per frame')
-assert(velocityCalls[10] == 1 and velocityCalls[20] == 1,
-    'sort/priority must use cached velocity')
-assert(frame.npcs[1].npc_id == 'npc-b', 'talking NPC must remain urgent')
+local player = { position = { x = 1.5, y = 2.25, z = 3.125 }, effectiveVoiceDistance = 15.0,
+    vehicle = { networkId = 999, seat = -1, kind = 'car' } }
+
+local message = HumalikeWorldNpcEdge.Frame(player, 2000)
+assert(message, 'the first frame always goes out')
+assert(message:find('"type":"npc_edge_frame","frame":{"type":"positions","sequence":1,', 1, true))
+assert(message:find('"player":{"x":1.500,"y":2.250,"z":3.125,"effective_voice_distance":15.00,"vehicle":{"network_id":999,"seat":-1,"kind":"car"}}', 1, true))
+assert(message:find('{"npc_id":"npc-b","entity_id":120,"network_id":220,"model_hash":7,"runtime_token":"quote\\"back\\\\slash","x":10.000,"y":0.000,"z":0.000,"heading":45.00,"vehicle":{"network_id":501,"seat":0,"kind":"bike"},"own_vehicle":{"network_id":501,"distance_m":0.00,"in_reach":true,"kind":"bike"}}', 1, true),
+    'strings are escaped, vehicle and own vehicle ride along')
+assert(message:find('"npc_id":"npc-a"', 1, true) and message:find('"zone_code":"DOWNT"', 1, true))
+assert(message:find('"npc_id":"npc-b"', 1, true) < message:find('"npc_id":"npc-a"', 1, true), 'the talking NPC comes first')
+assert(not message:find('npc-far', 1, true), 'out of the report radius')
+assert(not message:find('npc-gone', 1, true) and not message:find('npc-other', 1, true),
+    'a deleted ped or a handle that is not this NPC is never reported')
+local _, commas = message:gsub('"npc_id"', '')
+assert(commas == 2)
+
+assert(HumalikeWorldNpcEdge.Frame(player, 2200) == nil, 'a still scene sends nothing')
+assert(HumalikeWorldNpcEdge.Frame(player, 2800) == nil)
+message = HumalikeWorldNpcEdge.Frame(player, 3000)
+assert(message and message:find('"sequence":2,', 1, true) and message:find('"npcs":[]}}', 1, true),
+    'the keep-alive carries the player only')
+
+HumalikeWorldTrack.tracks['npc-a'].x = 6.0
+HumalikeWorldTrack.tracks['npc-a'].version = 2
+message = HumalikeWorldNpcEdge.Frame(player, 3200)
+assert(message == nil, 'a version bump the tracker did not announce is not seen: no walk over the tracks')
+changed()
+message = HumalikeWorldNpcEdge.Frame(player, 3200)
+assert(message and message:find('"npc_id":"npc-a"', 1, true) and not message:find('"npc_id":"npc-b"', 1, true),
+    'only the NPC that changed is in the delta')
+assert(HumalikeWorldNpcEdge.Frame(player, 3400) == nil, 'and not again while it stays put')
+
+player.position = { x = 1.55, y = 2.25, z = 3.125 }
+assert(HumalikeWorldNpcEdge.Frame(player, 3600) == nil, 'five centimetres is noise')
+player.position = { x = 1.75, y = 2.25, z = 3.125 }
+message = HumalikeWorldNpcEdge.Frame(player, 3800)
+assert(message and message:find('"x":1.750', 1, true) and message:find('"npcs":[]}}', 1, true))
+
+message = HumalikeWorldNpcEdge.Frame(player, 4000)
+local _, both = message:gsub('"npc_id"', '')
+assert(both == 2, 'two seconds after the last keyframe everything goes out again')
+
+callbacks['npcEdgeReady'](nil, function() end)
+message = HumalikeWorldNpcEdge.Frame(player, 4200)
+_, both = message:gsub('"npc_id"', '')
+assert(both == 2 and HumalikeWorldNpcEdge.connected)
+
+HumalikeWorldTrack.enteredAt = 4300
+for at = 4400, 7200, 200 do
+    message = HumalikeWorldNpcEdge.Frame(player, at)
+    assert(message and (at % 2000 == 0 or message:find('"npcs":[]}}', 1, true)),
+        'a still player is reported every 200 ms while an arrival settles')
+end
+assert(HumalikeWorldNpcEdge.Frame(player, 7400) == nil, 'and once a second again after it')
+assert(HumalikeWorldNpcEdge.Frame(player, 7800) == nil)
+assert(HumalikeWorldNpcEdge.Frame(player, 8000), 'the keep-alive (and here the keyframe) still goes out')
+
+WorldConfig.npcEdge.maxNpcsPerFrame = 3
+for index = 1, 5 do
+    local npcId = ('npc-crowd-%d'):format(index)
+    HumalikeWorldTrack.tracks[npcId] = track(npcId, { entity = 1000 + index, entityId = 2000 + index,
+        networkId = 1200 + index, x = 50, dist2 = 50 * 50 })
+end
+changed()
+local function namesIn(frame)
+    local names = {}
+    for npcId in (frame or ''):gmatch('"npc_id":"([^"]+)"') do names[#names + 1] = npcId end
+    return names
+end
+HumalikeWorldNpcEdge.lastKeyframeBeat = nil
+local times, first = {}, namesIn(HumalikeWorldNpcEdge.Frame(player, 9000))
+assert(#first == 3 and first[1] == 'npc-b', 'the talking NPC leads a capped keyframe')
+for _, npcId in ipairs(first) do times[npcId] = (times[npcId] or 0) + 1 end
+for _, at in ipairs({ 9200, 9400 }) do
+    for _, npcId in ipairs(namesIn(HumalikeWorldNpcEdge.Frame(player, at))) do times[npcId] = (times[npcId] or 0) + 1 end
+end
+local names = 0
+for _, count in pairs(times) do
+    names = names + 1
+    assert(count == 1, 'no NPC goes out twice while others wait')
+end
+assert(names == 7, 'the keyframe reaches every reportable NPC over consecutive frames')
+assert(HumalikeWorldNpcEdge.Frame(player, 9600) == nil, 'and then nothing is left to send')
+
+for index = 1, 5 do HumalikeWorldTrack.tracks[('npc-crowd-%d'):format(index)].speed = 2.0 end
+local function crowdMoves()
+    for index = 1, 5 do
+        local moving = HumalikeWorldTrack.tracks[('npc-crowd-%d'):format(index)]
+        moving.version = moving.version + 1
+    end
+    changed()
+end
+local reached = {}
+for _, at in ipairs({ 9800, 10000 }) do
+    crowdMoves()
+    for _, npcId in ipairs(namesIn(HumalikeWorldNpcEdge.Frame(player, at))) do reached[npcId] = true end
+end
+for index = 1, 5 do
+    assert(reached[('npc-crowd-%d'):format(index)], 'every moving NPC is sent within two frames of a five-strong crowd')
+end
+for index = 1, 5 do HumalikeWorldTrack.tracks[('npc-crowd-%d'):format(index)] = nil end
+changed()
+WorldConfig.npcEdge.maxNpcsPerFrame = 32
 
 HumalikeWorldNpcEdge.connected = true
 HumalikeWorldNpcEdge.ticketPending = true
@@ -81,4 +168,33 @@ assert(nuiMessages[#nuiMessages].type == 'npc_edge_disconnect',
     'edge reassignment must close only the edge NUI transport')
 assert(serverEvents[#serverEvents].name == 'humalike:world:requestNpcEdgeTicket',
     'edge reassignment must request a fresh ticket immediately')
+assert(#rawMessages == 0, 'the frame job, not the decision, sends to the NUI')
+
+local jobs, queued, timeouts, anchors = {}, {}, {}, 0
+HumalikePulse = {
+    Every = function(name, interval, run, order) jobs[name] = { interval = interval, run = run, order = order } end,
+    Send = function(json) queued[#queued + 1] = json end,
+    Beat = function(period) assert(period == 1000) return 10 end,
+    Anchor = function() anchors = anchors + 1 end,
+}
+function SetTimeout(ms, callback) timeouts[#timeouts + 1] = { ms = ms, callback = callback } end
+HumalikeWorldNpcEdge.Start()
+assert(jobs['edge frame'].interval == 200 and jobs['edge frame'].order > 50,
+    'five frames a second at most, after the collector and the tracker')
+assert(timeouts[1].ms == 1000 and timeouts[1].callback == HumalikeWorldNpcEdge.RequestTicket,
+    'the first ticket is asked for a second after the start')
+HumalikeWorldCollector.latest = player
+HumalikeWorldNpcEdge.connected = false
+jobs['edge frame'].run(10000, 10000)
+assert(#queued == 0 and anchors == 0, 'no socket, no frame')
+HumalikeWorldNpcEdge.connected = true
+local before = HumalikeWorldNpcEdge.sentFrames
+jobs['edge frame'].run(10000, 10000)
+assert(#queued == 1 and queued[1]:find('"type":"npc_edge_frame"', 1, true)
+    and HumalikeWorldNpcEdge.sentFrames == before + 1)
+assert(anchors == 1, 'a frame that was sent anchors the grid')
+assert(jobs['edge frame'].run(10200, 10200) == 200 and #queued == 1 and anchors == 1,
+    'nothing to send: nothing anchored; the interval is read again on every run')
+WorldConfig.npcEdge.frameIntervalMs = 250
+assert(jobs['edge frame'].run(10400, 10400) == 250, 'so a setting that arrives later applies')
 print('client_npc_edge: ok')

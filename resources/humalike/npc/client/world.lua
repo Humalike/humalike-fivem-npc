@@ -9,15 +9,12 @@ local function signature(entity, entityId, networkId, modelHash, token, kind)
 end
 
 local function ambientIdentityMatches(npcId, entry, ped, networkId)
-    if not NetworkGetEntityIsNetworked(ped) then return false end
-    if NetworkGetNetworkIdFromEntity(ped) ~= networkId
-        or not NetworkDoesEntityExistWithNetworkId(networkId)
-        or NetworkGetEntityFromNetworkId(networkId) ~= ped then return false end
-    return Entity(ped).state.humalike_npc_id == npcId
-        and tonumber(entry.network_id) == networkId
+    if not AmbientPedNpcIds or AmbientPedNpcIds[ped] ~= npcId then return false end
+    return tonumber(entry.network_id) == networkId
+        and NetworkGetNetworkIdFromEntity(ped) == networkId
 end
 
-local function registrationFor(npcId, entry, ped, token, kind)
+local function registrationFor(npcId, entry, ped, token, kind, previous)
     if not ped or not DoesEntityExist(ped) or type(token) ~= 'string' or token == '' then return nil end
     local entityId = tonumber(entry.entity_id)
     local networkId = tonumber(entry.network_id) or NetworkGetNetworkIdFromEntity(ped)
@@ -25,7 +22,8 @@ local function registrationFor(npcId, entry, ped, token, kind)
     if kind == 'ambient' and not ambientIdentityMatches(npcId, entry, ped, networkId) then
         return nil
     end
-    local modelHash = unsignedHash(GetEntityModel(ped))
+    local modelHash = previous and previous.entity == ped and previous.modelHash
+        or unsignedHash(GetEntityModel(ped))
     return {
         npcId = npcId,
         entity = ped,
@@ -37,50 +35,67 @@ local function registrationFor(npcId, entry, ped, token, kind)
     }, signature(ped, entityId, networkId, modelHash, token, kind)
 end
 
-local function desiredRegistrations()
-    local desired = {}
-    for npcId, entry in pairs(KnownNpcs or {}) do
-        local ped = ResolveNpcPed(npcId)
-        local token = ped and DoesEntityExist(ped)
-            and (Entity(ped).state.humalike_runtime_token or entry.runtime_token) or nil
-        local value, valueSignature = registrationFor(npcId, entry, ped, token, 'persistent')
-        if value then desired[npcId] = { value = value, signature = valueSignature } end
-    end
-    for npcId, entry in pairs(AmbientNpcEntries or {}) do
-        local ped = AmbientPeds and AmbientPeds[npcId] or nil
-        local value, valueSignature = registrationFor(
-            npcId, entry, ped, entry.lease_token, 'ambient')
-        if value then desired[npcId] = { value = value, signature = valueSignature } end
-    end
-    return desired
+-- The roster and the leases change while the pass is parked: it walks ids taken up front.
+local SLICE = 8
+
+local function previousOf(npcId)
+    local current = registrations[npcId]
+    return current and current.value or nil
 end
 
-local function reconcile(force)
-    local desired = desiredRegistrations()
-    for npcId, current in pairs(registrations) do
-        if not desired[npcId] then
-            exports['humalike']:UnregisterNpc(npcId)
-            registrations[npcId] = nil
-        elseif force or desired[npcId].signature ~= current then
-            local ok = exports['humalike']:RegisterNpc(desired[npcId].value)
-            if ok then registrations[npcId] = desired[npcId].signature end
+local function desiredFor(npcId)
+    local lease = AmbientNpcEntries and AmbientNpcEntries[npcId] or nil
+    if lease then
+        local value, valueSignature = registrationFor(npcId, lease,
+            AmbientPeds and AmbientPeds[npcId] or nil, lease.lease_token, 'ambient', previousOf(npcId))
+        if value then return value, valueSignature end
+    end
+    local entry = KnownNpcs and KnownNpcs[npcId] or nil
+    if not entry then return nil end
+    local ped = ResolveNpcPed(npcId)
+    local token = ped and DoesEntityExist(ped)
+        and (Entity(ped).state.humalike_runtime_token or entry.runtime_token) or nil
+    return registrationFor(npcId, entry, ped, token, 'persistent', previousOf(npcId))
+end
+
+local function reconcile(force, sliced)
+    local ids, listed = {}, {}
+    local function list(source)
+        for npcId in pairs(source or {}) do
+            if not listed[npcId] then
+                listed[npcId] = true
+                ids[#ids + 1] = npcId
+            end
         end
     end
-    for npcId, candidate in pairs(desired) do
-        if not registrations[npcId] then
-            local ok = exports['humalike']:RegisterNpc(candidate.value)
-            if ok then registrations[npcId] = candidate.signature end
+    list(registrations)
+    list(KnownNpcs)
+    list(AmbientNpcEntries)
+    for index = 1, #ids do
+        local npcId = ids[index]
+        local value, valueSignature = desiredFor(npcId)
+        local current = registrations[npcId]
+        if not value then
+            if current then
+                exports['humalike']:UnregisterNpc(npcId)
+                registrations[npcId] = nil
+            end
+        elseif not current or force or current.signature ~= valueSignature then
+            local ok = exports['humalike']:RegisterNpc(value)
+            if ok then registrations[npcId] = { value = value, signature = valueSignature } end
         end
+        if sliced and index % SLICE == 0 then Wait(0) end
     end
 end
 
 local function registerOne(npcId, entry, ped, token, kind)
     if type(npcId) ~= 'string' or type(entry) ~= 'table' then return false end
-    local value, valueSignature = registrationFor(npcId, entry, ped, token, kind)
+    local value, valueSignature = registrationFor(npcId, entry, ped, token, kind, previousOf(npcId))
     if not value then return false end
-    if registrations[npcId] == valueSignature then return true end
+    local current = registrations[npcId]
+    if current and current.signature == valueSignature then return true end
     local ok = exports['humalike']:RegisterNpc(value)
-    if ok then registrations[npcId] = valueSignature end
+    if ok then registrations[npcId] = { value = value, signature = valueSignature } end
     return ok == true
 end
 
@@ -122,7 +137,7 @@ end)
 
 CreateThread(function()
     while true do
-        reconcile(false)
-        Wait(3000)
+        reconcile(false, true)
+        Wait(5000)
     end
 end)

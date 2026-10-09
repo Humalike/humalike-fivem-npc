@@ -8,16 +8,13 @@ Config = {
     },
 }
 
-local threads, sent = {}, {}
+local sent = {}
 local ped, vehicle = 1, 20
 local pedVehicle, networked = 0, true
 local bodyHealth, engineHealth, timer = 1000.0, 1000.0, 0
+local pulseAt = 0
 
-function CreateThread(fn) threads[#threads + 1] = coroutine.create(fn) end
-function Wait(delay)
-    assert(delay == 250)
-    coroutine.yield()
-end
+function CreateThread() end
 function PlayerPedId() return ped end
 function DoesEntityExist(entity) return entity == ped or entity == vehicle or entity == 21 end
 function GetVehiclePedIsIn() return pedVehicle end
@@ -29,14 +26,16 @@ function GetGameTimer() return timer end
 function TriggerServerEvent(...) sent[#sent + 1] = { ... } end
 
 local function tick()
-    local ok, errorMessage = coroutine.resume(threads[1])
-    assert(ok, errorMessage)
+    pulseAt = pulseAt + 500
+    local sleep = HumalikePulse.Run(pulseAt)
+    local tracking = pedVehicle ~= 0 and networked
+    assert(sleep == (tracking and 250 or 500), ('next poll in %s'):format(tostring(sleep)))
 end
 
+dofile('../world/client/pulse.lua')
 dofile('client/vehicle_damage.lua')
-assert(#threads == 1)
 
-tick() -- first Wait
+tick() -- on foot
 pedVehicle = vehicle
 tick() -- establishes and announces the baseline
 assert(#sent == 1 and sent[1][1] == 'humalike:npc:vehicleObserved')
